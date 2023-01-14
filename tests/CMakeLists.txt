@@ -12,4 +12,3 @@ enable_testing()
 # CUDA_HPP_TESTS testing NAGA CPP API for CUDA
 add_executable(CUDA_HPP_TESTS naga/cuda/cuda_tests.cu)
 add_test(NAME CUDA_HPP_TESTS COMMAND CUDA_HPP_TESTS)
-

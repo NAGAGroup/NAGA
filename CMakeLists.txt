@@ -7,6 +7,13 @@ find_package(CUDAToolkit REQUIRED)
 
 include_directories(./include)
 
-add_library(NAGA INTERFACE include/naga/cuda/cuda.hpp include/naga/cuda/errors.hpp include/naga/defines.h include/naga/cuda/context_manager.hpp)
+add_library(
+  NAGA
+  INTERFACE
+  include/naga/cuda/cuda.hpp
+  include/naga/cuda/errors.hpp
+  include/naga/defines.h
+  include/naga/cuda/context_manager.hpp
+  include/naga/cuda/stream.hpp)
 
 add_subdirectory(tests)
