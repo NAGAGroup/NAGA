@@ -48,7 +48,7 @@ class context_manager {
     __host__ static int set_device(int device) {
         int old_device = get_device();
         if (device == cpu_device_id || device == distributed_device_id) {
-            throw std::runtime_error(std::string(NAGA_PRETTY_FUNCTION) + ": cpu_device_id and distributed_device_id are not valid device ids");
+            throw std::invalid_argument(std::string(NAGA_PRETTY_FUNCTION) + ": cpu_device_id and distributed_device_id are not valid device ids");
         }
         cuda_error(cudaSetDevice(device)).raise_if_error(
             std::string(NAGA_PRETTY_FUNCTION) + " failed with error: ");

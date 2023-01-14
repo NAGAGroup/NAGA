@@ -74,4 +74,13 @@ TEST_CASE("naga::cuda::context_manager") {
         "static int naga::cuda::context_manager::set_device(int) failed with "
         "error: invalid device ordinal"
     );
+
+    CHECK_NOTHROW(context_manager::set_device(0));
+    CHECK(context_manager::get_device() == 0);
+
+    CHECK_THROWS_AS(context_manager::set_device(context_manager::cpu_device_id), std::invalid_argument);
+    CHECK_THROWS_WITH(context_manager::set_device(context_manager::cpu_device_id), "static int naga::cuda::context_manager::set_device(int): cpu_device_id and distributed_device_id are not valid device ids");
+
+    CHECK_THROWS_AS(context_manager::set_device(context_manager::distributed_device_id), std::invalid_argument);
+    CHECK_THROWS_WITH(context_manager::set_device(context_manager::distributed_device_id), "static int naga::cuda::context_manager::set_device(int): cpu_device_id and distributed_device_id are not valid device ids");
 }
