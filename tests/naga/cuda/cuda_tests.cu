@@ -29,30 +29,30 @@ TEST_CASE("naga::cuda::cuda_error") {
     CHECK(error.to_string() == "out of memory");
     CHECK(error.get() == cudaErrorMemoryAllocation);
 
-    CHECK(naga::cuda::cuda_error::get_last_error().success());
+    CHECK(naga::cuda::get_last_error().success());
 
     cudaMalloc(nullptr, 0);
-    error = naga::cuda::cuda_error::peek_last_error();
+    error = naga::cuda::peek_last_error();
     CHECK(!error.success());
     CHECK_THROWS_AS(error.raise_if_error(), naga::cuda::cuda_exception);
     CHECK(error.to_string() == "invalid argument");
 
-    error = naga::cuda::cuda_error::get_last_error();
+    error = naga::cuda::get_last_error();
     CHECK(!error.success());
     CHECK_THROWS_AS(error.raise_if_error(), naga::cuda::cuda_exception);
     CHECK(error.to_string() == "invalid argument");
 
-    error = naga::cuda::cuda_error::get_last_error();
+    error = naga::cuda::get_last_error();
     CHECK(error.success());
     CHECK_NOTHROW(error.raise_if_error());
 }
 
-__global__ void kernel() {printf("Hello World!\\n");}
+__global__ void kernel() { printf("Hello World!\\n"); }
 
 TEST_CASE("naga::cuda::context_manager") {
     using context_manager = naga::cuda::context_manager;
 
-    float *device_ptr;
+    float* device_ptr;
     size_t available, total;
     cudaMemGetInfo(&available, &total);
     cudaMalloc(&device_ptr, available / 3);
@@ -78,9 +78,23 @@ TEST_CASE("naga::cuda::context_manager") {
     CHECK_NOTHROW(context_manager::set_device(0));
     CHECK(context_manager::get_device() == 0);
 
-    CHECK_THROWS_AS(context_manager::set_device(context_manager::cpu_device_id), std::invalid_argument);
-    CHECK_THROWS_WITH(context_manager::set_device(context_manager::cpu_device_id), "static int naga::cuda::context_manager::set_device(int): cpu_device_id and distributed_device_id are not valid device ids");
+    CHECK_THROWS_AS(
+        context_manager::set_device(context_manager::cpu_device_id),
+        std::invalid_argument
+    );
+    CHECK_THROWS_WITH(
+        context_manager::set_device(context_manager::cpu_device_id),
+        "static int naga::cuda::context_manager::set_device(int): "
+        "cpu_device_id and distributed_device_id are not valid device ids"
+    );
 
-    CHECK_THROWS_AS(context_manager::set_device(context_manager::distributed_device_id), std::invalid_argument);
-    CHECK_THROWS_WITH(context_manager::set_device(context_manager::distributed_device_id), "static int naga::cuda::context_manager::set_device(int): cpu_device_id and distributed_device_id are not valid device ids");
+    CHECK_THROWS_AS(
+        context_manager::set_device(context_manager::distributed_device_id),
+        std::invalid_argument
+    );
+    CHECK_THROWS_WITH(
+        context_manager::set_device(context_manager::distributed_device_id),
+        "static int naga::cuda::context_manager::set_device(int): "
+        "cpu_device_id and distributed_device_id are not valid device ids"
+    );
 }

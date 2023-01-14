@@ -34,14 +34,6 @@ class cuda_error {
 
     __host__ explicit cuda_error(const cudaError_t& error) : error_code_(error) {}
 
-    __host__ static cuda_error get_last_error() {
-        return cuda_error(cudaGetLastError());
-    }
-
-    __host__ static cuda_error peek_last_error() {
-        return cuda_error(cudaPeekAtLastError());
-    }
-
     __host__ bool success() const { return error_code_ == cudaSuccess; }
 
     __host__ void raise_if_error(const std::string& msg_prefix = "") const {
@@ -59,5 +51,13 @@ class cuda_error {
   private:
     cudaError_t error_code_;
 };
+
+__host__ inline cuda_error get_last_error() {
+    return cuda_error{cudaGetLastError()};
+}
+
+__host__ inline cuda_error peek_last_error() {
+    return cuda_error{cudaPeekAtLastError()};
+}
 
 }  // namespace naga::cuda
