@@ -11,7 +11,7 @@ add_library(
   NAGA
   INTERFACE
   include/naga/cuda/cuda.hpp
-  include/naga/cuda/errors.hpp
+  include/naga/cuda/error.hpp
   include/naga/defines.h
   include/naga/cuda/context_manager.hpp
   include/naga/cuda/stream.hpp)

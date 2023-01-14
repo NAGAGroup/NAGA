@@ -18,6 +18,6 @@
 
 #pragma once
 
-#include "errors.hpp"
 #include "context_manager.hpp"
+#include "error.hpp"
 #include "stream.hpp"

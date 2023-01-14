@@ -20,47 +20,50 @@
 #include "doctest.h"
 #include "naga/cuda/cuda.hpp"
 
-__global__ void broken_kernel() {
-    int* ptr = nullptr;
-    *ptr     = 0;
-}
-
 TEST_CASE("naga::cuda::cuda_error") {
     CHECK(naga::cuda::cuda_error(cudaSuccess).success());
     CHECK(!naga::cuda::cuda_error(cudaErrorMemoryAllocation).success());
 
-    CHECK_THROWS_AS(
-        naga::cuda::cuda_error(cudaErrorMemoryAllocation).raise_if_error(),
-        naga::cuda::cuda_exception
-    );
-
-    CHECK(
-        naga::cuda::cuda_error(cudaErrorMemoryAllocation).to_string()
-        == "out of memory"
-    );
-
-    CHECK(
-        naga::cuda::cuda_error(cudaErrorMemoryAllocation).get()
-        == cudaErrorMemoryAllocation
-    );
+    naga::cuda::cuda_error error(cudaErrorMemoryAllocation);
+    CHECK_THROWS_AS(error.raise_if_error(), naga::cuda::cuda_exception);
+    CHECK(error.to_string() == "out of memory");
+    CHECK(error.get() == cudaErrorMemoryAllocation);
 
     CHECK(naga::cuda::cuda_error::get_last_error().success());
 
-    broken_kernel<<<1, 1>>>();
-    cudaDeviceSynchronize();
-    auto error = naga::cuda::cuda_error::peek_last_error();
+    cudaMalloc(nullptr, 0);
+    error = naga::cuda::cuda_error::peek_last_error();
     CHECK(!error.success());
-    CHECK_THROWS_AS(
-        (error = naga::cuda::cuda_error::get_last_error()).raise_if_error(),
-        naga::cuda::cuda_exception
-    );
-    CHECK(error.to_string() == "unspecified launch failure");
+    CHECK_THROWS_AS(error.raise_if_error(), naga::cuda::cuda_exception);
+    CHECK(error.to_string() == "invalid argument");
+
+    error = naga::cuda::cuda_error::get_last_error();
+    CHECK(!error.success());
+    CHECK_THROWS_AS(error.raise_if_error(), naga::cuda::cuda_exception);
+    CHECK(error.to_string() == "invalid argument");
+
+    error = naga::cuda::cuda_error::get_last_error();
+    CHECK(error.success());
+    CHECK_NOTHROW(error.raise_if_error());
 }
+
+__global__ void kernel() {printf("Hello World!\\n");}
 
 TEST_CASE("naga::cuda::context_manager") {
     using context_manager = naga::cuda::context_manager;
-    context_manager::system_reset();  // ensure CUDA runtime is initialized
-    CHECK(naga::cuda::context_manager::get_device_count() > 0);
+
+    float *device_ptr;
+    size_t available, total;
+    cudaMemGetInfo(&available, &total);
+    cudaMalloc(&device_ptr, available / 3);
+    context_manager::system_reset();
+    size_t available_after_reset, total_after_reset;
+    cudaMemGetInfo(&available_after_reset, &total_after_reset);
+    CHECK(available == available_after_reset);
+
+    int device_count = 0;
+    cudaGetDeviceCount(&device_count);
+    CHECK(naga::cuda::context_manager::get_device_count() == device_count);
 
     CHECK_THROWS_AS(
         context_manager::set_device(100),

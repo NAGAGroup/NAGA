@@ -17,7 +17,7 @@
 //
 
 #pragma once
-#include "errors.hpp"
+#include "error.hpp"
 #include <naga/defines.h>
 
 namespace naga::cuda {
@@ -55,18 +55,21 @@ class context_manager {
         return old_device;
     }
 
-    __host__ static void device_reset() {
+    __host__ static void device_reset(int device) {
+        int current_device = set_device(device);
         cuda_error(cudaDeviceReset()).raise_if_error(
             std::string(NAGA_PRETTY_FUNCTION) + " failed with error: ");
+        set_device(current_device);
+    }
+
+    __host__ static void device_reset() {
+        device_reset(get_device());
     }
 
     __host__ static void system_reset() {
-        int current_device = get_device();
         for (int i = 0; i < get_device_count(); i++) {
-            set_device(i);
-            device_reset();
+            device_reset(i);
         }
-        set_device(current_device);
     }
 };
 
