@@ -18,7 +18,7 @@
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
-#include "naga/cuda/cuda.hpp"
+#include <naga/cuda/cuda.cuh>
 
 TEST_CASE("naga::cuda::cuda_error") {
     CHECK(naga::cuda::cuda_error(cudaSuccess).success());
@@ -46,8 +46,6 @@ TEST_CASE("naga::cuda::cuda_error") {
     CHECK(error.success());
     CHECK_NOTHROW(error.raise_if_error());
 }
-
-__global__ void kernel() { printf("Hello World!\\n"); }
 
 TEST_CASE("naga::cuda::context_manager") {
     using context_manager = naga::cuda::context_manager;
@@ -97,4 +95,81 @@ TEST_CASE("naga::cuda::context_manager") {
         "static int naga::cuda::context_manager::set_device(int): "
         "cpu_device_id and distributed_device_id are not valid device ids"
     );
+}
+
+__global__ void set_array_kernel(int* array, int value, size_t size) {
+    for (size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+         i < size;
+         i += gridDim.x * blockDim.x) {
+//        printf("setting array[%u] = %u\n", static_cast<unsigned int>(i), value);
+        array[i] = value;
+    }
+}
+
+TEST_CASE("naga::cuda::synchronize") {
+    int *unified_ptr;
+    uint num_elements = 1e6;
+    cudaMallocManaged(&unified_ptr, num_elements * sizeof(int));
+
+    std::fill_n(unified_ptr, num_elements, 0);
+
+    set_array_kernel<<<1, 1>>>(unified_ptr, 1, num_elements);
+    naga::cuda::synchronize();
+
+    CHECK(std::all_of(unified_ptr, unified_ptr + num_elements,
+                      [](int i) { return i == 1; }));
+}
+
+__global__ void set_array_kernel_distributed(int, int dev_id, size_t device_problem_size,
+                                             int* array, int value, size_t size) {
+    for (size_t i = blockIdx.x * blockDim.x + threadIdx.x + dev_id * device_problem_size;
+         i < size && i < (dev_id + 1) * device_problem_size;
+         i += gridDim.x * blockDim.x) {
+//        printf("setting array[%u] = %u\n", static_cast<unsigned int>(i), value);
+        array[i] = value;
+    }
+}
+
+auto distributed_kernel_launch
+    = naga::cuda::distributed_kernel_launch<
+        set_array_kernel_distributed, int*, int, size_t>;
+
+auto kernel_launch = naga::cuda::kernel_launch<set_array_kernel, int*, int, size_t>;
+
+TEST_CASE("naga::cuda::*kernel*_launch") {
+    int *unified_ptr;
+    uint num_elements = 1e6;
+    cudaMallocManaged(&unified_ptr, num_elements * sizeof(int));
+    std::fill_n(unified_ptr, num_elements, 0);
+
+    using naga::cuda::execution_policy;
+    auto stream = kernel_launch(
+        execution_policy::async,
+        1, 1,
+        0, 0, unified_ptr, 1, num_elements
+        );
+
+    CHECK(!std::all_of(unified_ptr, unified_ptr + num_elements,
+                      [](int i) { return i == 1; }));
+
+    stream.synchronize();
+
+    CHECK(std::all_of(unified_ptr, unified_ptr + num_elements,
+                      [](int i) { return i == 1; }));
+
+    CHECK(stream.get() != cudaStreamDefault);
+
+    auto streams = distributed_kernel_launch(
+        execution_policy::sync,
+        num_elements,
+        1,
+        1,
+        0,
+        unified_ptr,
+        2,
+        num_elements
+    );
+
+    CHECK(std::all_of(unified_ptr, unified_ptr + num_elements,
+                      [](int i) { return i == 2; }));
 }

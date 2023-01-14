@@ -17,7 +17,7 @@
 //
 
 #pragma once
-#include "error.hpp"
+#include "error.cuh"
 #include <naga/defines.h>
 
 namespace naga::cuda {
