@@ -24,13 +24,13 @@ namespace naga::cuda {
 
 class context_manager {
   public:
-    context_manager() = delete;
-    context_manager(const context_manager &) = delete;
-    context_manager(context_manager &&) = delete;
-    context_manager &operator=(const context_manager &) = delete;
-    context_manager &operator=(context_manager &&) = delete;
+    context_manager()                                  = delete;
+    context_manager(const context_manager&)            = delete;
+    context_manager(context_manager&&)                 = delete;
+    context_manager& operator=(const context_manager&) = delete;
+    context_manager& operator=(context_manager&&)      = delete;
 
-    static constexpr int cpu_device_id = cudaCpuDeviceId;
+    static constexpr int cpu_device_id         = cudaCpuDeviceId;
     static constexpr int distributed_device_id = cudaCpuDeviceId - 1;
 
     __host__ static int get_device_count() {
@@ -48,23 +48,29 @@ class context_manager {
     __host__ static int set_device(int device) {
         int old_device = get_device();
         if (device == cpu_device_id || device == distributed_device_id) {
-            throw std::invalid_argument(std::string(NAGA_PRETTY_FUNCTION) + ": cpu_device_id and distributed_device_id are not valid device ids");
+            throw std::invalid_argument(
+                std::string(NAGA_PRETTY_FUNCTION)
+                + ": cpu_device_id and distributed_device_id are not valid "
+                  "device ids"
+            );
         }
-        cuda_error(cudaSetDevice(device)).raise_if_error(
-            std::string(NAGA_PRETTY_FUNCTION) + " failed with error: ");
+        cuda_error(cudaSetDevice(device))
+            .raise_if_error(
+                std::string(NAGA_PRETTY_FUNCTION) + " failed with error: "
+            );
         return old_device;
     }
 
     __host__ static void device_reset(int device) {
         int current_device = set_device(device);
-        cuda_error(cudaDeviceReset()).raise_if_error(
-            std::string(NAGA_PRETTY_FUNCTION) + " failed with error: ");
+        cuda_error(cudaDeviceReset())
+            .raise_if_error(
+                std::string(NAGA_PRETTY_FUNCTION) + " failed with error: "
+            );
         set_device(current_device);
     }
 
-    __host__ static void device_reset() {
-        device_reset(get_device());
-    }
+    __host__ static void device_reset() { device_reset(get_device()); }
 
     __host__ static void system_reset() {
         for (int i = 0; i < get_device_count(); i++) {
@@ -73,4 +79,4 @@ class context_manager {
     }
 };
 
-} // namespace naga::cuda
+}  // namespace naga::cuda

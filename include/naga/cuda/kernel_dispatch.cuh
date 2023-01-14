@@ -54,12 +54,12 @@ __host__ stream inline kernel_launch(
     int device_id,
     Args... args
 ) {
-    const stream &kernel_stream = stream::create(device_id);
-//    if (policy == execution_policy::async) {
-//        kernel_stream = stream::create(device_id);
-//    } else {
-//        kernel_stream = stream::default_stream(device_id);
-//    }
+    const stream& kernel_stream = stream::create(device_id);
+    //    if (policy == execution_policy::async) {
+    //        kernel_stream = stream::create(device_id);
+    //    } else {
+    //        kernel_stream = stream::default_stream(device_id);
+    //    }
     kernel_stream_launch<Kernel, Args...>(
         grid_size,
         block_size,
@@ -89,11 +89,13 @@ __host__ stream inline kernel_launch(
  * @param total_problem_size The total size of the problem to distribute.
  * @param max_grid_size The maximum grid size to use for each kernel launch.
  * @param block_size The block size to use for each kernel launch.
- * @param shared_mem_per_device The amount of shared memory to use for each kernel launch.
- * @param args The arguments to the kernel, excluding those passed by the kernel launcher.
+ * @param shared_mem_per_device The amount of shared memory to use for each
+ * kernel launch.
+ * @param args The arguments to the kernel, excluding those passed by the kernel
+ * launcher.
  * @return A vector of streams, one for each kernel launch.
  */
-template <auto Kernel, class... Args>
+template<auto Kernel, class... Args>
 __host__ std::vector<stream> inline distributed_kernel_launch(
     execution_policy policy,
     size_t total_problem_size,
@@ -105,10 +107,13 @@ __host__ std::vector<stream> inline distributed_kernel_launch(
     std::vector<stream> streams;
     streams.reserve(context_manager::get_device_count());
     for (int dev = 0; dev < context_manager::get_device_count(); dev++) {
-        size_t problem_size_per_device = (total_problem_size + context_manager::get_device_count() - 1) / context_manager::get_device_count();
+        size_t problem_size_per_device
+            = (total_problem_size + context_manager::get_device_count() - 1)
+            / context_manager::get_device_count();
         uint grid_size = std::min(
             max_grid_size,
-            static_cast<uint>(problem_size_per_device + block_size - 1) / block_size
+            static_cast<uint>(problem_size_per_device + block_size - 1)
+                / block_size
         );
         streams.push_back(kernel_launch<Kernel>(
             policy,
@@ -120,8 +125,7 @@ __host__ std::vector<stream> inline distributed_kernel_launch(
             dev,
             problem_size_per_device,
             args...
-        )
-        );
+        ));
     }
     return streams;
 }
@@ -136,4 +140,4 @@ template std::vector<stream> distributed_kernel_launch<dummy_kernel>(
 );
 #endif
 
-}
+}  // namespace naga::cuda

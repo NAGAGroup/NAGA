@@ -20,6 +20,6 @@
 
 #include "context_manager.cuh"
 #include "error.cuh"
+#include "kernel_dispatch.cuh"
 #include "stream.cuh"
 #include "synchronization.cuh"
-#include "kernel_dispatch.cuh"

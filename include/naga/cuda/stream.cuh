@@ -23,7 +23,7 @@
 
 namespace naga::cuda {
 class stream {
-public:
+  public:
     __host__ stream(cudaStream_t stream, int device_id) {
         auto* stream_copy_ptr = new cudaStream_t;
         *stream_copy_ptr      = stream;
@@ -36,10 +36,9 @@ public:
 
     __host__ static stream create(int device_id) {
         int current_device = context_manager::set_device(device_id);
-        auto* stream_ptr = new cudaStream_t;
-        cuda_error(cudaStreamCreate(stream_ptr)).raise_if_error(
-            "naga::stream_t creation failed."
-        );
+        auto* stream_ptr   = new cudaStream_t;
+        cuda_error(cudaStreamCreate(stream_ptr))
+            .raise_if_error("naga::stream_t creation failed.");
         context_manager::set_device(current_device);
         return {*stream_ptr, context_manager::get_device()};
     }
@@ -63,7 +62,9 @@ public:
 
     __host__ const int& associated_device() const { return device_id_; }
 
-    __host__ int prepare() const { return context_manager::set_device(device_id_); }
+    __host__ int prepare() const {
+        return context_manager::set_device(device_id_);
+    }
 
     __host__ cuda_error synchronize() const {
         int current_device = context_manager::get_device();
@@ -98,7 +99,10 @@ public:
     }
 
   private:
-    std::shared_ptr<cudaStream_t> raw_stream_ptr_ = std::make_shared<cudaStream_t>(static_cast<cudaStream_t>(cudaStreamDefault));
+    std::shared_ptr<cudaStream_t> raw_stream_ptr_
+        = std::make_shared<cudaStream_t>(
+            static_cast<cudaStream_t>(cudaStreamDefault)
+        );
     int device_id_{};
 
     static constexpr auto stream_deleter = [](cudaStream_t* stream_ptr) {
@@ -108,4 +112,4 @@ public:
     };
 };
 
-} // namespace naga::cuda
+}  // namespace naga::cuda

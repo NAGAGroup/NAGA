@@ -29,7 +29,7 @@ __host__ cuda_error inline synchronize() {
 }
 
 __host__ cuda_error inline synchronize_device(int device) {
-    int old_device = context_manager::set_device(device);
+    int old_device   = context_manager::set_device(device);
     cuda_error error = synchronize();
     context_manager::set_device(old_device);
     return error;
@@ -44,9 +44,10 @@ __host__ std::vector<cuda_error> inline synchronize_all_devices() {
     return errors;
 }
 
-__host__ cuda_error inline synchronize_streams(const std::vector<stream> &streams) {
+__host__
+    cuda_error inline synchronize_streams(const std::vector<stream>& streams) {
     cuda_error error;
-    for (const stream &stream : streams) {
+    for (const stream& stream : streams) {
         cuda_error sync_error = stream.synchronize();
         if (error.success() && !sync_error.success()) {
             error = sync_error;
@@ -55,4 +56,4 @@ __host__ cuda_error inline synchronize_streams(const std::vector<stream> &stream
     return error;
 }
 
-} // namespace naga::cuda
+}  // namespace naga::cuda
