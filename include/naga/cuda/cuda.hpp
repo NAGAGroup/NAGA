@@ -20,3 +20,4 @@
 
 #include "errors.hpp"
 #include "context_manager.hpp"
+#include "stream.hpp"
