@@ -13,10 +13,16 @@
 // limitations under the License.
 
 //
-// Created by jack on 1/12/23.
+// Created by jack on 1/13/23.
 //
 
 #pragma once
 
-#include "errors.hpp"
-#include "context_manager.hpp"
+// detect if __PRETTY_FUNCTION__ is supported
+#if defined(__GNUC__) || defined(__clang__)
+#define NAGA_PRETTY_FUNCTION __PRETTY_FUNCTION__
+#elif defined(_MSC_VER)
+#define NAGA_PRETTY_FUNCTION __FUNCSIG__
+#else
+#define NAGA_PRETTY_FUNCTION __FUNCTION__
+#endif

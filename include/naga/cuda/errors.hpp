@@ -30,9 +30,9 @@ public:
 
 class cuda_error {
   public:
-    __host__ cuda_error() = delete;
+    __host__ cuda_error() : error_code_(cudaSuccess) {}
 
-    __host__ explicit cuda_error(const cudaError_t& error) : error(error) {}
+    __host__ explicit cuda_error(const cudaError_t& error) : error_code_(error) {}
 
     __host__ static cuda_error get_last_error() {
         return cuda_error(cudaGetLastError());
@@ -42,7 +42,7 @@ class cuda_error {
         return cuda_error(cudaPeekAtLastError());
     }
 
-    __host__ bool success() const { return error == cudaSuccess; }
+    __host__ bool success() const { return error_code_ == cudaSuccess; }
 
     __host__ void raise_if_error(const std::string& msg_prefix = "") const {
         if (!success()) {
@@ -51,13 +51,13 @@ class cuda_error {
     }
 
     __host__ std::string to_string() const {
-        return {cudaGetErrorString(error)};
+        return {cudaGetErrorString(error_code_)};
     }
 
-    __host__ const cudaError_t& get() const { return error; }
+    __host__ const cudaError_t& get() const { return error_code_; }
 
   private:
-    cudaError_t error;
+    cudaError_t error_code_;
 };
 
 }  // namespace naga::cuda

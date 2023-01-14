@@ -44,3 +44,12 @@ TEST_CASE("naga::cuda::cuda_error") {
     CHECK_THROWS_AS((error = naga::cuda::cuda_error::get_last_error()).raise_if_error(), naga::cuda::cuda_exception);
     CHECK(error.to_string() == "unspecified launch failure");
 }
+
+TEST_CASE("naga::cuda::context_manager") {
+    using context_manager = naga::cuda::context_manager;
+    context_manager::system_reset(); // ensure CUDA runtime is initialized
+    CHECK(naga::cuda::context_manager::get_device_count() > 0);
+
+    CHECK_THROWS_AS(context_manager::set_device(100), naga::cuda::cuda_exception);
+    CHECK_THROWS_WITH(context_manager::set_device(100), "static int naga::cuda::context_manager::set_device(int) failed with error: invalid device ordinal");
+}
