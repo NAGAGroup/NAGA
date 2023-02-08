@@ -41,7 +41,7 @@ __host__ stream inline kernel_stream_launch(
 ) {
     int current_device = stream.prepare();
     Kernel<<<grid_size, block_size, shared_mem, stream.get()>>>(args...);
-    context_manager::set_device(current_device);
+    runtime::set_device(current_device);
     return stream;
 }
 
@@ -105,11 +105,11 @@ __host__ std::vector<stream> inline distributed_kernel_launch(
     Args... args
 ) {
     std::vector<stream> streams;
-    streams.reserve(context_manager::get_device_count());
-    for (int dev = 0; dev < context_manager::get_device_count(); dev++) {
+    streams.reserve(runtime::get_device_count());
+    for (int dev = 0; dev < runtime::get_device_count(); dev++) {
         size_t problem_size_per_device
-            = (total_problem_size + context_manager::get_device_count() - 1)
-            / context_manager::get_device_count();
+            = (total_problem_size + runtime::get_device_count() - 1)
+            / runtime::get_device_count();
         uint grid_size = std::min(
             max_grid_size,
             static_cast<uint>(problem_size_per_device + block_size - 1)
@@ -121,7 +121,7 @@ __host__ std::vector<stream> inline distributed_kernel_launch(
             block_size,
             shared_mem_per_device,
             dev,
-            context_manager::get_device_count(),
+            runtime::get_device_count(),
             dev,
             problem_size_per_device,
             args...

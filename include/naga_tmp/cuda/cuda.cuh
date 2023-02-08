@@ -18,8 +18,8 @@
 
 #pragma once
 
-#include "context_manager.cuh"
 #include "error.cuh"
-#include "kernel_dispatch.cuh"
+#include "launch_kernel.cuh"
+#include "runtime.cuh"
 #include "stream.cuh"
 #include "synchronization.cuh"

@@ -48,7 +48,7 @@ TEST_CASE("naga::cuda::cuda_error") {
 }
 
 TEST_CASE("naga::cuda::context_manager") {
-    using context_manager = naga::cuda::context_manager;
+    using context_manager = naga::cuda::runtime;
 
     float* device_ptr;
     size_t available, total;
@@ -61,7 +61,7 @@ TEST_CASE("naga::cuda::context_manager") {
 
     int device_count = 0;
     cudaGetDeviceCount(&device_count);
-    CHECK(naga::cuda::context_manager::get_device_count() == device_count);
+    CHECK(naga::cuda::runtime::get_device_count() == device_count);
 
     CHECK_THROWS_AS(
         context_manager::set_device(100),

@@ -17,7 +17,7 @@
 //
 
 #pragma once
-#include "context_manager.cuh"
+#include "runtime.cuh"
 #include <memory>
 #include <vector>
 
@@ -35,20 +35,20 @@ class stream {
     __host__ stream() = default;
 
     __host__ static stream create(int device_id) {
-        int current_device = context_manager::set_device(device_id);
+        int current_device = runtime::set_device(device_id);
         auto* stream_ptr   = new cudaStream_t;
         cuda_error(cudaStreamCreate(stream_ptr))
             .raise_if_error("naga::stream_t creation failed.");
-        context_manager::set_device(current_device);
-        return {*stream_ptr, context_manager::get_device()};
+        runtime::set_device(current_device);
+        return {*stream_ptr, runtime::get_device()};
     }
 
     __host__ static stream create() {
-        return create(context_manager::get_device());
+        return create(runtime::get_device());
     }
 
     __host__ static stream default_stream() {
-        int device_id = context_manager::get_device();
+        int device_id = runtime::get_device();
         return {cudaStreamDefault, device_id};
     }
 
@@ -63,39 +63,39 @@ class stream {
     __host__ const int& associated_device() const { return device_id_; }
 
     __host__ int prepare() const {
-        return context_manager::set_device(device_id_);
+        return runtime::set_device(device_id_);
     }
 
     __host__ cuda_error synchronize() const {
-        int current_device = context_manager::get_device();
-        context_manager::set_device(device_id_);
+        int current_device = runtime::get_device();
+        runtime::set_device(device_id_);
         cuda_error err{cudaStreamSynchronize(*raw_stream_ptr_)};
-        context_manager::set_device(current_device);
+        runtime::set_device(current_device);
         return err;
     }
 
     __host__ bool ready() const {
-        int current_device = context_manager::get_device();
-        context_manager::set_device(device_id_);
+        int current_device = runtime::get_device();
+        runtime::set_device(device_id_);
         bool is_ready = cudaStreamQuery(*raw_stream_ptr_) == cudaSuccess;
-        context_manager::set_device(current_device);
+        runtime::set_device(current_device);
         return is_ready;
     }
 
     __host__ static std::vector<stream>
     create_streams(uint num_streams, int device_id) {
-        int current_device = context_manager::get_device();
-        context_manager::set_device(device_id);
+        int current_device = runtime::get_device();
+        runtime::set_device(device_id);
         std::vector<stream> result;
         for (uint i = 0; i < num_streams; ++i) {
             result.emplace_back(create(device_id));
         }
-        context_manager::set_device(current_device);
+        runtime::set_device(current_device);
         return result;
     }
 
     __host__ static std::vector<stream> create_streams(uint num_streams) {
-        return create_streams(num_streams, context_manager::get_device());
+        return create_streams(num_streams, runtime::get_device());
     }
 
   private:

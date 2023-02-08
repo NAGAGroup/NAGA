@@ -29,16 +29,16 @@ __host__ cuda_error inline synchronize() {
 }
 
 __host__ cuda_error inline synchronize_device(int device) {
-    int old_device   = context_manager::set_device(device);
+    int old_device   = runtime::set_device(device);
     cuda_error error = synchronize();
-    context_manager::set_device(old_device);
+    runtime::set_device(old_device);
     return error;
 }
 
 __host__ std::vector<cuda_error> inline synchronize_all_devices() {
     std::vector<cuda_error> errors;
-    errors.reserve(context_manager::get_device_count());
-    for (int i = 0; i < context_manager::get_device_count(); i++) {
+    errors.reserve(runtime::get_device_count());
+    for (int i = 0; i < runtime::get_device_count(); i++) {
         errors.push_back(synchronize_device(i));
     }
     return errors;
