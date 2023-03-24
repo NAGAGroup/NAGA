@@ -1,0 +1,3 @@
+[submodule "extern/Scalix"]
+	path = extern/Scalix
+	url = https://github.com/NAGAGroup/Scalix
