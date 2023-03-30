@@ -113,9 +113,7 @@ __host__ void compute_partition_sizes(
         );
     }).get();
 
-    std::thread fut_thread([fut = std::move(fut)]() mutable {
-        fut.wait();
-    });
+    std::thread fut_thread([fut = std::move(fut)]() mutable { fut.wait(); });
     fut_thread.detach();
 }
 
@@ -213,8 +211,12 @@ __host__ void assign_indices(
         handler.launch(
             sclx::md_range_t<Dimensions>(indices_container.shape()),
             indices_container,
-            [=] __device__(const sclx::md_index_t<Dimensions>& index, const auto& info) {
-                indices_container[index] = index_start_ptr + partition_index_offsets_[index];
+            [=] __device__(
+                const sclx::md_index_t<Dimensions>& index,
+                const auto& info
+            ) {
+                indices_container[index]
+                    = index_start_ptr + partition_index_offsets_[index];
             }
         );
     }).get();
@@ -224,7 +226,6 @@ __host__ void assign_indices(
     generator_t index_generator(points_, partitioner);
 
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-
         indices_.unset_read_mostly();
 
         // this is required because, as of now, kernel launches don't have a
