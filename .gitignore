@@ -1,3 +1,5 @@
 cmake-build-*/
 .idea/deployment.xml
 examples/*_results/
+
+.idea/other.xml
