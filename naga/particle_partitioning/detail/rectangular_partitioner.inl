@@ -231,11 +231,12 @@ __host__ void assign_indices(
         // way of knowing that indices_ is a result of the kernel
         //
         // I hope to make an array of arrays type data structure in the
-        // future, which, along with properly registering as result memory block,
-        // also abstracts away the memory splitting nonsense above
+        // future, which, along with properly registering as result memory
+        // block, also abstracts away the memory splitting nonsense above
         indices_.unset_read_mostly();
 
-        auto result_tup = sclx::make_array_tuple(indices_container, indices_assigned);
+        auto result_tup
+            = sclx::make_array_tuple(indices_container, indices_assigned);
 
         handler.launch(
             index_generator,
