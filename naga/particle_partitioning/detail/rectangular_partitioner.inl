@@ -226,15 +226,20 @@ __host__ void assign_indices(
     generator_t index_generator(points_, partitioner);
 
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+        // we have to call this as the indices_ pointers are stored
+        // in the indices container, meaning the Scalix backend has no
+        // way of knowing that indices_ is a result of the kernel
+        //
+        // I hope to make an array of arrays type data structure in the
+        // future, which, along with properly registering as result memory block,
+        // also abstracts away the memory splitting nonsense above
         indices_.unset_read_mostly();
 
-        // this is required because, as of now, kernel launches don't have a
-        // way of taking an array list of different types as a result
-        indices_assigned.unset_read_mostly();
+        auto result_tup = sclx::make_array_tuple(indices_container, indices_assigned);
 
         handler.launch(
             index_generator,
-            indices_container,
+            result_tup,
             [=] __device__(
                 const sclx::md_index_t<Dimensions>& partition_index,
                 const sclx::kernel_info<
