@@ -31,7 +31,7 @@
 
 #include <chrono>
 #include <fstream>
-#include <naga/particle_partitioning/rectangular_partitioner.cuh>
+#include <naga/particle_segmentation/rectangular_partitioner.cuh>
 #include <scalix/filesystem.hpp>
 #include <string>
 

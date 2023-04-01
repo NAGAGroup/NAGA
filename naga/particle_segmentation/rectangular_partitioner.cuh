@@ -227,9 +227,9 @@ class rectangular_partitioner {
     )
         : points_(points) {
         if (points_.shape()[0] != Dimensions) {
-            throw std::invalid_argument(
+            sclx::throw_exception<std::invalid_argument>(
                 "The number of dimensions in the points array does not match "
-                "the number of dimensions in the partitioner"
+                "the number of dimensions in the partitioner", "naga::"
             );
         }
 
@@ -348,6 +348,10 @@ class rectangular_partitioner {
 
     __host__ __device__ size_t partition_count() const {
         return partition_sizes_.elements();
+    }
+
+    __host__ __device__ size_t point_count() const {
+        return points_.shape()[1];
     }
 
     __host__ __device__ iterator begin() const {
