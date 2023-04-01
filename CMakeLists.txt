@@ -17,3 +17,6 @@ target_link_libraries(naga INTERFACE scalix)
 # naga examples
 add_executable(rectangular_partitioner examples/rectangular_partitioner.cu)
 target_link_libraries(rectangular_partitioner PRIVATE naga)
+
+add_executable(batched_knn_search examples/batched_knn_search.cu)
+target_link_libraries(batched_knn_search PRIVATE naga)
