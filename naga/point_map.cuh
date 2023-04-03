@@ -38,7 +38,7 @@ namespace naga {
 
 template<class PointMapType>
 struct point_map_traits {
-    using point_type                 = typename PointMapType::point_type;
+    using point_type   = typename PointMapType::point_type;
     using point_traits = point_traits<point_type>;
 };
 
@@ -48,15 +48,19 @@ class default_point_map {
     using point_type = point_view_t<const FloatingPointType, Dimensions>;
 
     __host__ __device__ explicit default_point_map(
-        const sclx::array<typename point_type::value_type, point_type::dimensions>& source_points
+        const sclx::array<
+            typename point_type::value_type,
+            point_type::dimensions>& source_points
     )
         : source_points_(source_points) {}
 
-    __host__ __device__ point_type operator[](const sclx::md_index_t<1> &index) const {
+    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
+    ) const {
         return point_type(&source_points_(0, index[0]));
     }
 
-    __host__ __device__ point_type operator[](const sclx::index_t &index) const {
+    __host__ __device__ point_type operator[](const sclx::index_t& index
+    ) const {
         return point_type(&source_points_(0, index));
     }
 
@@ -65,7 +69,8 @@ class default_point_map {
     }
 
   private:
-    sclx::array<typename point_type::value_type, point_type::dimensions> source_points_;
+    sclx::array<typename point_type::value_type, point_type::dimensions>
+        source_points_;
 };
 
 }  // namespace naga

@@ -176,7 +176,8 @@ compute_euclidean_nearest_neighbors_2d(
                                 dimensions
                             );
                             if (n_found < k) {
-                                distances_squared_tmp[n_found] = distance_squared;
+                                distances_squared_tmp[n_found]
+                                    = distance_squared;
                                 indices(n_found, idx[0])
                                     = part.indices()[p_idx];
                                 n_found++;

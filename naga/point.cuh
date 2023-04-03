@@ -34,18 +34,18 @@
 
 namespace naga {
 
-template <class PointType>
+template<class PointType>
 struct point_traits {
-    using value_type = typename PointType::value_type;
-    static constexpr uint dimensions = PointType::dimensions;
+    using value_type                   = typename PointType::value_type;
+    static constexpr uint dimensions   = PointType::dimensions;
     static constexpr bool is_view_type = PointType::is_view_type;
 };
 
 template<class FloatingPointType, uint Dimensions>
 class point_view_t {
   public:
-    using value_type = FloatingPointType;
-    static constexpr uint dimensions = Dimensions;
+    using value_type                   = FloatingPointType;
+    static constexpr uint dimensions   = Dimensions;
     static constexpr bool is_view_type = true;
 
     __host__ __device__ point_view_t(FloatingPointType* data) : data_(data) {}
@@ -72,8 +72,8 @@ class point_view_t {
 template<class FloatingPointType, uint Dimensions>
 class point_t {
   public:
-    using value_type = FloatingPointType;
-    static constexpr uint dimensions = Dimensions;
+    using value_type                   = FloatingPointType;
+    static constexpr uint dimensions   = Dimensions;
     static constexpr bool is_view_type = false;
 
     point_t() = default;

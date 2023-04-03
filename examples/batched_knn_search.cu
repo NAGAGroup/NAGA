@@ -87,20 +87,18 @@ int main() {
 
     size_t big_grid_point_count = big_grid_size * big_grid_size;
     std::cout << "Number of points in big grid: " << big_grid_point_count
-              << std::endl << std::endl;
+              << std::endl
+              << std::endl;
 
     std::cout << "We expect all nearest points to the first point to be in "
                  "the small grid, except for the first point itself."
               << std::endl;
 
-    for (auto & part_size : partitioner_sizes) {
+    for (auto& part_size : partitioner_sizes) {
         std::cout << "Partitioner size: " << part_size << std::endl;
 
         auto start = std::chrono::high_resolution_clock::now();
-        naga::rectangular_partitioner<float, 2> partitioner(
-            grid,
-            part_size
-        );
+        naga::rectangular_partitioner<float, 2> partitioner(grid, part_size);
         auto end_part_build = std::chrono::high_resolution_clock::now();
 
         auto [distances_squared, indices]
@@ -114,21 +112,24 @@ int main() {
         auto first_nn = indices.get_slice(sclx::md_index_t<1>{0});
         for (auto& i : first_nn) {
             if (i != 0 && i < big_grid_point_count) {
-                std::cerr << "The above expectation was violated, indicating a bug."
-                          << std::endl;
+                std::cerr
+                    << "The above expectation was violated, indicating a bug."
+                    << std::endl;
                 std::cerr << "Offending index: " << i << std::endl;
             }
         }
 
         std::chrono::duration<double> part_build_time = end_part_build - start;
-        std::chrono::duration<double> knn_time        = end_knn - end_part_build;
-        std::chrono::duration<double> total_time      = end_knn - start;
-        std::cout << "Partitioner build time: " << part_build_time.count() * 1000
-                  << " ms" << std::endl;
+        std::chrono::duration<double> knn_time   = end_knn - end_part_build;
+        std::chrono::duration<double> total_time = end_knn - start;
+        std::cout << "Partitioner build time: "
+                  << part_build_time.count() * 1000 << " ms" << std::endl;
         std::cout << "KNN search time: " << knn_time.count() * 1000 << " ms"
                   << std::endl;
         std::cout << "Total time: " << total_time.count() * 1000 << " ms"
-                  << std::endl << std::endl << std::endl;
+                  << std::endl
+                  << std::endl
+                  << std::endl;
     }
 
     return 0;

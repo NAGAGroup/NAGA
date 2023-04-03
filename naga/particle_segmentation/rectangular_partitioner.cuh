@@ -183,17 +183,11 @@ class partition_t {
              + static_cast<typename iterator::difference_type>(partition_size_);
     }
 
-    __host__ __device__ uint size() const {
-        return partition_size_;
-    }
+    __host__ __device__ uint size() const { return partition_size_; }
 
-    __host__ __device__ bool empty() const {
-        return partition_size_ == 0;
-    }
+    __host__ __device__ bool empty() const { return partition_size_ == 0; }
 
-    __host__ __device__ const size_t* indices() const {
-        return indices_;
-    }
+    __host__ __device__ const size_t* indices() const { return indices_; }
 
     friend class rectangular_partitioner<FloatingPointType, Dimensions>;
 
@@ -241,7 +235,8 @@ class rectangular_partitioner {
         if (points_.shape()[0] != Dimensions) {
             sclx::throw_exception<std::invalid_argument>(
                 "The number of dimensions in the points array does not match "
-                "the number of dimensions in the partitioner", "naga::"
+                "the number of dimensions in the partitioner",
+                "naga::"
             );
         }
 

@@ -40,9 +40,9 @@ __host__ __device__ T abs(T&& x) {
     return std::abs(x);
 }
 
-template <class T>
+template<class T>
 __host__ __device__ T sqrt(T&& x) {
     return std::sqrt(x);
 }
 
-}
+}  // namespace naga::math
