@@ -32,9 +32,9 @@
 
 #pragma once
 
+#include "../distance_functions.cuh"
 #include "../point_map.cuh"
 #include "rectangular_partitioner.cuh"
-#include "../distance_functions.cuh"
 #include <tuple>
 
 namespace naga {
@@ -57,7 +57,11 @@ __device__ int insert_if_less_than_max(T value, T* arr, int n) {
     }
 }
 
-template<class PointMapType, class T>
+template<
+    class PointMapType,
+    class T,
+    class DistanceSquaredOp = distance_functions::loopless::euclidean_squared<
+        point_map_traits<PointMapType>::point_traits::dimensions>>
 std::tuple<
     sclx::array<
         std::remove_const_t<
@@ -70,7 +74,8 @@ compute_euclidean_nearest_neighbors_2d(
     const rectangular_partitioner<
         T,
         point_map_traits<PointMapType>::point_traits::dimensions>&
-        segmented_ref_points
+        segmented_ref_points,
+    DistanceSquaredOp&& distance_squared_op = DistanceSquaredOp()
 ) {
     constexpr uint max_k = 256;
     if (k > max_k) {
@@ -80,6 +85,13 @@ compute_euclidean_nearest_neighbors_2d(
             "naga::"
         );
     }
+
+    using distance_traits = distance_functions::distance_function_traits<
+        std::decay_t<DistanceSquaredOp>>;
+    static_assert(
+        distance_traits::is_squared,
+        "Distance function must return squared distance."
+    );
 
     using point_type = typename point_map_traits<PointMapType>::point_type;
     using value_type = std::remove_const_t<
@@ -107,7 +119,7 @@ compute_euclidean_nearest_neighbors_2d(
             sclx::md_range_t<1>{query_points.size()},
             results,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                value_type distances_squared[max_k]{};
+                value_type distances_squared_tmp[max_k]{};
                 value_type query_point[dimensions];
                 const auto& point_tmp = query_points[idx];
                 memcpy(
@@ -131,7 +143,9 @@ compute_euclidean_nearest_neighbors_2d(
                 while (new_points_found || n_found < k) {
                     new_points_found  = false;
                     int search_length = 2 * search_radius + 1;
-                    for (int search_idx = 0; search_idx < search_length * search_length; ++search_idx) {
+                    for (int search_idx = 0;
+                         search_idx < search_length * search_length;
+                         ++search_idx) {
                         int i = search_idx % search_length;
                         int j = search_idx / search_length;
                         if (!(j == 0 || i == 0 || j == search_length - 1
@@ -142,32 +156,51 @@ compute_euclidean_nearest_neighbors_2d(
 
                         i = (i - search_radius) + static_cast<int>(part_idx[0]);
                         j = (j - search_radius) + static_cast<int>(part_idx[1]);
-                        if (i < 0 || j < 0 || i >= segmented_ref_points.shape()[0] || j >= segmented_ref_points.shape()[1])
+                        if (i < 0 || j < 0
+                            || i >= segmented_ref_points.shape()[0]
+                            || j >= segmented_ref_points.shape()[1])
                             continue;
 
                         part_search_idx[0] = i;
                         part_search_idx[1] = j;
 
-                        const auto &part = segmented_ref_points.get_partition(part_search_idx);
+                        const auto& part
+                            = segmented_ref_points.get_partition(part_search_idx
+                            );
 
-                        auto distance_functor = distance_functions::loopless::euclidean_squared<dimensions>{};
                         uint p_idx = 0;
-                        for (const auto &reference_point : part) {
-                            auto distance_squared = distance_functor(query_point, reference_point);
+                        for (const auto& reference_point : part) {
+                            auto distance_squared = distance_squared_op(
+                                query_point,
+                                reference_point,
+                                dimensions
+                            );
                             if (n_found < k) {
-                                distances_squared[n_found] = distance_squared;
-                                indices(n_found, idx[0]) = part.indices()[p_idx];
+                                distances_squared_tmp[n_found] = distance_squared;
+                                indices(n_found, idx[0])
+                                    = part.indices()[p_idx];
                                 n_found++;
                             } else {
-                                int index = insert_if_less_than_max(distance_squared, distances_squared, k);
+                                int index = insert_if_less_than_max(
+                                    distance_squared,
+                                    distances_squared_tmp,
+                                    k
+                                );
                                 if (index != -1) {
-                                    indices(index, idx[0]) = part.indices()[p_idx];
+                                    indices(index, idx[0])
+                                        = part.indices()[p_idx];
                                 }
                             }
                             p_idx++;
                         }
                     }
                 }
+
+                memcpy(
+                    distances_squared_tmp,
+                    &distances_squared(0, idx[0]),
+                    k * sizeof(value_type)
+                );
             }
         );
     });
