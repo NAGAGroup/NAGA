@@ -35,21 +35,22 @@
 
 namespace naga::distance_functions {
 
-template <class DistanceFunctor>
+template<class DistanceFunctor>
 struct distance_function_traits {
     static constexpr bool is_loopless = DistanceFunctor::is_loopless;
-    static constexpr bool is_squared = DistanceFunctor::is_squared;
+    static constexpr bool is_squared  = DistanceFunctor::is_squared;
 };
 
-
-template<class VectorLikeT=void, class VectorLikeU=void>
+template<class VectorLikeT = void, class VectorLikeU = void>
 struct euclidean_squared {
     static constexpr bool is_loopless = false;
-    static constexpr bool is_squared = true;
+    static constexpr bool is_squared  = true;
 
-    __host__ __device__ auto operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions) const {
+    __host__ __device__ auto
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions)
+        const {
         using value_type = decltype(a[0] - b[0]);
-        value_type sum = 0;
+        value_type sum   = 0;
         for (uint i = 0; i < dimensions; ++i) {
             value_type diff = a[i] - b[i];
             sum += diff * diff;
@@ -58,15 +59,17 @@ struct euclidean_squared {
     }
 };
 
-template <>
+template<>
 struct euclidean_squared<void, void> {
     static constexpr bool is_loopless = false;
-    static constexpr bool is_squared = true;
+    static constexpr bool is_squared  = true;
 
-    template <class VectorLikeT, class VectorLikeU>
-    __host__ __device__ auto operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions) const {
+    template<class VectorLikeT, class VectorLikeU>
+    __host__ __device__ auto
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions)
+        const {
         using value_type = decltype(a[0] - b[0]);
-        value_type sum = 0;
+        value_type sum   = 0;
         for (uint i = 0; i < dimensions; ++i) {
             value_type diff = a[i] - b[i];
             sum += diff * diff;
@@ -75,72 +78,85 @@ struct euclidean_squared<void, void> {
     }
 };
 
-template<class VectorLikeT=void, class VectorLikeU=void>
+template<class VectorLikeT = void, class VectorLikeU = void>
 struct euclidean {
     static constexpr bool is_loopless = false;
-    static constexpr bool is_squared = false;
+    static constexpr bool is_squared  = false;
 
-    __host__ __device__ auto operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions) const {
-        return math::sqrt(euclidean_squared<VectorLikeT, VectorLikeU>{}(a, b, dimensions));
+    __host__ __device__ auto
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions)
+        const {
+        return math::sqrt(
+            euclidean_squared<VectorLikeT, VectorLikeU>{}(a, b, dimensions)
+        );
     }
 };
 
-}
+}  // namespace naga::distance_functions
 
 namespace naga::distance_functions::loopless {
 
-template <uint Dimensions, class VectorLikeT=void, class VectorLikeU=void>
+template<uint Dimensions, class VectorLikeT = void, class VectorLikeU = void>
 class euclidean_squared {
   public:
     static constexpr bool is_loopless = true;
-    static constexpr bool is_squared = true;
+    static constexpr bool is_squared  = true;
 
-    __host__ __device__ auto operator()(const VectorLikeT& a, const VectorLikeU& b) const {
+    __host__ __device__ auto
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint) const {
         return accumulate_pow2_diffs<Dimensions>(a, b);
     }
 
   private:
-    template <uint D>
-    __host__ __device__ auto accumulate_pow2_diffs(const VectorLikeT& a, const VectorLikeU& b) const {
+    template<uint D>
+    __host__ __device__ auto
+    accumulate_pow2_diffs(const VectorLikeT& a, const VectorLikeU& b) const {
         if constexpr (D == 0) {
             return 0;
         } else {
-            return (a[D - 1] - b[D - 1]) * (a[D - 1] - b[D - 1]) + accumulate_pow2_diffs<D - 1>(a, b);
+            return (a[D - 1] - b[D - 1]) * (a[D - 1] - b[D - 1])
+                 + accumulate_pow2_diffs<D - 1>(a, b);
         }
     }
 };
 
-template <uint Dimensions>
+template<uint Dimensions>
 class euclidean_squared<Dimensions, void, void> {
   public:
     static constexpr bool is_loopless = true;
-    static constexpr bool is_squared = true;
+    static constexpr bool is_squared  = true;
 
-    template <class VectorLikeT, class VectorLikeU>
-    __host__ __device__ auto operator()(const VectorLikeT& a, const VectorLikeU& b) const {
+    template<class VectorLikeT, class VectorLikeU>
+    __host__ __device__ auto
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint) const {
         return accumulate_pow2_diffs<Dimensions>(a, b);
     }
 
   private:
-    template <uint D, class VectorLikeT, class VectorLikeU>
-    __host__ __device__ auto accumulate_pow2_diffs(const VectorLikeT& a, const VectorLikeU& b) const {
+    template<uint D, class VectorLikeT, class VectorLikeU>
+    __host__ __device__ auto
+    accumulate_pow2_diffs(const VectorLikeT& a, const VectorLikeU& b) const {
         if constexpr (D == 0) {
             return 0;
         } else {
-            return (a[D - 1] - b[D - 1]) * (a[D - 1] - b[D - 1]) + accumulate_pow2_diffs<D - 1>(a, b);
+            return (a[D - 1] - b[D - 1]) * (a[D - 1] - b[D - 1])
+                 + accumulate_pow2_diffs<D - 1>(a, b);
         }
     }
 };
 
-template <uint Dimensions, class VectorLikeT=void, class VectorLikeU=void>
+template<uint Dimensions, class VectorLikeT = void, class VectorLikeU = void>
 class euclidean {
   public:
     static constexpr bool is_loopless = true;
-    static constexpr bool is_squared = false;
+    static constexpr bool is_squared  = false;
 
-    __host__ __device__ auto operator()(const VectorLikeT& a, const VectorLikeU& b) const {
-        return math::sqrt(euclidean_squared<Dimensions, VectorLikeT, VectorLikeU>{}(a, b));
+    __host__ __device__ auto
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint) const {
+        return math::sqrt(
+            euclidean_squared<Dimensions, VectorLikeT, VectorLikeU>{}(a, b)
+        );
     }
 };
 
-}
+}  // namespace naga::distance_functions::loopless
