@@ -33,3 +33,146 @@
 #pragma once
 
 #include "../point_map.cuh"
+#include "rectangular_partitioner.cuh"
+#include "../distance_functions.cuh"
+#include <tuple>
+
+namespace naga {
+
+template<class T>
+__device__ int insert_if_less_than_max(T value, T* arr, int n) {
+    T max     = arr[0];
+    int index = 0;
+    for (int i = 1; i < n; i++) {
+        if (max < arr[i]) {
+            max   = arr[i];
+            index = i;
+        }
+    }
+    if (value < max) {
+        arr[index] = value;
+        return index;
+    } else {
+        return -1;
+    }
+}
+
+template<class PointMapType, class T>
+std::tuple<
+    sclx::array<
+        std::remove_const_t<
+            typename point_map_traits<PointMapType>::point_traits::value_type>,
+        2>,
+    sclx::array<sclx::index_t, 2>>
+compute_euclidean_nearest_neighbors_2d(
+    uint k,
+    const PointMapType& query_points,
+    const rectangular_partitioner<
+        T,
+        point_map_traits<PointMapType>::point_traits::dimensions>&
+        segmented_ref_points
+) {
+    constexpr uint max_k = 256;
+    if (k > max_k) {
+        sclx::throw_exception<std::invalid_argument>(
+            "Requested number of neighbors exceeds maximum of "
+                + std::to_string(max_k),
+            "naga::"
+        );
+    }
+
+    using point_type = typename point_map_traits<PointMapType>::point_type;
+    using value_type = std::remove_const_t<
+        typename point_map_traits<PointMapType>::point_traits::value_type>;
+    constexpr uint dimensions
+        = point_map_traits<PointMapType>::point_traits::dimensions;
+
+    for (int i = 0; i < dimensions; i++) {
+        if (segmented_ref_points.shape()[i] > std::numeric_limits<int>::max()) {
+            sclx::throw_exception<std::overflow_error>(
+                "Partitioner has too many partitions in dimension "
+                    + std::to_string(i) + ", will cause overflow.",
+                "naga::"
+            );
+        }
+    }
+
+    sclx::array<value_type, 2> distances_squared{k, query_points.size()};
+    sclx::array<sclx::index_t, 2> indices{k, query_points.size()};
+
+    sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+        auto results = sclx::make_array_tuple(distances_squared, indices);
+
+        handler.launch(
+            sclx::md_range_t<1>{query_points.size()},
+            results,
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                value_type distances_squared[max_k]{};
+                value_type query_point[dimensions];
+                const auto& point_tmp = query_points[idx];
+                memcpy(
+                    query_point,
+                    &point_tmp[0],
+                    dimensions * sizeof(value_type)
+                );
+
+                int max_search_radius
+                    = static_cast<int>(segmented_ref_points.shape()[0] / 2);
+                max_search_radius = max(
+                    max_search_radius,
+                    static_cast<int>(segmented_ref_points.shape()[1] / 2)
+                );
+
+                sclx::md_index_t<dimensions> part_idx
+                    = segmented_ref_points.get_partition_index(query_point);
+                int search_radius     = 0;
+                uint n_found          = 0;
+                bool new_points_found = true;
+                while (new_points_found || n_found < k) {
+                    new_points_found  = false;
+                    int search_length = 2 * search_radius + 1;
+                    for (int search_idx = 0; search_idx < search_length * search_length; ++search_idx) {
+                        int i = search_idx % search_length;
+                        int j = search_idx / search_length;
+                        if (!(j == 0 || i == 0 || j == search_length - 1
+                              || i == search_length - 1))
+                            continue;
+
+                        sclx::md_index_t<dimensions> part_search_idx = part_idx;
+
+                        i = (i - search_radius) + static_cast<int>(part_idx[0]);
+                        j = (j - search_radius) + static_cast<int>(part_idx[1]);
+                        if (i < 0 || j < 0 || i >= segmented_ref_points.shape()[0] || j >= segmented_ref_points.shape()[1])
+                            continue;
+
+                        part_search_idx[0] = i;
+                        part_search_idx[1] = j;
+
+                        const auto &part = segmented_ref_points.get_partition(part_search_idx);
+
+                        auto distance_functor = distance_functions::loopless::euclidean_squared<dimensions>{};
+                        uint p_idx = 0;
+                        for (const auto &reference_point : part) {
+                            auto distance_squared = distance_functor(query_point, reference_point);
+                            if (n_found < k) {
+                                distances_squared[n_found] = distance_squared;
+                                indices(n_found, idx[0]) = part.indices()[p_idx];
+                                n_found++;
+                            } else {
+                                int index = insert_if_less_than_max(distance_squared, distances_squared, k);
+                                if (index != -1) {
+                                    indices(index, idx[0]) = part.indices()[p_idx];
+                                }
+                            }
+                            p_idx++;
+                        }
+                    }
+                }
+            }
+        );
+    });
+
+    return std::make_tuple(distances_squared, indices);
+}
+
+}  // namespace naga
