@@ -127,14 +127,17 @@ batched_nearest_neighbors(
 
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         auto results = sclx::make_array_tuple(distances_squared, indices);
+        sclx::local_array<value_type, 2> distances_squared_shared(handler, {k, sclx::cuda::traits::kernel::default_block_shape[0]});
+        sclx::local_array<sclx::index_t, 2> indices_shared(handler, {k, sclx::cuda::traits::kernel::default_block_shape[0]});
+        sclx::local_array<value_type, 2> query_point_shared(handler, {dimensions, sclx::cuda::traits::kernel::default_block_shape[0]});
 
         handler.launch(
             sclx::md_range_t<1>{query_points.size()},
             results,
-            [=] __device__(const sclx::md_index_t<1>& idx, const auto& info) {
-                value_type distances_squared_tmp[max_k]{};
-                sclx::index_t indices_tmp[max_k]{};
-                value_type query_point[dimensions];
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto& info) mutable {
+                value_type *distances_squared_tmp = &distances_squared_shared(0, info.local_thread_id()[0]);
+                sclx::index_t *indices_tmp = &indices_shared(0, info.local_thread_id()[0]);
+                value_type *query_point = &query_point_shared(0, info.local_thread_id()[0]);
                 const auto& point_tmp = query_points[idx];
                 memcpy(
                     query_point,
@@ -153,8 +156,6 @@ batched_nearest_neighbors(
                         )
                     );
                 }
-
-                uint num_calls = 0;
 
                 sclx::md_index_t<dimensions> part_idx
                     = segmented_ref_points.get_partition_index(query_point);
