@@ -90,15 +90,6 @@ batched_nearest_neighbors(
         segmented_ref_points,
     DistanceSquaredOp&& distance_squared_op = DistanceSquaredOp()
 ) {
-    constexpr uint max_k = 256;
-    if (k > max_k) {
-        sclx::throw_exception<std::invalid_argument>(
-            "Requested number of neighbors exceeds maximum of "
-                + std::to_string(max_k),
-            "naga::"
-        );
-    }
-
     using distance_traits = distance_functions::distance_function_traits<
         std::decay_t<DistanceSquaredOp>>;
     static_assert(
@@ -111,6 +102,17 @@ batched_nearest_neighbors(
         typename point_map_traits<PointMapType>::point_traits::value_type>;
     constexpr uint dimensions
         = point_map_traits<PointMapType>::point_traits::dimensions;
+
+
+    uint shared_mem_per_thread = sizeof(value_type) * (k + dimensions) + sizeof(sclx::index_t) * k;
+    uint max_shared_mem_per_block = /*48KB*/ 49152;
+    uint max_threads_per_block = max_shared_mem_per_block / shared_mem_per_thread;
+    if (max_threads_per_block == 0) {
+        sclx::throw_exception<std::invalid_argument>(
+            "Requested number of neighbors is too large for shared memory.",
+            "naga::"
+        );
+    }
 
     for (int i = 0; i < dimensions; i++) {
         if (segmented_ref_points.shape()[i] > std::numeric_limits<int>::max()) {
@@ -127,9 +129,9 @@ batched_nearest_neighbors(
 
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         auto results = sclx::make_array_tuple(distances_squared, indices);
-        sclx::local_array<value_type, 2> distances_squared_shared(handler, {k, sclx::cuda::traits::kernel::default_block_shape[0]});
-        sclx::local_array<sclx::index_t, 2> indices_shared(handler, {k, sclx::cuda::traits::kernel::default_block_shape[0]});
-        sclx::local_array<value_type, 2> query_point_shared(handler, {dimensions, sclx::cuda::traits::kernel::default_block_shape[0]});
+        sclx::local_array<value_type, 2> distances_squared_shared(handler, {k, max_threads_per_block});
+        sclx::local_array<sclx::index_t, 2> indices_shared(handler, {k, max_threads_per_block});
+        sclx::local_array<value_type, 2> query_point_shared(handler, {dimensions, max_threads_per_block});
 
         handler.launch(
             sclx::md_range_t<1>{query_points.size()},
@@ -270,7 +272,8 @@ batched_nearest_neighbors(
                     indices_tmp,
                     k * sizeof(sclx::index_t)
                 );
-            }
+            },
+            sclx::md_range_t<1>{max_threads_per_block}
         );
     }).get();
 
