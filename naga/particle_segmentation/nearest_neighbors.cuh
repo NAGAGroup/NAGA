@@ -39,21 +39,34 @@
 
 namespace naga {
 
-template<class T>
-__device__ int insert_if_less_than_max(T value, T* arr, int n) {
-    T max     = arr[0];
-    int index = 0;
-    for (int i = 1; i < n; i++) {
-        if (max < arr[i]) {
-            max   = arr[i];
-            index = i;
+template <class T, class U>
+__host__ __device__ void insertion_sort(T* array, U* matched_array, uint size, bool is_sorted_except_last = false) {
+    if (!is_sorted_except_last) {
+        for (uint i = 1; i < size; ++i) {
+            T key         = array[i];
+            U key_matched = matched_array[i];
+            int j         = i - 1;
+            while (j >= 0 && array[j] > key) {
+                array[j + 1]         = array[j];
+                matched_array[j + 1] = matched_array[j];
+                j--;
+            }
+            array[j + 1]         = key;
+            matched_array[j + 1] = key_matched;
         }
-    }
-    if (value < max) {
-        arr[index] = value;
-        return index;
     } else {
-        return -1;
+        T key         = array[size - 1];
+        U key_matched = matched_array[size - 1];
+        for (uint i = size - 1; i > 0; --i) {
+            if (array[i - 1] > key) {
+                array[i]         = array[i - 1];
+                matched_array[i] = matched_array[i - 1];
+                array[i - 1]     = key;
+                matched_array[i - 1] = key_matched;
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -68,7 +81,7 @@ std::tuple<
             typename point_map_traits<PointMapType>::point_traits::value_type>,
         2>,
     sclx::array<sclx::index_t, 2>>
-compute_euclidean_nearest_neighbors_2d(
+batched_nearest_neighbors(
     uint k,
     const PointMapType& query_points,
     const rectangular_partitioner<
@@ -118,8 +131,9 @@ compute_euclidean_nearest_neighbors_2d(
         handler.launch(
             sclx::md_range_t<1>{query_points.size()},
             results,
-            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto& info) {
                 value_type distances_squared_tmp[max_k]{};
+                sclx::index_t indices_tmp[max_k]{};
                 value_type query_point[dimensions];
                 const auto& point_tmp = query_points[idx];
                 memcpy(
@@ -128,41 +142,79 @@ compute_euclidean_nearest_neighbors_2d(
                     dimensions * sizeof(value_type)
                 );
 
-                int max_search_radius
-                    = static_cast<int>(segmented_ref_points.shape()[0] / 2);
-                max_search_radius = max(
-                    max_search_radius,
-                    static_cast<int>(segmented_ref_points.shape()[1] / 2)
+                int max_search_radius = static_cast<int>(
+                    (segmented_ref_points.shape()[0] + 1) / 2
                 );
+                for (int i = 1; i < dimensions; i++) {
+                    max_search_radius = max(
+                        max_search_radius,
+                        static_cast<int>(
+                            (segmented_ref_points.shape()[i] + 1) / 2
+                        )
+                    );
+                }
+
+                uint num_calls = 0;
 
                 sclx::md_index_t<dimensions> part_idx
                     = segmented_ref_points.get_partition_index(query_point);
                 int search_radius     = 0;
                 uint n_found          = 0;
                 bool new_points_found = true;
-                while (new_points_found || n_found < k) {
+                int search_index_list[dimensions]{};
+
+
+                while ((new_points_found || n_found < k)
+                       && search_radius <= max_search_radius) {
+
                     new_points_found  = false;
+
                     int search_length = 2 * search_radius + 1;
-                    for (int search_idx = 0;
-                         search_idx < search_length * search_length;
-                         ++search_idx) {
-                        int i = search_idx % search_length;
-                        int j = search_idx / search_length;
-                        if (!(j == 0 || i == 0 || j == search_length - 1
-                              || i == search_length - 1))
+
+                    size_t max_linear_search_idx = math::loopless::pow<dimensions>(
+                        search_length
+                    );
+                    for (size_t linear_search_idx = 0;
+                         linear_search_idx
+                         < max_linear_search_idx;
+                         ++linear_search_idx) {
+
+                        size_t linear_search_idx_tmp = linear_search_idx;
+                        for (int i = 0; i < dimensions; i++) {
+                            search_index_list[i]
+                                = linear_search_idx_tmp % search_length;
+                            linear_search_idx_tmp /= search_length;
+                        }
+
+                        bool is_valid_linear_index = false;
+                        for (int i = 0; i < dimensions; i++) {
+                            if (search_index_list[i] == 0
+                                || search_index_list[i] == search_length - 1) {
+                                is_valid_linear_index = true;
+                                break;
+                            }
+                        }
+                        if (!is_valid_linear_index) {
                             continue;
+                        }
 
                         sclx::md_index_t<dimensions> part_search_idx = part_idx;
 
-                        i = (i - search_radius) + static_cast<int>(part_idx[0]);
-                        j = (j - search_radius) + static_cast<int>(part_idx[1]);
-                        if (i < 0 || j < 0
-                            || i >= segmented_ref_points.shape()[0]
-                            || j >= segmented_ref_points.shape()[1])
+                        for (int i = 0; i < dimensions; i++) {
+                            search_index_list[i] = search_index_list[i]
+                                                 - search_radius + part_idx[i];
+                            if (search_index_list[i] < 0
+                                || search_index_list[i] >= static_cast<int>(
+                                       segmented_ref_points.shape()[i]
+                                   )) {
+                                is_valid_linear_index = false;
+                                break;
+                            }
+                            part_search_idx[i] = search_index_list[i];
+                        }
+                        if (!is_valid_linear_index) {
                             continue;
-
-                        part_search_idx[0] = i;
-                        part_search_idx[1] = j;
+                        }
 
                         const auto& part
                             = segmented_ref_points.get_partition(part_search_idx
@@ -178,33 +230,48 @@ compute_euclidean_nearest_neighbors_2d(
                             if (n_found < k) {
                                 distances_squared_tmp[n_found]
                                     = distance_squared;
-                                indices(n_found, idx[0])
+                                indices_tmp[n_found]
                                     = part.indices()[p_idx];
                                 n_found++;
+                                if (n_found == k) {
+                                     insertion_sort(distances_squared_tmp, indices_tmp, k);
+                                }
+                                new_points_found = true;
                             } else {
-                                int index = insert_if_less_than_max(
-                                    distance_squared,
-                                    distances_squared_tmp,
-                                    k
-                                );
-                                if (index != -1) {
-                                    indices(index, idx[0])
-                                        = part.indices()[p_idx];
+                                if (distance_squared < distances_squared_tmp[k - 1]) {
+                                    distances_squared_tmp[k - 1]
+                                        = distance_squared;
+                                    indices_tmp[k - 1] = part.indices()[p_idx];
+                                    insertion_sort(distances_squared_tmp, indices_tmp, k, true);
                                 }
                             }
                             p_idx++;
                         }
                     }
+
+                    ++search_radius;
+                }
+
+                if (n_found < k) {
+                    printf(
+                        "Warning: Not enough points found for query point %u\n",
+                        static_cast<uint>(idx[0])
+                    );
                 }
 
                 memcpy(
-                    distances_squared_tmp,
                     &distances_squared(0, idx[0]),
+                    distances_squared_tmp,
                     k * sizeof(value_type)
+                );
+                memcpy(
+                    &indices(0, idx[0]),
+                    indices_tmp,
+                    k * sizeof(sclx::index_t)
                 );
             }
         );
-    });
+    }).get();
 
     return std::make_tuple(distances_squared, indices);
 }

@@ -31,61 +31,77 @@
 #include <chrono>
 #include <naga/particle_segmentation/nearest_neighbors.cuh>
 
+template <class T, uint Dimensions>
+class grid_point_generator {
+public:
+    __host__ grid_point_generator(
+        sclx::array<T, 2> grid,
+        T spacing,
+        size_t grid_size,
+        T offset = 0) : grid(grid), spacing(spacing), grid_size(grid_size), offset(offset) {}
+
+    template <class KernelInfo = void>
+    __host__ __device__ void
+    operator()(const sclx::md_index_t<1>& idx, const KernelInfo&) const {
+        sclx::index_t linear_index = idx[0];
+        for (uint i = 0; i < Dimensions; ++i) {
+            grid(i, idx[0]) = (linear_index % grid_size) * spacing + offset;
+            linear_index /= grid_size;
+        }
+    }
+
+  private:
+    sclx::array<T, 2> grid;
+    T spacing;
+    size_t grid_size;
+    T offset;
+};
+
 int main() {
-    size_t big_grid_size     = 3000;
+    size_t big_grid_size     = 200;
     size_t small_grid_size   = 4;
     float big_grid_spacing   = 1.0f;
-    float small_grid_spacing = 1.0f / 3.f;
+    float small_grid_spacing = 1.0f / small_grid_size;
+    constexpr uint dims                = 3;
     sclx::array<float, 2> grid{
-        2,
-        big_grid_size * big_grid_size + small_grid_size * small_grid_size};
+        dims,
+        static_cast<size_t>(
+            std::pow(big_grid_size, dims) + std::pow(small_grid_size, dims)
+        )};
 
-    uint k = small_grid_size * small_grid_size + 1;
+    uint k = static_cast<uint>(std::pow(small_grid_size, dims));
 
     // fill large grid
-    auto big_grid_slice = grid.get_range({0}, {big_grid_size * big_grid_size});
+    auto big_grid_slice = grid.get_range(
+        {0},
+        {static_cast<size_t>(std::pow(big_grid_size, dims))}
+    );
     sclx::execute_kernel([=](sclx::kernel_handler& handler) {
         handler.launch(
-            sclx::md_range_t<1>{big_grid_size * big_grid_size},
+            sclx::md_range_t<1>{static_cast<size_t>(std::pow(big_grid_size, dims))},
             big_grid_slice,
-            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                auto x = idx[0] % big_grid_size;
-                auto y = idx[0] / big_grid_size;
-                big_grid_slice(0, idx[0])
-                    = static_cast<float>(x) * big_grid_spacing;
-                big_grid_slice(1, idx[0])
-                    = static_cast<float>(y) * big_grid_spacing;
-            }
+            grid_point_generator<float, dims>{big_grid_slice, big_grid_spacing, big_grid_size}
         );
     });
 
     // fill small grid such that all nearest neighbors to the first point in the
     // large grid are in the small grid
     auto small_grid_slice = grid.get_range(
-        {big_grid_size * big_grid_size},
-        {big_grid_size * big_grid_size + small_grid_size * small_grid_size}
+        {static_cast<size_t>(std::pow(big_grid_size, dims))},
+        {static_cast<size_t>(std::pow(big_grid_size, dims) + std::pow(small_grid_size, dims))}
     );
     sclx::execute_kernel([=](sclx::kernel_handler& handler) {
         handler.launch(
             sclx::md_range_t<1>{small_grid_size * small_grid_size},
             small_grid_slice,
-            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                auto x = idx[0] % small_grid_size;
-                auto y = idx[0] / small_grid_size;
-                small_grid_slice(0, idx[0])
-                    = static_cast<float>(x) * small_grid_spacing
-                    - small_grid_size / 2.f * small_grid_spacing;
-                small_grid_slice(1, idx[0])
-                    = static_cast<float>(y) * small_grid_spacing
-                    - small_grid_size / 2.f * small_grid_spacing;
-            }
+            grid_point_generator<float, dims>{small_grid_slice, small_grid_spacing, small_grid_size, -0.5f * small_grid_spacing * small_grid_size}
         );
     });
 
     uint partitioner_sizes[]
         = {static_cast<uint>(k / 2.f), k, k * 2, k * 4, k * 8, k * 16};
 
-    size_t big_grid_point_count = big_grid_size * big_grid_size;
+    size_t big_grid_point_count = std::pow(big_grid_size, dims);
     std::cout << "Number of points in big grid: " << big_grid_point_count
               << std::endl
               << std::endl;
@@ -98,15 +114,17 @@ int main() {
         std::cout << "Partitioner size: " << part_size << std::endl;
 
         auto start = std::chrono::high_resolution_clock::now();
-        naga::rectangular_partitioner<float, 2> partitioner(grid, part_size);
+        naga::rectangular_partitioner<float, dims> partitioner(grid, part_size);
         auto end_part_build = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> part_build_time = end_part_build - start;
+        std::cout << "Partitioner build time: "
+                  << part_build_time.count() * 1000 << " ms" << std::endl;
 
-        auto [distances_squared, indices]
-            = naga::compute_euclidean_nearest_neighbors_2d(
-                k,
-                naga::default_point_map<float, 2>{grid},
-                partitioner
-            );
+        auto [distances_squared, indices] = naga::batched_nearest_neighbors(
+            k,
+            naga::default_point_map<float, dims>{big_grid_slice},
+            partitioner
+        );
         auto end_knn = std::chrono::high_resolution_clock::now();
 
         auto first_nn = indices.get_slice(sclx::md_index_t<1>{0});
@@ -119,11 +137,8 @@ int main() {
             }
         }
 
-        std::chrono::duration<double> part_build_time = end_part_build - start;
         std::chrono::duration<double> knn_time   = end_knn - end_part_build;
         std::chrono::duration<double> total_time = end_knn - start;
-        std::cout << "Partitioner build time: "
-                  << part_build_time.count() * 1000 << " ms" << std::endl;
         std::cout << "KNN search time: " << knn_time.count() * 1000 << " ms"
                   << std::endl;
         std::cout << "Total time: " << total_time.count() * 1000 << " ms"

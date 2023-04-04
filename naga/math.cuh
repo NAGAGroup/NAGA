@@ -45,4 +45,28 @@ __host__ __device__ T sqrt(T&& x) {
     return std::sqrt(x);
 }
 
+template <class T, class U>
+__host__ __device__ auto pow(T&& x, U &&y) -> decltype(std::pow(x, y)) {
+    return std::pow(x, y);
+}
+
+namespace loopless {
+
+template<uint N, class T>
+__host__ __device__ auto pow(T&& x) -> decltype(x * x) {
+    if constexpr (N == 0) {
+        return 1;
+    } else if constexpr (N == 1) {
+        return x;
+    } else if constexpr (N % 2 == 0) {
+        auto y = pow<N / 2>(x);
+        return y * y;
+    } else {
+        auto y = pow<N / 2>(x);
+        return y * y * x;
+    }
+}
+
+}
+
 }  // namespace naga::math
