@@ -48,16 +48,16 @@ class default_point_map {
     using point_type = point_view_t<const FloatingPointType, Dimensions>;
 
     __host__ __device__ explicit default_point_map(
-        const sclx::array<
-            typename point_type::value_type,
-            2>& source_points
+        const sclx::array<typename point_type::value_type, 2>& source_points
     )
         : source_points_(source_points) {
 #ifndef __CUDA_ARCH__
         if (source_points_.shape()[0] != point_type::dimensions) {
             sclx::throw_exception<std::invalid_argument>(
                 "The number of dimensions in the source points does not match "
-                "the number of dimensions in the point type.", "naga::default_point_map::");
+                "the number of dimensions in the point type.",
+                "naga::default_point_map::"
+            );
         }
 #endif
     }
@@ -77,8 +77,7 @@ class default_point_map {
     }
 
   private:
-    sclx::array<typename point_type::value_type, 2>
-        source_points_;
+    sclx::array<typename point_type::value_type, 2> source_points_;
 };
 
 }  // namespace naga

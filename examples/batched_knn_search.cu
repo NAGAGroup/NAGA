@@ -31,16 +31,21 @@
 #include <chrono>
 #include <naga/particle_segmentation/nearest_neighbors.cuh>
 
-template <class T, uint Dimensions>
+template<class T, uint Dimensions>
 class grid_point_generator {
-public:
+  public:
     __host__ grid_point_generator(
         sclx::array<T, 2> grid,
         T spacing,
         size_t grid_size,
-        T offset = 0) : grid(grid), spacing(spacing), grid_size(grid_size), offset(offset) {}
+        T offset = 0
+    )
+        : grid(grid),
+          spacing(spacing),
+          grid_size(grid_size),
+          offset(offset) {}
 
-    template <class KernelInfo = void>
+    template<class KernelInfo = void>
     __host__ __device__ void
     operator()(const sclx::md_index_t<1>& idx, const KernelInfo&) const {
         sclx::index_t linear_index = idx[0];
@@ -62,7 +67,7 @@ int main() {
     size_t small_grid_size   = 4;
     float big_grid_spacing   = 1.0f;
     float small_grid_spacing = 1.0f / small_grid_size;
-    constexpr uint dims                = 3;
+    constexpr uint dims      = 3;
     sclx::array<float, 2> grid{
         dims,
         static_cast<size_t>(
@@ -78,9 +83,13 @@ int main() {
     );
     sclx::execute_kernel([=](sclx::kernel_handler& handler) {
         handler.launch(
-            sclx::md_range_t<1>{static_cast<size_t>(std::pow(big_grid_size, dims))},
+            sclx::md_range_t<1>{
+                static_cast<size_t>(std::pow(big_grid_size, dims))},
             big_grid_slice,
-            grid_point_generator<float, dims>{big_grid_slice, big_grid_spacing, big_grid_size}
+            grid_point_generator<float, dims>{
+                big_grid_slice,
+                big_grid_spacing,
+                big_grid_size}
         );
     });
 
@@ -88,13 +97,19 @@ int main() {
     // large grid are in the small grid
     auto small_grid_slice = grid.get_range(
         {static_cast<size_t>(std::pow(big_grid_size, dims))},
-        {static_cast<size_t>(std::pow(big_grid_size, dims) + std::pow(small_grid_size, dims))}
+        {static_cast<size_t>(
+            std::pow(big_grid_size, dims) + std::pow(small_grid_size, dims)
+        )}
     );
     sclx::execute_kernel([=](sclx::kernel_handler& handler) {
         handler.launch(
             sclx::md_range_t<1>{small_grid_size * small_grid_size},
             small_grid_slice,
-            grid_point_generator<float, dims>{small_grid_slice, small_grid_spacing, small_grid_size, -0.5f * small_grid_spacing * small_grid_size}
+            grid_point_generator<float, dims>{
+                small_grid_slice,
+                small_grid_spacing,
+                small_grid_size,
+                -0.5f * small_grid_spacing * small_grid_size}
         );
     });
 

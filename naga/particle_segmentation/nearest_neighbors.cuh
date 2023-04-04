@@ -39,8 +39,13 @@
 
 namespace naga {
 
-template <class T, class U>
-__host__ __device__ void insertion_sort(T* array, U* matched_array, uint size, bool is_sorted_except_last = false) {
+template<class T, class U>
+__host__ __device__ void insertion_sort(
+    T* array,
+    U* matched_array,
+    uint size,
+    bool is_sorted_except_last = false
+) {
     if (!is_sorted_except_last) {
         for (uint i = 1; i < size; ++i) {
             T key         = array[i];
@@ -59,9 +64,9 @@ __host__ __device__ void insertion_sort(T* array, U* matched_array, uint size, b
         U key_matched = matched_array[size - 1];
         for (uint i = size - 1; i > 0; --i) {
             if (array[i - 1] > key) {
-                array[i]         = array[i - 1];
-                matched_array[i] = matched_array[i - 1];
-                array[i - 1]     = key;
+                array[i]             = array[i - 1];
+                matched_array[i]     = matched_array[i - 1];
+                array[i - 1]         = key;
                 matched_array[i - 1] = key_matched;
             } else {
                 break;
@@ -103,10 +108,11 @@ batched_nearest_neighbors(
     constexpr uint dimensions
         = point_map_traits<PointMapType>::point_traits::dimensions;
 
-
-    uint shared_mem_per_thread = sizeof(value_type) * (k + dimensions) + sizeof(sclx::index_t) * k;
+    uint shared_mem_per_thread
+        = sizeof(value_type) * (k + dimensions) + sizeof(sclx::index_t) * k;
     uint max_shared_mem_per_block = /*48KB*/ 49152;
-    uint max_threads_per_block = max_shared_mem_per_block / shared_mem_per_thread;
+    uint max_threads_per_block
+        = max_shared_mem_per_block / shared_mem_per_thread;
     if (max_threads_per_block == 0) {
         sclx::throw_exception<std::invalid_argument>(
             "Requested number of neighbors is too large for shared memory.",
@@ -129,17 +135,32 @@ batched_nearest_neighbors(
 
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         auto results = sclx::make_array_tuple(distances_squared, indices);
-        sclx::local_array<value_type, 2> distances_squared_shared(handler, {k, max_threads_per_block});
-        sclx::local_array<sclx::index_t, 2> indices_shared(handler, {k, max_threads_per_block});
-        sclx::local_array<value_type, 2> query_point_shared(handler, {dimensions, max_threads_per_block});
+        sclx::local_array<value_type, 2> distances_squared_shared(
+            handler,
+            {k, max_threads_per_block}
+        );
+        sclx::local_array<sclx::index_t, 2> indices_shared(
+            handler,
+            {k, max_threads_per_block}
+        );
+        sclx::local_array<value_type, 2> query_point_shared(
+            handler,
+            {dimensions, max_threads_per_block}
+        );
 
         handler.launch(
             sclx::md_range_t<1>{query_points.size()},
             results,
-            [=] __device__(const sclx::md_index_t<1>& idx, const auto& info) mutable {
-                value_type *distances_squared_tmp = &distances_squared_shared(0, info.local_thread_id()[0]);
-                sclx::index_t *indices_tmp = &indices_shared(0, info.local_thread_id()[0]);
-                value_type *query_point = &query_point_shared(0, info.local_thread_id()[0]);
+            [=] __device__(
+                const sclx::md_index_t<1>& idx,
+                const auto& info
+            ) mutable {
+                value_type* distances_squared_tmp
+                    = &distances_squared_shared(0, info.local_thread_id()[0]);
+                sclx::index_t* indices_tmp
+                    = &indices_shared(0, info.local_thread_id()[0]);
+                value_type* query_point
+                    = &query_point_shared(0, info.local_thread_id()[0]);
                 const auto& point_tmp = query_points[idx];
                 memcpy(
                     query_point,
@@ -166,20 +187,17 @@ batched_nearest_neighbors(
                 bool new_points_found = true;
                 int search_index_list[dimensions]{};
 
-
                 while ((new_points_found || n_found < k)
                        && search_radius <= max_search_radius) {
 
-                    new_points_found  = false;
+                    new_points_found = false;
 
                     int search_length = 2 * search_radius + 1;
 
-                    size_t max_linear_search_idx = math::loopless::pow<dimensions>(
-                        search_length
-                    );
+                    size_t max_linear_search_idx
+                        = math::loopless::pow<dimensions>(search_length);
                     for (size_t linear_search_idx = 0;
-                         linear_search_idx
-                         < max_linear_search_idx;
+                         linear_search_idx < max_linear_search_idx;
                          ++linear_search_idx) {
 
                         size_t linear_search_idx_tmp = linear_search_idx;
@@ -233,19 +251,28 @@ batched_nearest_neighbors(
                             if (n_found < k) {
                                 distances_squared_tmp[n_found]
                                     = distance_squared;
-                                indices_tmp[n_found]
-                                    = part.indices()[p_idx];
+                                indices_tmp[n_found] = part.indices()[p_idx];
                                 n_found++;
                                 if (n_found == k) {
-                                     insertion_sort(distances_squared_tmp, indices_tmp, k);
+                                    insertion_sort(
+                                        distances_squared_tmp,
+                                        indices_tmp,
+                                        k
+                                    );
                                 }
                                 new_points_found = true;
                             } else {
-                                if (distance_squared < distances_squared_tmp[k - 1]) {
+                                if (distance_squared
+                                    < distances_squared_tmp[k - 1]) {
                                     distances_squared_tmp[k - 1]
                                         = distance_squared;
                                     indices_tmp[k - 1] = part.indices()[p_idx];
-                                    insertion_sort(distances_squared_tmp, indices_tmp, k, true);
+                                    insertion_sort(
+                                        distances_squared_tmp,
+                                        indices_tmp,
+                                        k,
+                                        true
+                                    );
                                 }
                             }
                             p_idx++;
