@@ -77,7 +77,6 @@ __host__ __device__ void insertion_sort(
 
 template<
     class PointMapType,
-    class T,
     class DistanceSquaredOp = distance_functions::loopless::euclidean_squared<
         point_map_traits<PointMapType>::point_traits::dimensions>>
 std::tuple<
@@ -90,7 +89,8 @@ batched_nearest_neighbors(
     uint k,
     const PointMapType& query_points,
     const rectangular_partitioner<
-        T,
+        std::decay_t<
+            typename point_map_traits<PointMapType>::point_traits::value_type>,
         point_map_traits<PointMapType>::point_traits::dimensions>&
         segmented_ref_points,
     DistanceSquaredOp&& distance_squared_op = DistanceSquaredOp()
