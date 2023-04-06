@@ -35,26 +35,26 @@
 
 namespace naga {
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class rectangular_partitioner;
 
 }
 
 namespace naga::detail {
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 __host__ void compute_bounds(
-    point_view_t<FloatingPointType, Dimensions>& lower_bounds,
-    point_view_t<FloatingPointType, Dimensions>& upper_bounds,
-    const sclx::array<const FloatingPointType, 2>& points
+    point_view_t<T, Dimensions>& lower_bounds,
+    point_view_t<T, Dimensions>& upper_bounds,
+    const sclx::array<const T, 2>& points
 );
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 __host__ void compute_partition_sizes(
     sclx::array<uint, Dimensions>& partition_sizes_,
     const sclx::shape_t<Dimensions>& partitioner_shape,
-    sclx::array<const FloatingPointType, 2>& points_,
-    const rectangular_partitioner<FloatingPointType, Dimensions>& partitioner
+    sclx::array<const T, 2>& points_,
+    const rectangular_partitioner<T, Dimensions>& partitioner
 );
 
 template<uint Dimensions>
@@ -63,13 +63,13 @@ __host__ void compute_index_offsets(
     const sclx::array<const uint, Dimensions>& partition_sizes
 );
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 __host__ void assign_indices(
     sclx::array<size_t, 1>& partition_index,
     const sclx::array<const uint, Dimensions>& partition_sizes_,
     const sclx::array<const size_t, Dimensions>& partition_index_offsets_,
-    const sclx::array<const FloatingPointType, 2>& points_,
-    const rectangular_partitioner<FloatingPointType, Dimensions>& partitioner
+    const sclx::array<const T, 2>& points_,
+    const rectangular_partitioner<T, Dimensions>& partitioner
 );
 
 }  // namespace naga::detail

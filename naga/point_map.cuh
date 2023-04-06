@@ -42,10 +42,10 @@ struct point_map_traits {
     using point_traits = point_traits<point_type>;
 };
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class default_point_map {
   public:
-    using point_type = point_view_t<const FloatingPointType, Dimensions>;
+    using point_type = point_view_t<const T, Dimensions>;
 
     __host__ __device__ explicit default_point_map(
         const sclx::array<typename point_type::value_type, 2>& source_points

@@ -35,20 +35,20 @@
 
 namespace naga::detail {
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 __host__ void compute_bounds(
-    point_view_t<FloatingPointType, Dimensions>& lower_bounds,
-    point_view_t<FloatingPointType, Dimensions>& upper_bounds,
-    const sclx::array<const FloatingPointType, 2>& points
+    point_view_t<T, Dimensions>& lower_bounds,
+    point_view_t<T, Dimensions>& upper_bounds,
+    const sclx::array<const T, 2>& points
 ) {
     auto lower_bounds_reduce = sclx::algorithm::reduce_last_dim(
         points,
-        std::numeric_limits<FloatingPointType>::max(),
+        std::numeric_limits<T>::max(),
         sclx::algorithm::min<>()
     );
     auto upper_bounds_reduce = sclx::algorithm::reduce_last_dim(
         points,
-        std::numeric_limits<FloatingPointType>::lowest(),
+        std::numeric_limits<T>::lowest(),
         sclx::algorithm::max<>()
     );
 
@@ -58,15 +58,15 @@ __host__ void compute_bounds(
     }
 }
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class rect_partitioner_index_generator {
   public:
     static constexpr uint range_rank = 1;
     static constexpr uint index_rank = Dimensions;
 
     __host__ rect_partitioner_index_generator(
-        const sclx::array<const FloatingPointType, 2>& points,
-        const rectangular_partitioner<FloatingPointType, Dimensions>&
+        const sclx::array<const T, 2>& points,
+        const rectangular_partitioner<T, Dimensions>&
             partitioner
     )
         : points_(points),
@@ -86,22 +86,22 @@ class rect_partitioner_index_generator {
     }
 
   private:
-    sclx::array<const FloatingPointType, 2> points_;
-    rectangular_partitioner<FloatingPointType, Dimensions> partitioner_;
+    sclx::array<const T, 2> points_;
+    rectangular_partitioner<T, Dimensions> partitioner_;
 };
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 __host__ void compute_partition_sizes(
     sclx::array<uint, Dimensions>& partition_sizes_,
     const sclx::shape_t<Dimensions>& partitioner_shape,
-    sclx::array<const FloatingPointType, 2>& points_,
-    const rectangular_partitioner<FloatingPointType, Dimensions>& partitioner
+    sclx::array<const T, 2>& points_,
+    const rectangular_partitioner<T, Dimensions>& partitioner
 ) {
     partition_sizes_ = sclx::array<uint, Dimensions>(partitioner_shape);
     sclx::fill(partition_sizes_, uint{0});
     auto fut = points_.prefetch_async(sclx::exec_topology::replicated);
 
-    rect_partitioner_index_generator<FloatingPointType, Dimensions>
+    rect_partitioner_index_generator<T, Dimensions>
         index_generator(points_, partitioner);
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         handler.launch(
@@ -153,13 +153,13 @@ __host__ void compute_index_offsets(
     }).get();
 }
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 __host__ void assign_indices(
     sclx::array<size_t, 1>& indices_,
     const sclx::array<const uint, Dimensions>& partition_sizes_,
     const sclx::array<const size_t, Dimensions>& partition_index_offsets_,
-    const sclx::array<const FloatingPointType, 2>& points_,
-    const rectangular_partitioner<FloatingPointType, Dimensions>& partitioner
+    const sclx::array<const T, 2>& points_,
+    const rectangular_partitioner<T, Dimensions>& partitioner
 ) {
     indices_ = sclx::array<size_t, 1>{points_.shape()[1]};
 
@@ -222,7 +222,7 @@ __host__ void assign_indices(
     }).get();
 
     using generator_t
-        = rect_partitioner_index_generator<FloatingPointType, Dimensions>;
+        = rect_partitioner_index_generator<T, Dimensions>;
     generator_t index_generator(points_, partitioner);
 
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {

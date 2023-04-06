@@ -39,13 +39,13 @@
 
 namespace naga {
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class partition_t;
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class partition_iterator {
   public:
-    using value_type        = point_view_t<const FloatingPointType, Dimensions>;
+    using value_type        = point_view_t<const T, Dimensions>;
     using difference_type   = sclx::index_t;
     using iterator_category = std::random_access_iterator_tag;
 
@@ -138,17 +138,17 @@ class partition_iterator {
         return {&((*points_)(0, indices_[counter_ + n]))};
     }
 
-    friend class partition_t<FloatingPointType, Dimensions>;
+    friend class partition_t<T, Dimensions>;
 
   private:
-    const sclx::array<const FloatingPointType, 2>* points_;
+    const sclx::array<const T, 2>* points_;
     const size_t* indices_;
     uint partition_size_;
 
     uint counter_ = 0;
 
     __host__ __device__ partition_iterator(
-        const sclx::array<const FloatingPointType, 2>* points,
+        const sclx::array<const T, 2>* points,
         const size_t* indices,
         const uint& partition_size
     )
@@ -157,13 +157,13 @@ class partition_iterator {
           partition_size_(partition_size) {}
 };
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class rectangular_partitioner;
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class partition_t {
   public:
-    using iterator = partition_iterator<FloatingPointType, Dimensions>;
+    using iterator = partition_iterator<T, Dimensions>;
 
     __host__ __device__ typename iterator::value_type operator[](uint index
     ) const {
@@ -189,15 +189,15 @@ class partition_t {
 
     __host__ __device__ const size_t* indices() const { return indices_; }
 
-    friend class rectangular_partitioner<FloatingPointType, Dimensions>;
+    friend class rectangular_partitioner<T, Dimensions>;
 
   private:
-    const sclx::array<const FloatingPointType, 2>* points_;
+    const sclx::array<const T, 2>* points_;
     const size_t* indices_;
     uint partition_size_;
 
     __host__ __device__ partition_t(
-        const sclx::array<const FloatingPointType, 2>* points,
+        const sclx::array<const T, 2>* points,
         const size_t* indices,
         const uint& partition_size
     )
@@ -206,29 +206,29 @@ class partition_t {
           partition_size_(partition_size) {}
 };
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class rectangular_partitioner_iterator;
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 __host__
-    __device__ rectangular_partitioner_iterator<FloatingPointType, Dimensions>
+    __device__ rectangular_partitioner_iterator<T, Dimensions>
     make_rectangular_partitioner_iterator(
-        const rectangular_partitioner<FloatingPointType, Dimensions>*
+        const rectangular_partitioner<T, Dimensions>*
             partitioner,
         const sclx::md_index_t<Dimensions>& index
     );
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class rectangular_partitioner {
   public:
-    using partition_type = partition_t<FloatingPointType, Dimensions>;
+    using partition_type = partition_t<T, Dimensions>;
     using iterator
-        = rectangular_partitioner_iterator<FloatingPointType, Dimensions>;
+        = rectangular_partitioner_iterator<T, Dimensions>;
 
     rectangular_partitioner() = default;
 
     __host__ rectangular_partitioner(
-        const sclx::array<const FloatingPointType, 2>& points,
+        const sclx::array<const T, 2>& points,
         uint approx_partition_size
     )
         : points_(points) {
@@ -242,19 +242,19 @@ class rectangular_partitioner {
 
         // compute bounds
 
-        point_view_t<FloatingPointType, Dimensions> lower_bounds_view(
+        point_view_t<T, Dimensions> lower_bounds_view(
             lower_bounds_
         );
-        point_view_t<FloatingPointType, Dimensions> upper_bounds_view(
+        point_view_t<T, Dimensions> upper_bounds_view(
             upper_bounds_
         );
-        detail::compute_bounds<FloatingPointType, Dimensions>(
+        detail::compute_bounds<T, Dimensions>(
             lower_bounds_view,
             upper_bounds_view,
             points_
         );
 
-        FloatingPointType tol = 1e-3;
+        T tol = 1e-3;
         for (uint i = 0; i < Dimensions; ++i) {
             if (upper_bounds_[i] - lower_bounds_[i] < tol) {
                 upper_bounds_[i] = lower_bounds_[i] + tol;
@@ -262,15 +262,15 @@ class rectangular_partitioner {
         }
 
         // Calculate the partition size
-        FloatingPointType volume = 1.0f;
+        T volume = 1.0f;
         for (uint i = 0; i < Dimensions; ++i) {
             volume *= upper_bounds_[i] - lower_bounds_[i];
         }
 
         partition_width_ = std::pow(
-            static_cast<FloatingPointType>(approx_partition_size)
-                / static_cast<FloatingPointType>(points_.shape()[1]) * volume,
-            1.0f / static_cast<FloatingPointType>(Dimensions)
+            static_cast<T>(approx_partition_size)
+                / static_cast<T>(points_.shape()[1]) * volume,
+            1.0f / static_cast<T>(Dimensions)
         );
 
         sclx::shape_t<Dimensions> partitioner_shape{};
@@ -286,7 +286,7 @@ class rectangular_partitioner {
         }
 
         // Calculate partition sizes
-        detail::compute_partition_sizes<FloatingPointType, Dimensions>(
+        detail::compute_partition_sizes<T, Dimensions>(
             partition_sizes_,
             partitioner_shape,
             points_,
@@ -300,7 +300,7 @@ class rectangular_partitioner {
         );
 
         // Calculate the indices
-        detail::assign_indices<FloatingPointType, Dimensions>(
+        detail::assign_indices<T, Dimensions>(
             indices_,
             partition_sizes_,
             partition_index_offsets_,
@@ -379,25 +379,25 @@ class rectangular_partitioner {
     }
 
     friend class rectangular_partitioner_iterator<
-        FloatingPointType,
+        T,
         Dimensions>;
 
   private:
     sclx::array<uint, Dimensions> partition_sizes_;
     sclx::array<size_t, Dimensions> partition_index_offsets_;
-    sclx::array<const FloatingPointType, 2> points_;
+    sclx::array<const T, 2> points_;
     sclx::array<size_t, 1> indices_;
 
-    FloatingPointType lower_bounds_[Dimensions];
-    FloatingPointType upper_bounds_[Dimensions];
-    FloatingPointType partition_width_;
+    T lower_bounds_[Dimensions];
+    T upper_bounds_[Dimensions];
+    T partition_width_;
 };
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class rectangular_partitioner_iterator {
   public:
     using partitioner_type
-        = rectangular_partitioner<FloatingPointType, Dimensions>;
+        = rectangular_partitioner<T, Dimensions>;
     using partition_type = typename partitioner_type::partition_type;
 
     using value_type        = partition_type;
@@ -491,7 +491,7 @@ class rectangular_partitioner_iterator {
         : partitioner_(partitioner),
           counter_(counter) {}
 
-    __host__ __device__ partition_t<FloatingPointType, Dimensions>
+    __host__ __device__ partition_t<T, Dimensions>
     operator[](difference_type n) const {
         return partitioner_->get_partition(n);
     }
@@ -502,15 +502,15 @@ class rectangular_partitioner_iterator {
     size_t counter_;
 };
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 __host__
-    __device__ rectangular_partitioner_iterator<FloatingPointType, Dimensions>
+    __device__ rectangular_partitioner_iterator<T, Dimensions>
     make_rectangular_partitioner_iterator(
-        const rectangular_partitioner<FloatingPointType, Dimensions>*
+        const rectangular_partitioner<T, Dimensions>*
             partitioner,
         const sclx::md_index_t<Dimensions>& index
     ) {
-    return rectangular_partitioner_iterator<FloatingPointType, Dimensions>(
+    return rectangular_partitioner_iterator<T, Dimensions>(
         partitioner,
         index.as_linear(partitioner->shape())
     );

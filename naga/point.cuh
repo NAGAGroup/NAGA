@@ -41,52 +41,52 @@ struct point_traits {
     static constexpr bool is_view_type = PointType::is_view_type;
 };
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class point_view_t {
   public:
-    using value_type                   = FloatingPointType;
+    using value_type                   = T;
     static constexpr uint dimensions   = Dimensions;
     static constexpr bool is_view_type = true;
 
-    __host__ __device__ point_view_t(FloatingPointType* data) : data_(data) {}
+    __host__ __device__ point_view_t(T* data) : data_(data) {}
 
-    __host__ __device__ FloatingPointType& operator[](uint index) const {
+    __host__ __device__ T& operator[](uint index) const {
         return data_[index];
     }
 
-    __host__ __device__ FloatingPointType& x() const { return data_[0]; }
+    __host__ __device__ T& x() const { return data_[0]; }
 
-    __host__ __device__ FloatingPointType& y() const { return data_[1]; }
+    __host__ __device__ T& y() const { return data_[1]; }
 
     template<uint D = Dimensions>
     __host__ __device__
-        std::enable_if_t<D == 3 && D == Dimensions, FloatingPointType&>
+        std::enable_if_t<D == 3 && D == Dimensions, T&>
         z() const {
         return data_[2];
     }
 
   private:
-    FloatingPointType* data_;
+    T* data_;
 };
 
-template<class FloatingPointType, uint Dimensions>
+template<class T, uint Dimensions>
 class point_t {
   public:
-    using value_type                   = FloatingPointType;
+    using value_type                   = T;
     static constexpr uint dimensions   = Dimensions;
     static constexpr bool is_view_type = false;
 
     point_t() = default;
 
     __host__ __device__
-    point_t(const point_view_t<FloatingPointType, Dimensions>& other) {
+    point_t(const point_view_t<T, Dimensions>& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
         }
     }
 
     __host__ __device__ point_t&
-    operator=(const point_view_t<FloatingPointType, Dimensions>& other) {
+    operator=(const point_view_t<T, Dimensions>& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
         }
@@ -94,13 +94,13 @@ class point_t {
     }
 
     __host__ __device__
-    point_t(point_view_t<FloatingPointType, Dimensions>&& other) {
+    point_t(point_view_t<T, Dimensions>&& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
         }
     }
 
-    __host__ __device__ point_t(point_t<FloatingPointType, Dimensions>&& other
+    __host__ __device__ point_t(point_t<T, Dimensions>&& other
     ) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
@@ -108,7 +108,7 @@ class point_t {
     }
 
     __host__ __device__ point_t&
-    operator=(point_t<FloatingPointType, Dimensions>&& other) {
+    operator=(point_t<T, Dimensions>&& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
         }
@@ -116,7 +116,7 @@ class point_t {
     }
 
     __host__ __device__
-    point_t(const point_t<FloatingPointType, Dimensions>& other) {
+    point_t(const point_t<T, Dimensions>& other) {
         if (this == &other) {
             return;
         }
@@ -126,7 +126,7 @@ class point_t {
     }
 
     __host__ __device__ point_t&
-    operator=(const point_t<FloatingPointType, Dimensions>& other) {
+    operator=(const point_t<T, Dimensions>& other) {
         if (this == &other) {
             return *this;
         }
@@ -136,41 +136,41 @@ class point_t {
         return *this;
     }
 
-    __host__ __device__ FloatingPointType& operator[](uint index) {
+    __host__ __device__ T& operator[](uint index) {
         return data_[index];
     }
 
-    __host__ __device__ const FloatingPointType& operator[](uint index) const {
+    __host__ __device__ const T& operator[](uint index) const {
         return data_[index];
     }
 
-    __host__ __device__ FloatingPointType& x() { return data_[0]; }
+    __host__ __device__ T& x() { return data_[0]; }
 
-    __host__ __device__ const FloatingPointType& x() const { return data_[0]; }
+    __host__ __device__ const T& x() const { return data_[0]; }
 
-    __host__ __device__ FloatingPointType& y() { return data_[1]; }
+    __host__ __device__ T& y() { return data_[1]; }
 
-    __host__ __device__ const FloatingPointType& y() const { return data_[1]; }
+    __host__ __device__ const T& y() const { return data_[1]; }
 
     template<uint D = Dimensions>
     __host__ __device__
-        std::enable_if_t<D == 3 && D == Dimensions, FloatingPointType&>
+        std::enable_if_t<D == 3 && D == Dimensions, T&>
         z() {
         return data_[2];
     }
 
     template<uint D = Dimensions>
     __host__ __device__
-        std::enable_if_t<D == 3 && D == Dimensions, const FloatingPointType&>
+        std::enable_if_t<D == 3 && D == Dimensions, const T&>
         z() const {
         return data_[2];
     }
 
   private:
-    FloatingPointType data_[Dimensions];
+    T data_[Dimensions];
     static_assert(
-        !std::is_const<FloatingPointType>::value,
-        "point_t cannot have const FloatingPointType"
+        !std::is_const<T>::value,
+        "point_t cannot have const T"
     );
 };
 
