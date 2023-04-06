@@ -12,7 +12,7 @@ add_subdirectory(extern/Scalix)
 # naga is a header only library
 add_library(naga INTERFACE)
 target_include_directories(naga INTERFACE ${PROJECT_SOURCE_DIR}/.)
-target_link_libraries(naga INTERFACE scalix)
+target_link_libraries(naga INTERFACE scalix cublas)
 
 # naga examples
 add_executable(rectangular_partitioner examples/rectangular_partitioner.cu)
