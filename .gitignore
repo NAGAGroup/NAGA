@@ -3,3 +3,5 @@ cmake-build-*/
 examples/*_results/
 
 .idea/other.xml
+
+.idea/NAGA.iml
