@@ -75,18 +75,19 @@ __host__ __device__ void insertion_sort(
     }
 }
 
+
+
 template<
     class PointMapType,
     class DistanceSquaredOp = distance_functions::loopless::euclidean_squared<
         point_map_traits<PointMapType>::point_traits::dimensions>>
-std::tuple<
-    sclx::array<
-        std::remove_const_t<
-            typename point_map_traits<PointMapType>::point_traits::value_type>,
-        2>,
-    sclx::array<sclx::index_t, 2>>
-batched_nearest_neighbors(
+__host__ void batched_nearest_neighbors(
     uint k,
+    sclx::array<
+        std::decay_t<
+            typename point_map_traits<PointMapType>::point_traits::value_type>,
+        2>& distances_squared,
+    sclx::array<sclx::index_t, 2>& indices,
     const PointMapType& query_points,
     const rectangular_partitioner<
         std::decay_t<
@@ -130,8 +131,19 @@ batched_nearest_neighbors(
         }
     }
 
-    sclx::array<value_type, 2> distances_squared{k, query_points.size()};
-    sclx::array<sclx::index_t, 2> indices{k, query_points.size()};
+    if (query_points.size() != distances_squared.shape()[1]) {
+        sclx::throw_exception<std::invalid_argument>(
+            "Query points and distances array have different sizes.",
+            "naga::"
+        );
+    }
+
+    if (query_points.size() != indices.shape()[1]) {
+        sclx::throw_exception<std::invalid_argument>(
+            "Query points and indices array have different sizes.",
+            "naga::"
+        );
+    }
 
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         auto results = sclx::make_array_tuple(distances_squared, indices);
@@ -303,6 +315,43 @@ batched_nearest_neighbors(
             sclx::md_range_t<1>{max_threads_per_block}
         );
     }).get();
+}
+
+template<
+    class PointMapType,
+    class DistanceSquaredOp = distance_functions::loopless::euclidean_squared<
+        point_map_traits<PointMapType>::point_traits::dimensions>>
+std::tuple<
+    sclx::array<
+        std::remove_const_t<
+            typename point_map_traits<PointMapType>::point_traits::value_type>,
+        2>,
+    sclx::array<sclx::index_t, 2>>
+batched_nearest_neighbors(
+    uint k,
+    const PointMapType& query_points,
+    const rectangular_partitioner<
+        std::decay_t<
+            typename point_map_traits<PointMapType>::point_traits::value_type>,
+        point_map_traits<PointMapType>::point_traits::dimensions>&
+        segmented_ref_points,
+    DistanceSquaredOp&& distance_squared_op = DistanceSquaredOp()
+) {
+
+    using value_type = std::remove_const_t<
+        typename point_map_traits<PointMapType>::point_traits::value_type>;
+
+    sclx::array<value_type, 2> distances_squared{k, query_points.size()};
+    sclx::array<sclx::index_t, 2> indices{k, query_points.size()};
+
+    batched_nearest_neighbors(
+        k,
+        distances_squared,
+        indices,
+        query_points,
+        segmented_ref_points,
+        distance_squared_op
+    );
 
     return std::make_tuple(distances_squared, indices);
 }
