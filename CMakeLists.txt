@@ -20,3 +20,6 @@ target_link_libraries(rectangular_partitioner PRIVATE naga)
 
 add_executable(batched_knn_search examples/batched_knn_search.cu)
 target_link_libraries(batched_knn_search PRIVATE naga)
+
+add_executable(batched_matrix_inversion examples/batched_matrix_inversion.cu)
+target_link_libraries(batched_matrix_inversion PRIVATE naga)
