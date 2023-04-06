@@ -66,8 +66,7 @@ class rect_partitioner_index_generator {
 
     __host__ rect_partitioner_index_generator(
         const sclx::array<const T, 2>& points,
-        const rectangular_partitioner<T, Dimensions>&
-            partitioner
+        const rectangular_partitioner<T, Dimensions>& partitioner
     )
         : points_(points),
           partitioner_(partitioner) {}
@@ -101,8 +100,10 @@ __host__ void compute_partition_sizes(
     sclx::fill(partition_sizes_, uint{0});
     auto fut = points_.prefetch_async(sclx::exec_topology::replicated);
 
-    rect_partitioner_index_generator<T, Dimensions>
-        index_generator(points_, partitioner);
+    rect_partitioner_index_generator<T, Dimensions> index_generator(
+        points_,
+        partitioner
+    );
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         handler.launch(
             index_generator,
@@ -221,8 +222,7 @@ __host__ void assign_indices(
         );
     }).get();
 
-    using generator_t
-        = rect_partitioner_index_generator<T, Dimensions>;
+    using generator_t = rect_partitioner_index_generator<T, Dimensions>;
     generator_t index_generator(points_, partitioner);
 
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {

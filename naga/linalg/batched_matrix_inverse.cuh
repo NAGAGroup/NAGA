@@ -31,9 +31,9 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
-#include <scalix/fill.cuh>
 #include "detail/batched_matrix_inverse.cuh"
 #include <future>
+#include <scalix/fill.cuh>
 
 namespace naga::linalg {
 
@@ -54,7 +54,8 @@ __host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
         );
     }
 
-    sclx::array<T, 3> A_inv = sclx::zeros<T>({A.shape()[0], A.shape()[1], A.shape()[2]});
+    sclx::array<T, 3> A_inv
+        = sclx::zeros<T>({A.shape()[0], A.shape()[1], A.shape()[2]});
     const std::vector<std::tuple<int, size_t, size_t>>& split_info
         = sclx::get_device_split_info(A);
     A_inv.set_primary_devices(split_info);
@@ -64,36 +65,38 @@ __host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
     std::vector<std::future<void>> futures;
 
     for (const auto& [device_id, slice_start, slice_len] : split_info) {
-        auto A_slice = A.get_range({slice_start}, {slice_len});
+        auto A_slice     = A.get_range({slice_start}, {slice_len});
         auto A_inv_slice = A_inv.get_range({slice_start}, {slice_len});
 
         sclx::array<T*, 1> A_slice_ptr = sclx::zeros<T*>({A_slice.shape()[2]});
-        sclx::array<T*, 1> A_inv_slice_ptr = sclx::zeros<T*>({A_inv_slice.shape()[2]});
-        auto ptr_setup_fut = sclx::execute_kernel([&] (sclx::kernel_handler& handler) {
+        sclx::array<T*, 1> A_inv_slice_ptr
+            = sclx::zeros<T*>({A_inv_slice.shape()[2]});
+        auto ptr_setup_fut = sclx::execute_kernel([&](sclx::kernel_handler&
+                                                          handler) {
             sclx::array_list<T*, 1, 2> result = {A_slice_ptr, A_inv_slice_ptr};
             handler.launch(
                 sclx::md_range_t<1>(A_slice_ptr.shape()),
                 result,
-                [=] __device__ (sclx::md_index_t<1> &idx, auto &) {
+                [=] __device__(sclx::md_index_t<1> & idx, auto&) {
                     result[0][idx] = &A_slice(0, 0, idx[0]);
                     result[1][idx] = &A_inv_slice(0, 0, idx[0]);
                 }
             );
         });
 
-        auto lambda = [=] (int d_id, std::future<void> ptr_setup_fut) {
+        auto lambda = [=](int d_id, std::future<void> ptr_setup_fut) {
             sclx::cuda::set_device(d_id);
 
             cublasHandle_t handle;
             cublasCreate(&handle);
             int *info, *pivot;
-            int dims = A_slice.shape()[0];
+            int dims       = A_slice.shape()[0];
             int batch_size = A_slice.shape()[2];
             cudaMalloc(&info, batch_size * sizeof(int*));
             cudaMalloc(&pivot, batch_size * dims * sizeof(int*));
 
             ptr_setup_fut.get();
-            auto status =detail::cublas_getrf_batched<T>::compute(
+            auto status = detail::cublas_getrf_batched<T>::compute(
                 handle,
                 dims,
                 A_slice_ptr.data().get(),
@@ -136,7 +139,12 @@ __host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
             cublasDestroy(handle);
         };
 
-        futures.push_back(std::async(std::launch::async, lambda, device_id, std::move(ptr_setup_fut)));
+        futures.push_back(std::async(
+            std::launch::async,
+            lambda,
+            device_id,
+            std::move(ptr_setup_fut)
+        ));
     }
 
     for (auto& future : futures) {

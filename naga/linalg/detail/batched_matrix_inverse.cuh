@@ -37,32 +37,38 @@ namespace naga::linalg::detail {
 
 template<class T>
 struct cublas_getrf_batched {
-    static_assert(sizeof(T) == sizeof(T), "Unsupported type for batched LU decomposition using cuBLAS");
+    static_assert(
+        sizeof(T) == sizeof(T),
+        "Unsupported type for batched LU decomposition using cuBLAS"
+    );
 };
 
-template <>
+template<>
 struct cublas_getrf_batched<float> {
     static constexpr auto compute = cublasSgetrfBatched;
 };
 
-template <>
+template<>
 struct cublas_getrf_batched<double> {
     static constexpr auto compute = cublasDgetrfBatched;
 };
 
 template<class T>
 struct cublas_getri_batched {
-    static_assert(sizeof(T) == sizeof(T), "Unsupported type for batched LU decomposition using cuBLAS");
+    static_assert(
+        sizeof(T) == sizeof(T),
+        "Unsupported type for batched LU decomposition using cuBLAS"
+    );
 };
 
-template <>
+template<>
 struct cublas_getri_batched<float> {
     static constexpr auto compute = cublasSgetriBatched;
 };
 
-template <>
+template<>
 struct cublas_getri_batched<double> {
     static constexpr auto compute = cublasDgetriBatched;
 };
 
-}  // namespace naga::linalg
+}  // namespace naga::linalg::detail

@@ -75,8 +75,6 @@ __host__ __device__ void insertion_sort(
     }
 }
 
-
-
 template<
     class PointMapType,
     class DistanceSquaredOp = distance_functions::loopless::euclidean_squared<

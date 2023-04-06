@@ -210,20 +210,17 @@ template<class T, uint Dimensions>
 class rectangular_partitioner_iterator;
 
 template<class T, uint Dimensions>
-__host__
-    __device__ rectangular_partitioner_iterator<T, Dimensions>
-    make_rectangular_partitioner_iterator(
-        const rectangular_partitioner<T, Dimensions>*
-            partitioner,
-        const sclx::md_index_t<Dimensions>& index
-    );
+__host__ __device__ rectangular_partitioner_iterator<T, Dimensions>
+make_rectangular_partitioner_iterator(
+    const rectangular_partitioner<T, Dimensions>* partitioner,
+    const sclx::md_index_t<Dimensions>& index
+);
 
 template<class T, uint Dimensions>
 class rectangular_partitioner {
   public:
     using partition_type = partition_t<T, Dimensions>;
-    using iterator
-        = rectangular_partitioner_iterator<T, Dimensions>;
+    using iterator       = rectangular_partitioner_iterator<T, Dimensions>;
 
     rectangular_partitioner() = default;
 
@@ -242,12 +239,8 @@ class rectangular_partitioner {
 
         // compute bounds
 
-        point_view_t<T, Dimensions> lower_bounds_view(
-            lower_bounds_
-        );
-        point_view_t<T, Dimensions> upper_bounds_view(
-            upper_bounds_
-        );
+        point_view_t<T, Dimensions> lower_bounds_view(lower_bounds_);
+        point_view_t<T, Dimensions> upper_bounds_view(upper_bounds_);
         detail::compute_bounds<T, Dimensions>(
             lower_bounds_view,
             upper_bounds_view,
@@ -378,9 +371,7 @@ class rectangular_partitioner {
         );
     }
 
-    friend class rectangular_partitioner_iterator<
-        T,
-        Dimensions>;
+    friend class rectangular_partitioner_iterator<T, Dimensions>;
 
   private:
     sclx::array<uint, Dimensions> partition_sizes_;
@@ -396,9 +387,8 @@ class rectangular_partitioner {
 template<class T, uint Dimensions>
 class rectangular_partitioner_iterator {
   public:
-    using partitioner_type
-        = rectangular_partitioner<T, Dimensions>;
-    using partition_type = typename partitioner_type::partition_type;
+    using partitioner_type = rectangular_partitioner<T, Dimensions>;
+    using partition_type   = typename partitioner_type::partition_type;
 
     using value_type        = partition_type;
     using difference_type   = sclx::index_t;
@@ -491,8 +481,8 @@ class rectangular_partitioner_iterator {
         : partitioner_(partitioner),
           counter_(counter) {}
 
-    __host__ __device__ partition_t<T, Dimensions>
-    operator[](difference_type n) const {
+    __host__ __device__ partition_t<T, Dimensions> operator[](difference_type n
+    ) const {
         return partitioner_->get_partition(n);
     }
 
@@ -503,13 +493,11 @@ class rectangular_partitioner_iterator {
 };
 
 template<class T, uint Dimensions>
-__host__
-    __device__ rectangular_partitioner_iterator<T, Dimensions>
-    make_rectangular_partitioner_iterator(
-        const rectangular_partitioner<T, Dimensions>*
-            partitioner,
-        const sclx::md_index_t<Dimensions>& index
-    ) {
+__host__ __device__ rectangular_partitioner_iterator<T, Dimensions>
+make_rectangular_partitioner_iterator(
+    const rectangular_partitioner<T, Dimensions>* partitioner,
+    const sclx::md_index_t<Dimensions>& index
+) {
     return rectangular_partitioner_iterator<T, Dimensions>(
         partitioner,
         index.as_linear(partitioner->shape())

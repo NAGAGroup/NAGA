@@ -29,9 +29,9 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <chrono>
 #include <naga/linalg/batched_matrix_inverse.cuh>
 #include <scalix/algorithm/reduce.cuh>
-#include <chrono>
 
 int main() {
     // clang-format off
@@ -73,9 +73,9 @@ int main() {
         );
     }).get();
 
-    auto begin = std::chrono::high_resolution_clock::now();
+    auto begin         = std::chrono::high_resolution_clock::now();
     auto A_inv_batched = naga::linalg::batched_matrix_inverse(A_batched);
-    auto end = std::chrono::high_resolution_clock::now();
+    auto end           = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - begin;
     std::cout << "Elapsed time: " << elapsed.count() * 1000 << " ms"
               << std::endl;
