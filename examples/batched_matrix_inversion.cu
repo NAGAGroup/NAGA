@@ -77,7 +77,15 @@ int main() {
     auto A_inv_batched = naga::linalg::batched_matrix_inverse(A_batched);
     auto end           = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - begin;
-    std::cout << "Elapsed time: " << elapsed.count() * 1000 << " ms"
+    std::cout << "First elapsed time: " << elapsed.count() * 1000 << " ms"
+              << std::endl;
+
+    // do it again, to see if the unified memory is warmed up
+    begin         = std::chrono::high_resolution_clock::now();
+    naga::linalg::batched_matrix_inverse(A_batched, A_inv_batched);
+    end           = std::chrono::high_resolution_clock::now();
+    elapsed       = end - begin;
+    std::cout << "Second elapsed time: " << elapsed.count() * 1000 << " ms"
               << std::endl;
 
     auto error_count = sclx::zeros<int>({batch_size});
@@ -109,7 +117,6 @@ int main() {
 
     if (sum_errors != 0) {
         std::cerr << "Error: " << sum_errors << " errors found." << std::endl;
-        return 1;
     }
 
     auto first_A_inv = A_inv_batched.get_slice({0});

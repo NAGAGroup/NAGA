@@ -38,7 +38,7 @@
 namespace naga::linalg {
 
 template<class T>
-__host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
+__host__ void batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
 
     if (A.shape()[0] != A.shape()[1]) {
         sclx::throw_exception<std::invalid_argument>(
@@ -54,37 +54,47 @@ __host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
         );
     }
 
-    sclx::array<T, 3> A_inv
-        = sclx::zeros<T>({A.shape()[0], A.shape()[1], A.shape()[2]});
+    if (A_inv.shape() != A.shape()) {
+        sclx::throw_exception<std::invalid_argument>(
+            "A_inv must have the same shape as A",
+            "naga::linalg::"
+        );
+    }
+
     const std::vector<std::tuple<int, size_t, size_t>>& split_info
         = sclx::get_device_split_info(A);
     A_inv.set_primary_devices(split_info);
+
+    A_inv.unset_read_mostly();
+    cudaMemcpy(
+        A_inv.data().get(),
+        A.data().get(),
+        A.elements() * sizeof(T),
+        cudaMemcpyDeviceToDevice);
 
     auto current = std::experimental::source_location::current();
 
     std::vector<std::future<void>> futures;
 
     for (const auto& [device_id, slice_start, slice_len] : split_info) {
-        auto A_slice     = A.get_range({slice_start}, {slice_len});
-        auto A_inv_slice = A_inv.get_range({slice_start}, {slice_len});
+        auto A_slice     = A.get_range({slice_start}, {slice_start + slice_len});
+        auto A_inv_slice = A_inv.get_range({slice_start}, {slice_start + slice_len});
 
-        sclx::array<T*, 1> A_slice_ptr = sclx::zeros<T*>({A_slice.shape()[2]});
         sclx::array<T*, 1> A_inv_slice_ptr
             = sclx::zeros<T*>({A_inv_slice.shape()[2]});
+        A_inv_slice_ptr.set_primary_devices(std::vector<int>{device_id});
         auto ptr_setup_fut = sclx::execute_kernel([&](sclx::kernel_handler&
                                                           handler) {
-            sclx::array_list<T*, 1, 2> result = {A_slice_ptr, A_inv_slice_ptr};
             handler.launch(
-                sclx::md_range_t<1>(A_slice_ptr.shape()),
-                result,
+                sclx::md_range_t<1>(A_inv_slice_ptr.shape()),
+                A_inv_slice_ptr,
                 [=] __device__(sclx::md_index_t<1> & idx, auto&) {
-                    result[0][idx] = &A_slice(0, 0, idx[0]);
-                    result[1][idx] = &A_inv_slice(0, 0, idx[0]);
+                    A_inv_slice_ptr[idx] = &A_inv_slice(0, 0, idx[0]);
                 }
             );
         });
 
-        auto lambda = [=](int d_id, std::future<void> ptr_setup_fut) {
+        auto lambda = [=](int d_id, std::future<void> ptr_setup_fut) mutable {
             sclx::cuda::set_device(d_id);
 
             cublasHandle_t handle;
@@ -99,7 +109,7 @@ __host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
             auto status = detail::cublas_getrf_batched<T>::compute(
                 handle,
                 dims,
-                A_slice_ptr.data().get(),
+                A_inv_slice_ptr.data().get(),
                 dims,
                 pivot,
                 info,
@@ -117,7 +127,7 @@ __host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
             status = detail::cublas_getri_batched<T>::compute(
                 handle,
                 dims,
-                A_slice_ptr.data().get(),
+                A_inv_slice_ptr.data().get(),
                 dims,
                 pivot,
                 A_inv_slice_ptr.data().get(),
@@ -151,6 +161,14 @@ __host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
         future.get();
     }
 
+    A_inv.set_read_mostly();
+}
+
+template <class T>
+__host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
+    sclx::array<T, 3> A_inv
+        = sclx::zeros<T>({A.shape()[0], A.shape()[1], A.shape()[2]});
+    batched_matrix_inverse(A, A_inv);
     return A_inv;
 }
 
