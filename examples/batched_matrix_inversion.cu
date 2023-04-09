@@ -29,24 +29,21 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+/**
+ * @file batched_matrix_inverse.cu
+ * @brief Batched matrix inversion example
+ *
+ * In this example we invert a batch of identical 3x3 matrices with a known
+ * inverse. We then check the result to the known inverse and print the
+ * time taken to perform the inversion + the result inversion.
+ */
+
 #include <chrono>
 #include <naga/linalg/batched_matrix_inverse.cuh>
 #include <scalix/algorithm/reduce.cuh>
 
 int main() {
     // clang-format off
-    float A_inv_check[3][3] = {
-        {
-            -1.791666667, 0.916666667, -0.125000000,
-        },
-        {
-            1.583333333, -0.833333333, 0.250000000,
-        },
-        {
-            -0.125000000, 0.250000000, -0.125000000,
-        },
-    };
-
     float A[3][3] = {
         {
             1.0, 2.0, 3.0,
@@ -58,11 +55,23 @@ int main() {
             7.0, 8.0, 1.,
         },
     };
+
+    float A_inv_check[3][3] = {
+        {
+            -1.791666667, 0.916666667, -0.125000000,
+        },
+        {
+            1.583333333, -0.833333333, 0.250000000,
+        },
+        {
+            -0.125000000, 0.250000000, -0.125000000,
+        },
+    };
     // clang-format on
 
+    // Create a batch of identical matrices using the above 3x3 matrix, A
     size_t batch_size = 10'000'000;
     sclx::array<float, 3> A_batched{3, 3, batch_size};
-
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         handler.launch(
             sclx::md_range_t<3>(A_batched.shape()),
@@ -73,6 +82,7 @@ int main() {
         );
     }).get();
 
+    // Invert the batch of matrices
     auto begin         = std::chrono::high_resolution_clock::now();
     auto A_inv_batched = naga::linalg::batched_matrix_inverse(A_batched);
     auto end           = std::chrono::high_resolution_clock::now();
@@ -80,16 +90,18 @@ int main() {
     std::cout << "First elapsed time: " << elapsed.count() * 1000 << " ms"
               << std::endl;
 
-    // do it again, to see if the unified memory is warmed up
-    begin         = std::chrono::high_resolution_clock::now();
+    // We run it again to show how the CUDA driver "warms up", better
+    // identifying where the unified memory should be located thus leading to
+    // faster execution times.
+    begin = std::chrono::high_resolution_clock::now();
     naga::linalg::batched_matrix_inverse(A_batched, A_inv_batched);
-    end           = std::chrono::high_resolution_clock::now();
-    elapsed       = end - begin;
+    end     = std::chrono::high_resolution_clock::now();
+    elapsed = end - begin;
     std::cout << "Second elapsed time: " << elapsed.count() * 1000 << " ms"
               << std::endl;
 
+    // compute the number of incorrect inversions
     auto error_count = sclx::zeros<int>({batch_size});
-
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         handler.launch(
             sclx::md_range_t<1>(error_count.shape()),
@@ -111,14 +123,16 @@ int main() {
             }
         );
     }).get();
-
     auto sum_errors
         = sclx::algorithm::reduce(error_count, 0, sclx::algorithm::plus<>());
 
+    // Print the number of errors found
     if (sum_errors != 0) {
         std::cerr << "Error: " << sum_errors << " errors found." << std::endl;
     }
 
+    // Print the first matrix's inverse, which should be the same as the
+    // known inverse, A_inv_check
     auto first_A_inv = A_inv_batched.get_slice({0});
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
