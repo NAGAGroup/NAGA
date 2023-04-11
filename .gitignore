@@ -5,3 +5,9 @@ examples/*_results/
 .idea/other.xml
 
 .idea/NAGA.iml
+
+.ccls-cache/
+
+build/
+
+compile_commands.json
