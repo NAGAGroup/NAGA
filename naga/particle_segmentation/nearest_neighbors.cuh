@@ -39,6 +39,22 @@
 
 namespace naga {
 
+template<class PointMapType>
+using default_distance_squared
+    = distance_functions::loopless::euclidean_squared<
+        point_map_traits<PointMapType>::point_traits::dimensions>;
+
+// we put the following alias in a namespace to avoid name collisions
+namespace knn {
+
+template<class PointMapType>
+using rectangular_partitioner = ::naga::rectangular_partitioner<
+    std::decay_t<
+        typename point_map_traits<PointMapType>::point_traits::value_type>,
+    point_map_traits<PointMapType>::point_traits::dimensions>;
+
+}
+
 template<class T, class U>
 __host__ __device__ void insertion_sort(
     T* array,
@@ -77,8 +93,7 @@ __host__ __device__ void insertion_sort(
 
 template<
     class PointMapType,
-    class DistanceSquaredOp = distance_functions::loopless::euclidean_squared<
-        point_map_traits<PointMapType>::point_traits::dimensions>>
+    class DistanceSquaredOp = default_distance_squared<PointMapType>>
 __host__ void batched_nearest_neighbors(
     uint k,
     sclx::array<
@@ -87,11 +102,7 @@ __host__ void batched_nearest_neighbors(
         2>& distances_squared,
     sclx::array<sclx::index_t, 2>& indices,
     const PointMapType& query_points,
-    const rectangular_partitioner<
-        std::decay_t<
-            typename point_map_traits<PointMapType>::point_traits::value_type>,
-        point_map_traits<PointMapType>::point_traits::dimensions>&
-        segmented_ref_points,
+    const knn::rectangular_partitioner<PointMapType>& segmented_ref_points,
     DistanceSquaredOp&& distance_squared_op = DistanceSquaredOp()
 ) {
     using distance_traits = distance_functions::distance_function_traits<

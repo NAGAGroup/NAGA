@@ -127,17 +127,19 @@ int main() {
 
     for (auto& part_size : partitioner_sizes) {
         std::cout << "Partitioner size: " << part_size << std::endl;
+        using point_map_t   = naga::default_point_map<float, dims>;
+        using partitioner_t = naga::knn::rectangular_partitioner<point_map_t>;
 
         auto start = std::chrono::high_resolution_clock::now();
-        naga::rectangular_partitioner<float, dims> partitioner(grid, part_size);
-        auto end_part_build = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> part_build_time = end_part_build - start;
-        std::cout << "Partitioner build time: "
-                  << part_build_time.count() * 1000 << " ms" << std::endl;
 
+        // build partitioner
+        partitioner_t partitioner(grid, part_size);
+        auto end_part_build = std::chrono::high_resolution_clock::now();
+
+        // find nearest neighbors
         auto [distances_squared, indices] = naga::batched_nearest_neighbors(
             k,
-            naga::default_point_map<float, dims>{big_grid_slice},
+            point_map_t{big_grid_slice},
             partitioner
         );
         auto end_knn = std::chrono::high_resolution_clock::now();
@@ -152,8 +154,12 @@ int main() {
             }
         }
 
+        std::chrono::duration<double> part_build_time = end_part_build - start;
         std::chrono::duration<double> knn_time   = end_knn - end_part_build;
         std::chrono::duration<double> total_time = end_knn - start;
+
+        std::cout << "Partitioner build time: "
+                  << part_build_time.count() * 1000 << " ms" << std::endl;
         std::cout << "KNN search time: " << knn_time.count() * 1000 << " ms"
                   << std::endl;
         std::cout << "Total time: " << total_time.count() * 1000 << " ms"
