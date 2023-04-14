@@ -31,6 +31,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#include "../cublas.cuh"
 #include "detail/batched_matrix_inverse.cuh"
 #include <future>
 #include <scalix/fill.cuh>
@@ -71,53 +72,56 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
 
     sclx::array<T, 3> A_copy(A.shape(), false);
     A_copy.set_primary_devices(split_info);
-    auto copy_fut = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-        handler.launch(
-            sclx::md_range_t<3>(A.shape()),
-            A_copy,
-            [=] __device__(sclx::md_index_t<3> & idx, auto&) {
-                A_copy[idx] = A[idx];
-            }
-        );
-    }).share();
+    auto copy_future
+        = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+              handler.launch(
+                  sclx::md_range_t<3>(A.shape()),
+                  A_copy,
+                  [=] __device__(sclx::md_index_t<3> & idx, auto&) {
+                      A_copy[idx] = A[idx];
+                  }
+              );
+          }).share();
+
+    sclx::array<T*, 1> A_ptr({A.shape()[2]}, false);
+    sclx::array<T*, 1> A_inv_ptr({A.shape()[2]}, false);
+    A_ptr.set_primary_devices(split_info);
+    A_inv_ptr.set_primary_devices(split_info);
+
+    auto ptr_setup_future
+        = sclx::execute_kernel([=](sclx::kernel_handler& handler) {
+              sclx::array_list<T*, 1, 2> ptrs = {A_ptr, A_inv_ptr};
+
+              handler.launch(
+                  sclx::md_range_t<1>(A_ptr.shape()),
+                  ptrs,
+                  [=] __device__(sclx::md_index_t<1> & idx, auto&) {
+                      ptrs[0][idx] = &A_copy(0, 0, idx[0]);
+                      ptrs[1][idx] = &A_inv(0, 0, idx[0]);
+                  }
+              );
+          }).share();
 
     for (const auto& [device_id, slice_start, slice_len] : split_info) {
         auto A_slice
             = A_copy.get_range({slice_start}, {slice_start + slice_len});
         auto A_inv_slice
             = A_inv.get_range({slice_start}, {slice_start + slice_len});
+        auto A_slice_ptr
+            = A_ptr.get_range({slice_start}, {slice_start + slice_len});
+        auto A_inv_slice_ptr
+            = A_inv_ptr.get_range({slice_start}, {slice_start + slice_len});
 
-        sclx::array<T*, 1> A_slice_ptr({A_slice.shape()[2]}, false);
-        sclx::array<T*, 1> A_inv_slice_ptr({A_inv_slice.shape()[2]}, false);
-        A_slice_ptr.set_primary_devices(std::vector<int>{device_id});
-        A_inv_slice_ptr.set_primary_devices(std::vector<int>{device_id});
-        auto ptr_setup_fut = sclx::execute_kernel([&](sclx::kernel_handler&
-                                                          handler) {
-            sclx::array_list<T*, 1, 2> ptrs = {A_slice_ptr, A_inv_slice_ptr};
-
-            handler.launch(
-                sclx::md_range_t<1>(A_inv_slice_ptr.shape()),
-                ptrs,
-                [=] __device__(sclx::md_index_t<1> & idx, auto&) {
-                    ptrs[0][idx] = &A_slice(0, 0, idx[0]);
-                    ptrs[1][idx] = &A_inv_slice(0, 0, idx[0]);
-                }
-            );
-        });
-
-        auto lambda = [=](int d_id, std::future<void> ptr_setup_fut) mutable {
-            sclx::cuda::set_device(d_id);
-
-            cublasHandle_t handle;
-            cublasCreate(&handle);
+        auto lambda = [=](int d_id) mutable {
+            auto handle = cublas::this_thread::get_cublas_handle();
             int *info, *pivot;
             int dims       = A_slice.shape()[0];
             int batch_size = A_slice.shape()[2];
             cudaMalloc(&info, batch_size * sizeof(int*));
             cudaMalloc(&pivot, batch_size * dims * sizeof(int*));
 
-            ptr_setup_fut.get();
-            copy_fut.get();
+            ptr_setup_future.get();
+            copy_future.get();
             A_slice.unset_read_mostly();
             auto status_getrf = detail::cublas_getrf_batched<T>::compute(
                 handle,
@@ -144,7 +148,6 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
 
             cudaFree(info);
             cudaFree(pivot);
-            cublasDestroy(handle);
 
             if (status_getrf != CUBLAS_STATUS_SUCCESS) {
                 sclx::throw_exception<std::runtime_error>(
@@ -163,11 +166,10 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
             }
         };
 
-        futures.push_back(std::async(
-            std::launch::async,
-            lambda,
+        futures.emplace_back(sclx::cuda::task_scheduler::submit_task(
             device_id,
-            std::move(ptr_setup_fut)
+            lambda,
+            device_id
         ));
     }
 
