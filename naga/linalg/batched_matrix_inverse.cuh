@@ -83,44 +83,44 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
               );
           }).share();
 
-    sclx::array<T*, 1> A_ptr({A.shape()[2]}, false);
-    sclx::array<T*, 1> A_inv_ptr({A.shape()[2]}, false);
-    A_ptr.set_primary_devices(split_info);
-    A_inv_ptr.set_primary_devices(split_info);
+    for (const auto& split : split_info) {
+        int device_id = std::get<0>(split);
+        size_t slice_start = std::get<1>(split);
+        size_t slice_len = std::get<2>(split);
 
-    auto ptr_setup_future
-        = sclx::execute_kernel([=](sclx::kernel_handler& handler) {
-              sclx::array_list<T*, 1, 2> ptrs = {A_ptr, A_inv_ptr};
-
-              handler.launch(
-                  sclx::md_range_t<1>(A_ptr.shape()),
-                  ptrs,
-                  [=] __device__(sclx::md_index_t<1> & idx, auto&) {
-                      ptrs[0][idx] = &A_copy(0, 0, idx[0]);
-                      ptrs[1][idx] = &A_inv(0, 0, idx[0]);
-                  }
-              );
-          }).share();
-
-    for (const auto& [device_id, slice_start, slice_len] : split_info) {
-        auto A_slice
-            = A_copy.get_range({slice_start}, {slice_start + slice_len});
-        auto A_inv_slice
-            = A_inv.get_range({slice_start}, {slice_start + slice_len});
-        auto A_slice_ptr
-            = A_ptr.get_range({slice_start}, {slice_start + slice_len});
-        auto A_inv_slice_ptr
-            = A_inv_ptr.get_range({slice_start}, {slice_start + slice_len});
-
-        auto lambda = [=](int d_id) mutable {
+        auto task_lambda = [=]() {
             auto handle = cublas::this_thread::get_cublas_handle();
+
+            auto A_slice
+                = A_copy.get_range({slice_start}, {slice_start + slice_len});
+            auto A_inv_slice
+                = A_inv.get_range({slice_start}, {slice_start + slice_len});
+
             int *info, *pivot;
             int dims       = A_slice.shape()[0];
             int batch_size = A_slice.shape()[2];
             cudaMalloc(&info, batch_size * sizeof(int*));
             cudaMalloc(&pivot, batch_size * dims * sizeof(int*));
 
-            ptr_setup_future.get();
+            sclx::array<T*, 1> A_slice_ptr({A_slice.shape()[2]}, false);
+            sclx::array<T*, 1> A_inv_slice_ptr({A_inv_slice.shape()[2]}, false);
+            A_slice_ptr.set_primary_devices(std::vector<int>{device_id});
+            A_inv_slice_ptr.set_primary_devices(std::vector<int>{device_id});
+
+            sclx::execute_kernel([=](sclx::kernel_handler& handler) {
+                sclx::array_list<T*, 1, 2> ptrs
+                    = {A_slice_ptr, A_inv_slice_ptr};
+
+                handler.launch(
+                    sclx::md_range_t<1>(A_slice_ptr.shape()),
+                    ptrs,
+                    [=] __device__(sclx::md_index_t<1> & idx, auto&) {
+                        A_slice_ptr[idx] = &A_slice(0, 0, idx[0]);
+                        A_inv_slice_ptr[idx] = &A_inv_slice(0, 0, idx[0]);
+                    }
+                );
+            }).get();
+
             copy_future.get();
             A_slice.unset_read_mostly();
             auto status_getrf = detail::cublas_getrf_batched<T>::compute(
@@ -167,10 +167,7 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
         };
 
         futures.emplace_back(sclx::cuda::task_scheduler::submit_task(
-            device_id,
-            lambda,
-            device_id
-        ));
+            device_id, task_lambda));
     }
 
     for (auto& future : futures) {
