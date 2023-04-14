@@ -70,29 +70,16 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
 
     std::vector<std::future<void>> futures;
 
-    sclx::array<T, 3> A_copy(A.shape(), false);
-    A_copy.set_primary_devices(split_info);
-    auto copy_future
-        = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-              handler.launch(
-                  sclx::md_range_t<3>(A.shape()),
-                  A_copy,
-                  [=] __device__(sclx::md_index_t<3> & idx, auto&) {
-                      A_copy[idx] = A[idx];
-                  }
-              );
-          }).share();
-
     for (const auto& split : split_info) {
-        int device_id = std::get<0>(split);
+        int device_id      = std::get<0>(split);
         size_t slice_start = std::get<1>(split);
-        size_t slice_len = std::get<2>(split);
+        size_t slice_len   = std::get<2>(split);
 
         auto task_lambda = [=]() {
             auto handle = cublas::this_thread::get_cublas_handle();
 
             auto A_slice
-                = A_copy.get_range({slice_start}, {slice_start + slice_len});
+                = A.get_range({slice_start}, {slice_start + slice_len});
             auto A_inv_slice
                 = A_inv.get_range({slice_start}, {slice_start + slice_len});
 
@@ -102,27 +89,63 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
             cudaMalloc(&info, batch_size * sizeof(int*));
             cudaMalloc(&pivot, batch_size * dims * sizeof(int*));
 
+            sclx::array<T, 3> A_slice_copy(
+                {static_cast<size_t>(dims),
+                 static_cast<size_t>(dims),
+                 static_cast<size_t>(batch_size)},
+                false
+            );
             sclx::array<T*, 1> A_slice_ptr({A_slice.shape()[2]}, false);
             sclx::array<T*, 1> A_inv_slice_ptr({A_inv_slice.shape()[2]}, false);
-            A_slice_ptr.set_primary_devices(std::vector<int>{device_id});
-            A_inv_slice_ptr.set_primary_devices(std::vector<int>{device_id});
 
-            sclx::execute_kernel([=](sclx::kernel_handler& handler) {
-                sclx::array_list<T*, 1, 2> ptrs
-                    = {A_slice_ptr, A_inv_slice_ptr};
+            A_slice_copy.set_primary_devices(
+                std::vector<int>{device_id},
+                false
+            );
+            auto prefetched_future1 = A_slice_copy.prefetch_async();
 
-                handler.launch(
-                    sclx::md_range_t<1>(A_slice_ptr.shape()),
-                    ptrs,
-                    [=] __device__(sclx::md_index_t<1> & idx, auto&) {
-                        A_slice_ptr[idx] = &A_slice(0, 0, idx[0]);
-                        A_inv_slice_ptr[idx] = &A_inv_slice(0, 0, idx[0]);
-                    }
-                );
-            }).get();
+            A_slice_ptr.set_primary_devices(std::vector<int>{device_id}, false);
+            auto prefetched_future2 = A_slice_ptr.prefetch_async();
+
+            A_inv_slice_ptr.set_primary_devices(
+                std::vector<int>{device_id},
+                false
+            );
+            auto prefetched_future3 = A_inv_slice_ptr.prefetch_async();
+
+            prefetched_future1.get();
+            prefetched_future2.get();
+            prefetched_future3.get();
+
+            auto copy_future
+                = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+                      handler.launch(
+                          sclx::md_range_t<3>(A_slice_copy.shape()),
+                          A_slice_copy,
+                          [=] __device__(sclx::md_index_t<3> & idx, auto&) {
+                              A_slice_copy[idx] = A_slice[idx];
+                          }
+                      );
+                  });
+
+            auto ptr_setup_future
+                = sclx::execute_kernel([=](sclx::kernel_handler& handler) {
+                      sclx::array_list<T*, 1, 2> ptrs
+                          = {A_slice_ptr, A_inv_slice_ptr};
+
+                      handler.launch(
+                          sclx::md_range_t<1>(A_slice_ptr.shape()),
+                          ptrs,
+                          [=] __device__(sclx::md_index_t<1> & idx, auto&) {
+                              A_slice_ptr[idx] = &A_slice_copy(0, 0, idx[0]);
+                              A_inv_slice_ptr[idx] = &A_inv_slice(0, 0, idx[0]);
+                          }
+                      );
+                  });
 
             copy_future.get();
-            A_slice.unset_read_mostly();
+            ptr_setup_future.get();
+            A_slice_copy.unset_read_mostly();
             auto status_getrf = detail::cublas_getrf_batched<T>::compute(
                 handle,
                 dims,
@@ -166,8 +189,9 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
             }
         };
 
-        futures.emplace_back(sclx::cuda::task_scheduler::submit_task(
-            device_id, task_lambda));
+        futures.emplace_back(
+            sclx::cuda::task_scheduler::submit_task(device_id, task_lambda)
+        );
     }
 
     for (auto& future : futures) {
