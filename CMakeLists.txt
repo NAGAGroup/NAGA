@@ -23,3 +23,6 @@ target_link_libraries(batched_knn_search PRIVATE naga)
 
 add_executable(batched_matrix_inversion examples/batched_matrix_inversion.cu)
 target_link_libraries(batched_matrix_inversion PRIVATE naga)
+
+add_executable(radial_point_interpolation examples/radial_point_interpolation.cu)
+target_link_libraries(radial_point_interpolation PRIVATE naga)

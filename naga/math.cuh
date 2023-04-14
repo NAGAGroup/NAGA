@@ -35,25 +35,56 @@
 
 namespace naga::math {
 
+template<class T, class U>
+__host__ __device__ auto min(const T& x, const U& y)
+    -> decltype(x < y ? x : y) {
+    return x < y ? x : y;
+}
+
+template<class T, class U>
+__host__ __device__ auto max(const T& x, const U& y)
+    -> decltype(x > y ? x : y) {
+    return x > y ? x : y;
+}
+
 template<class T>
-__host__ __device__ T abs(T&& x) {
+static constexpr T pi = static_cast<T>(M_PI);
+
+template<class T>
+__host__ __device__ T sin(const T& x) {
+    return std::sin(x);
+}
+
+template<class T>
+__host__ __device__ T cos(const T& x) {
+    return std::cos(x);
+}
+
+template<class T>
+__host__ __device__ T tan(const T& x) {
+    return std::tan(x);
+}
+
+template<class T>
+__host__ __device__ T abs(const T& x) {
     return std::abs(x);
 }
 
 template<class T>
-__host__ __device__ T sqrt(T&& x) {
+__host__ __device__ T sqrt(const T& x) {
     return std::sqrt(x);
 }
 
-template<class T, class U>
-__host__ __device__ auto pow(T&& x, U&& y) -> decltype(std::pow(x, y)) {
-    return std::pow(x, y);
+template<class T, class E>
+__host__ __device__ auto pow(const T& x, const E& e)
+    -> decltype(std::pow(x, e)) {
+    return std::pow(x, e);
 }
 
 namespace loopless {
 
 template<uint N, class T>
-__host__ __device__ auto pow(T&& x) -> decltype(x * x) {
+__host__ __device__ auto pow(const T& x) -> decltype(x * x) {
     if constexpr (N == 0) {
         return 1;
     } else if constexpr (N == 1) {

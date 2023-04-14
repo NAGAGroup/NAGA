@@ -339,12 +339,8 @@ std::tuple<
 batched_nearest_neighbors(
     uint k,
     const PointMapType& query_points,
-    const rectangular_partitioner<
-        std::decay_t<
-            typename point_map_traits<PointMapType>::point_traits::value_type>,
-        point_map_traits<PointMapType>::point_traits::dimensions>&
-        segmented_ref_points,
-    DistanceSquaredOp&& distance_squared_op = DistanceSquaredOp()
+    const knn::rectangular_partitioner<PointMapType>& segmented_ref_points,
+    DistanceSquaredOp&& distance_squared_op = {}
 ) {
 
     using value_type = std::remove_const_t<
