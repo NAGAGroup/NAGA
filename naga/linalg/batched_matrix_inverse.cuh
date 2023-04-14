@@ -40,7 +40,7 @@ namespace naga::linalg {
 
 template<class T>
 __host__ void
-batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
+batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv, bool copy_A = true) {
 
     if (A.shape()[0] != A.shape()[1]) {
         sclx::throw_exception<std::invalid_argument>(
@@ -89,20 +89,29 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
             cudaMalloc(&info, batch_size * sizeof(int*));
             cudaMalloc(&pivot, batch_size * dims * sizeof(int*));
 
-            sclx::array<T, 3> A_slice_copy(
-                {static_cast<size_t>(dims),
-                 static_cast<size_t>(dims),
-                 static_cast<size_t>(batch_size)},
-                false
-            );
+            sclx::array<T, 3> A_slice_copy;
+            std::future<void> prefetched_future1;
+            if (copy_A) {
+                A_slice_copy = sclx::array<T, 3>(
+                    {static_cast<size_t>(dims),
+                     static_cast<size_t>(dims),
+                     static_cast<size_t>(batch_size)},
+                    false
+                );
+
+                A_slice_copy.set_primary_devices(
+                    std::vector<int>{device_id},
+                    false
+                );
+                prefetched_future1 = std::move(A_slice_copy.prefetch_async());
+            } else {
+                A_slice_copy = A_slice;
+                prefetched_future1 = std::async(std::launch::deferred, []() {});
+            }
+
             sclx::array<T*, 1> A_slice_ptr({A_slice.shape()[2]}, false);
             sclx::array<T*, 1> A_inv_slice_ptr({A_inv_slice.shape()[2]}, false);
 
-            A_slice_copy.set_primary_devices(
-                std::vector<int>{device_id},
-                false
-            );
-            auto prefetched_future1 = A_slice_copy.prefetch_async();
 
             A_slice_ptr.set_primary_devices(std::vector<int>{device_id}, false);
             auto prefetched_future2 = A_slice_ptr.prefetch_async();
@@ -117,16 +126,22 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
             prefetched_future2.get();
             prefetched_future3.get();
 
-            auto copy_future
-                = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-                      handler.launch(
-                          sclx::md_range_t<3>(A_slice_copy.shape()),
-                          A_slice_copy,
-                          [=] __device__(sclx::md_index_t<3> & idx, auto&) {
-                              A_slice_copy[idx] = A_slice[idx];
-                          }
-                      );
-                  });
+            std::future<void> copy_future;
+            if (copy_A) {
+                auto copy_future_
+                    = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+                          handler.launch(
+                              sclx::md_range_t<3>(A_slice_copy.shape()),
+                              A_slice_copy,
+                              [=] __device__(sclx::md_index_t<3> & idx, auto&) {
+                                  A_slice_copy[idx] = A_slice[idx];
+                              }
+                          );
+                      });
+                copy_future = std::move(copy_future_);
+            } else {
+                copy_future = std::async(std::launch::deferred, []() {});
+            }
 
             auto ptr_setup_future
                 = sclx::execute_kernel([=](sclx::kernel_handler& handler) {
@@ -198,15 +213,16 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv) {
         future.get();
     }
 
+    A.set_read_mostly();
     A_inv.set_read_mostly();
 }
 
 template<class T>
-__host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A) {
+__host__ sclx::array<T, 3> batched_matrix_inverse(sclx::array<T, 3>& A, bool copy_A = true) {
     sclx::array<T, 3> A_inv({A.shape()[0], A.shape()[1], A.shape()[2]});
     auto split_info = sclx::get_device_split_info(A);
     A_inv.set_primary_devices(split_info);
-    batched_matrix_inverse(A, A_inv);
+    batched_matrix_inverse(A, A_inv, copy_A);
     return A_inv;
 }
 

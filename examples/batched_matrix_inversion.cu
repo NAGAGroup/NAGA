@@ -94,7 +94,11 @@ int main() {
     // identifying where the unified memory should be located thus leading to
     // faster execution times.
     begin = std::chrono::high_resolution_clock::now();
-    naga::linalg::batched_matrix_inverse(A_batched, A_inv_batched);
+    naga::linalg::batched_matrix_inverse(
+        A_batched,
+        A_inv_batched,
+        /*copy_A*/ false
+    );
     end     = std::chrono::high_resolution_clock::now();
     elapsed = end - begin;
     std::cout << "Second elapsed time: " << elapsed.count() * 1000 << " ms"
