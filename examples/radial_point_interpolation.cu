@@ -29,6 +29,14 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+/** @file radial_point_interpolation.cu
+ * @brief Showcasing our GPU accelerated radial point interpolation method.
+ *
+ * This example creates a two identical 2D grids, one with a known function and
+ * the other with an "unknown" function. The "unknown" function is interpolated
+ * to and verified against the known function.
+ */
+
 #include <chrono>
 #include <fstream>
 #include <naga/interpolation/radial_point_method.cuh>
@@ -41,6 +49,8 @@ __device__ float field_function(const float* x) {
 }
 
 int main() {
+    uint support_size = 32;  // number of support nodes used for interpolation
+
     size_t grid_size   = 500;
     float grid_length  = 2 * naga::math::pi<float>;
     float grid_spacing = grid_length / (static_cast<float>(grid_size) - 1.0f);
@@ -55,6 +65,7 @@ int main() {
     sclx::array<float, 2> interp_grid{2, interp_grid_size * interp_grid_size};
     sclx::array<float, 1> interp_values{interp_grid_size * interp_grid_size};
 
+    // populate source grid and field values
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
         handle.launch(
             sclx::md_range_t<1>{grid_size * grid_size},
@@ -75,6 +86,7 @@ int main() {
         );
     });
 
+    // populate interpolated grid
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
         handle.launch(
             sclx::md_range_t<1>{interp_grid_size * interp_grid_size},
@@ -92,17 +104,25 @@ int main() {
     std::cout << "Interpolated point count: " << interp_grid.shape()[1]
               << std::endl;
 
+    // First, we need to create a partitioner for the source grid, so we
+    // can compute the nearest neighbors.
     auto start = std::chrono::high_resolution_clock::now();
-    naga::rectangular_partitioner<float, 2> source_partitioner(source_grid, 32);
+    naga::rectangular_partitioner<float, 2> source_partitioner(
+        source_grid,
+        support_size
+    );
     auto end_partition = std::chrono::high_resolution_clock::now();
 
+    // We use the nearest neighbors algorithm to provide the interpolation
+    // indices to the radial point method.
     auto [distances, indices] = naga::batched_nearest_neighbors(
-        32,
+        support_size,
         naga::default_point_map<float, 2>{interp_grid},
         source_partitioner
     );
     auto end_neighbors = std::chrono::high_resolution_clock::now();
 
+    // construct the interpolator
     naga::interpolation::radial_point_method<naga::default_point_map<float, 2>>
         interpolator(
             source_grid,
@@ -112,6 +132,11 @@ int main() {
         );
     auto end_interpolator = std::chrono::high_resolution_clock::now();
 
+    // Now we interpolate the field values
+    //
+    // Note that we run it 3 times. We do this to show how the unified memory
+    // driver improves performance over successive runs. This is especially
+    // noticeable when running multiple devices.
     interpolator.interpolate(source_values, interp_values);
     auto end_interpolate = std::chrono::high_resolution_clock::now();
 
@@ -121,9 +146,9 @@ int main() {
     interpolator.interpolate(source_values, interp_values);
     auto end_interpolate3 = std::chrono::high_resolution_clock::now();
 
+    // compute the l2 error
     auto interp_errors
         = sclx::zeros<float, 1>({interp_grid_size * interp_grid_size});
-
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
         handle.launch(
             sclx::md_range_t<1>{interp_grid_size * interp_grid_size},
@@ -144,8 +169,8 @@ int main() {
     );
 
     std::cout << std::endl
-              << "l2 grid error: " << sum_error / interp_grid.shape()[1]
-              << std::endl
+              << "l2 grid error, normalized: "
+              << sum_error / interp_grid.shape()[1] << std::endl
               << std::endl;
 
     std::chrono::duration<double> partition_time
@@ -172,8 +197,9 @@ int main() {
     std::cout << "Time to interpolate (2nd run): " << interpolate_time2.count()
               << " ms" << std::endl;
     std::cout << "Time to interpolate (3rd run): " << interpolate_time3.count()
-                << " ms" << std::endl;
+              << " ms" << std::endl;
 
+    // save the results to view in paraview
     auto save_dir = sclx::filesystem::path(__FILE__).parent_path()
                   / "radial_point_method_results";
     sclx::filesystem::create_directories(save_dir);
