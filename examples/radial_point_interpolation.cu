@@ -29,22 +29,23 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <chrono>
+#include <fstream>
 #include <naga/interpolation/radial_point_method.cuh>
 #include <naga/particle_segmentation/nearest_neighbors.cuh>
 #include <scalix/algorithm/reduce.cuh>
 #include <scalix/filesystem.hpp>
-#include <fstream>
 
 __device__ float field_function(const float* x) {
     return naga::math::sin(x[0]) * naga::math::cos(x[1]);
 }
 
 int main() {
-    size_t grid_size   = 32;
+    size_t grid_size   = 500;
     float grid_length  = 2 * naga::math::pi<float>;
     float grid_spacing = grid_length / (static_cast<float>(grid_size) - 1.0f);
 
-    size_t interp_grid_size  = 48;
+    size_t interp_grid_size  = 500;
     float interp_grid_length = 2 * naga::math::pi<float>;
     float interp_grid_spacing
         = interp_grid_length / (static_cast<float>(interp_grid_size) - 1.0f);
@@ -87,13 +88,20 @@ int main() {
         );
     });
 
+    std::cout << "Source point count: " << source_grid.shape()[1] << std::endl;
+    std::cout << "Interpolated point count: " << interp_grid.shape()[1]
+              << std::endl;
+
+    auto start = std::chrono::high_resolution_clock::now();
     naga::rectangular_partitioner<float, 2> source_partitioner(source_grid, 32);
+    auto end_partition = std::chrono::high_resolution_clock::now();
 
     auto [distances, indices] = naga::batched_nearest_neighbors(
         32,
         naga::default_point_map<float, 2>{interp_grid},
         source_partitioner
     );
+    auto end_neighbors = std::chrono::high_resolution_clock::now();
 
     naga::interpolation::radial_point_method<naga::default_point_map<float, 2>>
         interpolator(
@@ -102,8 +110,16 @@ int main() {
             naga::default_point_map<float, 2>{interp_grid},
             grid_spacing
         );
+    auto end_interpolator = std::chrono::high_resolution_clock::now();
 
     interpolator.interpolate(source_values, interp_values);
+    auto end_interpolate = std::chrono::high_resolution_clock::now();
+
+    interpolator.interpolate(source_values, interp_values);
+    auto end_interpolate2 = std::chrono::high_resolution_clock::now();
+
+    interpolator.interpolate(source_values, interp_values);
+    auto end_interpolate3 = std::chrono::high_resolution_clock::now();
 
     auto interp_errors
         = sclx::zeros<float, 1>({interp_grid_size * interp_grid_size});
@@ -113,34 +129,61 @@ int main() {
             sclx::md_range_t<1>{interp_grid_size * interp_grid_size},
             interp_errors,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                interp_errors(idx[0])
-                    = naga::math::abs(
-                        interp_values(idx[0])
-                        - field_function(&interp_grid(0, idx[0]))
-                    );
+                interp_errors(idx[0]) = naga::math::loopless::pow<2>(
+                    interp_values(idx[0])
+                    - field_function(&interp_grid(0, idx[0]))
+                );
             }
         );
     });
 
-    auto max_error = sclx::algorithm::reduce(
+    auto sum_error = sclx::algorithm::reduce(
         interp_errors,
         0.0f,
-        sclx::algorithm::max<float>{}
+        sclx::algorithm::plus<>{}
     );
 
-    std::cout << "Max error: " << max_error << std::endl;
+    std::cout << std::endl
+              << "l2 grid error: " << sum_error / interp_grid.shape()[1]
+              << std::endl
+              << std::endl;
 
-    auto save_dir = sclx::filesystem::path(__FILE__).parent_path() / "radial_point_method_results";
+    std::chrono::duration<double> partition_time
+        = (end_partition - start) * 1000.f;
+    std::chrono::duration<double> neighbors_time
+        = (end_neighbors - end_partition) * 1000.f;
+    std::chrono::duration<double> interpolator_time
+        = (end_interpolator - end_neighbors) * 1000.f;
+    std::chrono::duration<double> interpolate_time
+        = (end_interpolate - end_interpolator) * 1000.f;
+    std::chrono::duration<double> interpolate_time2
+        = (end_interpolate2 - end_interpolate) * 1000.f;
+    std::chrono::duration<double> interpolate_time3
+        = (end_interpolate3 - end_interpolate2) * 1000.f;
+
+    std::cout << "Time to construct partitioner: " << partition_time.count()
+              << " ms" << std::endl;
+    std::cout << "Time to find nearest neighbors: " << neighbors_time.count()
+              << " ms" << std::endl;
+    std::cout << "Time to construct interpolator: " << interpolator_time.count()
+              << " ms" << std::endl;
+    std::cout << "Time to interpolate: " << interpolate_time.count() << " ms"
+              << std::endl;
+    std::cout << "Time to interpolate (2nd run): " << interpolate_time2.count()
+              << " ms" << std::endl;
+    std::cout << "Time to interpolate (3rd run): " << interpolate_time3.count()
+                << " ms" << std::endl;
+
+    auto save_dir = sclx::filesystem::path(__FILE__).parent_path()
+                  / "radial_point_method_results";
     sclx::filesystem::create_directories(save_dir);
     auto save_path = save_dir / "radial_point_method_results.csv";
     interp_values.prefetch_async({sclx::cuda::traits::cpu_device_id});
     std::ofstream save_file(save_path);
     save_file << "x,y,f" << std::endl;
     for (size_t i = 0; i < interp_grid_size * interp_grid_size; ++i) {
-        save_file
-            << interp_grid(0, i) << ","
-            << interp_grid(1, i) << ","
-            << interp_values(i) << std::endl;
+        save_file << interp_grid(0, i) << "," << interp_grid(1, i) << ","
+                  << interp_values(i) << std::endl;
     }
     save_file.close();
 
