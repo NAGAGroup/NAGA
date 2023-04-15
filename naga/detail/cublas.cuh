@@ -37,7 +37,7 @@
 #include <unordered_map>
 #include <cublas_v2.h>
 
-namespace naga::cublas {
+namespace naga::detail::cublas {
 
 class handle_t {
   public:

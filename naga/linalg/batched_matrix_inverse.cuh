@@ -76,7 +76,7 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv, bool copy
         size_t slice_len   = std::get<2>(split);
 
         auto task_lambda = [=]() {
-            auto handle = cublas::this_thread::get_cublas_handle();
+            auto handle = ::naga::detail::cublas::this_thread::get_cublas_handle();
 
             auto A_slice
                 = A.get_range({slice_start}, {slice_start + slice_len});
