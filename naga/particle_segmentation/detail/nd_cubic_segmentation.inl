@@ -33,7 +33,7 @@
 #include <mutex>
 #include <scalix/algorithm/reduce_last_dim.cuh>
 
-namespace naga::detail {
+namespace naga::segmentation::detail {
 
 template<class T, uint Dimensions>
 __host__ void compute_bounds(

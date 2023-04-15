@@ -53,7 +53,7 @@ int main() {
 
     auto start         = std::chrono::high_resolution_clock::now();
     int partition_size = 64;
-    naga::nd_cubic_segmentation<float, 2> segmentation2d(
+    naga::segmentation::nd_cubic_segmentation<float, 2> segmentation2d(
         grid2d,
         partition_size
     );
@@ -99,7 +99,7 @@ int main() {
     }).get();
 
     start = std::chrono::high_resolution_clock::now();
-    naga::nd_cubic_segmentation<float, 3> segmentation3d(
+    naga::segmentation::nd_cubic_segmentation<float, 3> segmentation3d(
         grid3d,
         partition_size
     );

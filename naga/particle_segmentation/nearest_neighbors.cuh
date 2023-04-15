@@ -37,7 +37,7 @@
 #include "nd_cubic_segmentation.cuh"
 #include <tuple>
 
-namespace naga {
+namespace naga::segmentation {
 
 template<class PointMapType>
 using default_distance_squared
@@ -48,7 +48,7 @@ using default_distance_squared
 namespace knn {
 
 template<class PointMapType>
-using nd_cubic_segmentation = ::naga::nd_cubic_segmentation<
+using nd_cubic_segmentation = ::naga::segmentation::nd_cubic_segmentation<
     std::decay_t<
         typename point_map_traits<PointMapType>::point_traits::value_type>,
     point_map_traits<PointMapType>::point_traits::dimensions>;

@@ -33,14 +33,14 @@
 #pragma once
 #include <scalix/array.cuh>
 
-namespace naga {
+namespace naga::segmentation {
 
 template<class T, uint Dimensions>
 class nd_cubic_segmentation;
 
 }
 
-namespace naga::detail {
+namespace naga::segmentation::detail {
 
 template<class T, uint Dimensions>
 __host__ void compute_bounds(

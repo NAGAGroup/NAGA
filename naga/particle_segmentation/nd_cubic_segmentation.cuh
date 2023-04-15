@@ -37,7 +37,7 @@
 #include <scalix/algorithm/inclusive_scan.cuh>
 #include <scalix/fill.cuh>
 
-namespace naga {
+namespace naga::segmentation {
 
 template<class T, uint Dimensions>
 class partition_t;

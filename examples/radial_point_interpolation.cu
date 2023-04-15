@@ -107,7 +107,7 @@ int main() {
     // First, we need to create a segmentation for the source grid, so we
     // can compute the nearest neighbors.
     auto start = std::chrono::high_resolution_clock::now();
-    naga::nd_cubic_segmentation<float, 2> source_segmentation(
+    naga::segmentation::nd_cubic_segmentation<float, 2> source_segmentation(
         source_grid,
         support_size
     );
@@ -115,7 +115,7 @@ int main() {
 
     // We use the nearest neighbors algorithm to provide the interpolation
     // indices to the radial point method.
-    auto [distances, indices] = naga::batched_nearest_neighbors(
+    auto [distances, indices] = naga::segmentation::batched_nearest_neighbors(
         support_size,
         naga::default_point_map<float, 2>{interp_grid},
         source_segmentation

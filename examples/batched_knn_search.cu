@@ -127,8 +127,9 @@ int main() {
 
     for (auto& part_size : partitioner_sizes) {
         std::cout << "Partitioner size: " << part_size << std::endl;
-        using point_map_t   = naga::default_point_map<float, dims>;
-        using segmentation_t = naga::knn::nd_cubic_segmentation<point_map_t>;
+        using point_map_t = naga::default_point_map<float, dims>;
+        using segmentation_t
+            = naga::segmentation::knn::nd_cubic_segmentation<point_map_t>;
 
         auto start = std::chrono::high_resolution_clock::now();
 
@@ -137,11 +138,12 @@ int main() {
         auto end_part_build = std::chrono::high_resolution_clock::now();
 
         // find nearest neighbors
-        auto [distances_squared, indices] = naga::batched_nearest_neighbors(
-            k,
-            point_map_t{big_grid_slice},
-            partitioner
-        );
+        auto [distances_squared, indices]
+            = naga::segmentation::batched_nearest_neighbors(
+                k,
+                point_map_t{big_grid_slice},
+                partitioner
+            );
         auto end_knn = std::chrono::high_resolution_clock::now();
 
         auto first_nn = indices.get_slice(sclx::md_index_t<1>{0});
