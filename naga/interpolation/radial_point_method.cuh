@@ -315,7 +315,7 @@ class radial_point_method {
                         };
                     if (b % group_size_ == 0) {
                         auto G0_future_ = sclx::execute_kernel(
-                            [=](const sclx::kernel_handler& handler) {
+                            [&](const sclx::kernel_handler& handler) {
                                 handler.launch(
                                     sclx::md_range_t<1>{batch_size},
                                     G0,
@@ -333,7 +333,8 @@ class radial_point_method {
 
                     const auto& G_x_lambda =
                         [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                            const point_type& x = query_points[idx[0]];
+                            const point_type& x = query_points
+                                [idx[0] + slice_start + b * batch_size];
                             for (uint i = 0; i < support_size + dimensions + 1;
                                  ++i) {
                                 size_t xi_idx = indices_batch(
@@ -391,8 +392,10 @@ class radial_point_method {
                     }).get();
                 }
             };
+            device_lambda();
 
-            futures.emplace_back(std::async(std::launch::async, device_lambda));
+            //            futures.emplace_back(std::async(std::launch::async,
+            //            device_lambda));
         }
 
         for (auto& future : futures) {
