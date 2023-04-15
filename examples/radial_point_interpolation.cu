@@ -31,6 +31,9 @@
 
 #include <naga/interpolation/radial_point_method.cuh>
 #include <naga/particle_segmentation/nearest_neighbors.cuh>
+#include <scalix/algorithm/reduce.cuh>
+#include <scalix/filesystem.hpp>
+#include <fstream>
 
 __device__ float field_function(const float* x) {
     return naga::math::sin(x[0]) * naga::math::cos(x[1]);
@@ -99,6 +102,47 @@ int main() {
             naga::default_point_map<float, 2>{interp_grid},
             grid_spacing
         );
+
+    interpolator.interpolate(source_values, interp_values);
+
+    auto interp_errors
+        = sclx::zeros<float, 1>({interp_grid_size * interp_grid_size});
+
+    sclx::execute_kernel([&](sclx::kernel_handler& handle) {
+        handle.launch(
+            sclx::md_range_t<1>{interp_grid_size * interp_grid_size},
+            interp_errors,
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                interp_errors(idx[0])
+                    = naga::math::abs(
+                        interp_values(idx[0])
+                        - field_function(&interp_grid(0, idx[0]))
+                    );
+            }
+        );
+    });
+
+    auto max_error = sclx::algorithm::reduce(
+        interp_errors,
+        0.0f,
+        sclx::algorithm::max<float>{}
+    );
+
+    std::cout << "Max error: " << max_error << std::endl;
+
+    auto save_dir = sclx::filesystem::path(__FILE__).parent_path() / "radial_point_method_results";
+    sclx::filesystem::create_directories(save_dir);
+    auto save_path = save_dir / "radial_point_method_results.csv";
+    interp_values.prefetch_async({sclx::cuda::traits::cpu_device_id});
+    std::ofstream save_file(save_path);
+    save_file << "x,y,f" << std::endl;
+    for (size_t i = 0; i < interp_grid_size * interp_grid_size; ++i) {
+        save_file
+            << interp_grid(0, i) << ","
+            << interp_grid(1, i) << ","
+            << interp_values(i) << std::endl;
+    }
+    save_file.close();
 
     return 0;
 }

@@ -104,11 +104,11 @@ class euclidean_squared {
 
     __host__ __device__ auto
     operator()(const VectorLikeT& a, const VectorLikeU& b, uint) const {
-        return accumulate_pow2_diffs<Dimensions>(a, b);
+        return accumulate_pow2_diffs(a, b);
     }
 
   private:
-    template<uint D>
+    template<uint D=Dimensions>
     __host__ __device__ auto
     accumulate_pow2_diffs(const VectorLikeT& a, const VectorLikeU& b) const {
         if constexpr (D == 0) {

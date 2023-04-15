@@ -86,8 +86,8 @@ class radial_point_method {
         = point_map_traits<PointMapType>::point_traits::dimensions;
 
     radial_point_method(
-        sclx::array<value_type, 2> &source_points,
-        sclx::array<size_t, 2> &source_indices,
+        sclx::array<value_type, 2>& source_points,
+        sclx::array<size_t, 2>& source_indices,
         const PointMapType& query_points,
         const value_type& approx_particle_spacing,
         uint group_size                         = 1,
@@ -106,7 +106,8 @@ class radial_point_method {
             approx_particle_spacing,
             group_size,
             shape_function,
-            devices);
+            devices
+        );
     }
 
     void compute_weights(
@@ -223,7 +224,10 @@ class radial_point_method {
                         "naga::interpolation::"
                     );
                 }
-                batch_size = (batch_size * 8 / 10 == 0) ? 1 : batch_size * 8 / 10;
+                // here we reduce the batch size by 40% to avoid overloading
+                // the memory
+                batch_size
+                    = (batch_size * 6 / 10 == 0) ? 1 : batch_size * 6 / 10;
                 batch_size = std::min(batch_size, slice_range);
 
                 size_t num_batches
@@ -276,8 +280,14 @@ class radial_point_method {
                                        % (support_size + dimensions + 1);
                                 uint j = linear_idx
                                        / (support_size + dimensions + 1);
-                                size_t xi_idx = indices_batch(math::min(support_size - 1, i), idx[0]);
-                                size_t xj_idx = indices_batch(math::min(support_size - 1, j), idx[0]);
+                                size_t xi_idx = indices_batch(
+                                    math::min(support_size - 1, i),
+                                    idx[0]
+                                );
+                                size_t xj_idx = indices_batch(
+                                    math::min(support_size - 1, j),
+                                    idx[0]
+                                );
                                 const value_type* xi
                                     = &source_points(0, xi_idx);
                                 const value_type* xj
@@ -285,18 +295,20 @@ class radial_point_method {
                                 if (i >= support_size && j >= support_size) {
                                     G0(i, j, idx[0]) = 0;
                                 } else if (i >= support_size) {
-                                    G0(i, j, idx[0]) = (i - support_size) == 0
-                                                         ? 1
-                                                         : xj[i - support_size - 1];
+                                    G0(i, j, idx[0])
+                                        = (i - support_size) == 0
+                                            ? 1
+                                            : xj[i - support_size - 1];
                                 } else if (j >= support_size) {
-                                    G0(i, j, idx[0]) = (j - support_size) == 0
-                                                         ? 1
-                                                         : xi[j - support_size - 1];
+                                    G0(i, j, idx[0])
+                                        = (j - support_size) == 0
+                                            ? 1
+                                            : xi[j - support_size - 1];
                                 } else {
-                                    G0(i, j, idx[0]) = mq_shape_function<point_type>{}(
+                                    G0(i, j, idx[0]) = shape_function(
                                         xi,
                                         xj,
-                                        approx_particle_spacing_
+                                        approx_particle_spacing
                                     );
                                 }
                             }
@@ -319,66 +331,68 @@ class radial_point_method {
                         );
                     }
 
-//                    const auto& G_x_lambda =
-//                        [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-//                            const point_type& x = query_points[idx[0]];
-//                            for (uint i = 0; i < support_size + dimensions + 1;
-//                                 ++i) {
-//                                size_t xi_idx = indices_batch(i, idx[0]);
-//                                const value_type* xi
-//                                    = &source_points(0, xi_idx);
-//                                if (i >= support_size) {
-//                                    G_x(i, 0, idx[0]) = (i - support_size) == 0
-//                                                          ? 1
-//                                                          : x[i - support_size];
-//                                } else {
-//                                    G_x(i, 0, idx[0]) = shape_function(
-//                                        xi,
-//                                        x,
-//                                        approx_particle_spacing_
-//                                    );
-//                                }
-//                            }
-//                        };
-//                    auto G_x_future = sclx::execute_kernel(
-//                        [&](const sclx::kernel_handler& handler) {
-//                            handler.launch(
-//                                sclx::md_range_t<1>{batch_size},
-//                                G_x,
-//                                G_x_lambda
-//                            );
-//                        }
-//                    );
+                    const auto& G_x_lambda =
+                        [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                            const point_type& x = query_points[idx[0]];
+                            for (uint i = 0; i < support_size + dimensions + 1;
+                                 ++i) {
+                                size_t xi_idx = indices_batch(
+                                    math::min(support_size - 1, i),
+                                    idx[0]
+                                );
+                                const value_type* xi
+                                    = &source_points(0, xi_idx);
+                                if (i >= support_size) {
+                                    G_x(i, 0, idx[0])
+                                        = (i - support_size) == 0
+                                            ? 1
+                                            : x[i - support_size - 1];
+                                } else {
+                                    G_x(i, 0, idx[0]) = shape_function(
+                                        xi,
+                                        x,
+                                        approx_particle_spacing
+                                    );
+                                }
+                            }
+                        };
+                    auto G_x_future = sclx::execute_kernel(
+                        [&](const sclx::kernel_handler& handler) {
+                            handler.launch(
+                                sclx::md_range_t<1>{batch_size},
+                                G_x,
+                                G_x_lambda
+                            );
+                        }
+                    );
 
                     G0_future.get();
-//                    if (b % group_size == 0) {
-//                        linalg::batched_matrix_inverse(G0, G0_inv, false);
-//                    }
-//                    G_x_future.get();
-//
-//                    sclx::execute_kernel([&](const sclx::kernel_handler& handler
-//                                         ) {
-//                        handler.launch(
-//                            sclx::md_range_t<2>{support_size, batch_size},
-//                            weights_batch,
-//                            [=] __device__(const sclx::md_index_t<2>& idx, const auto&) {
-//                                value_type sum = 0;
-//                                for (uint i = 0;
-//                                     i < support_size + dimensions + 1;
-//                                     ++i) {
-//                                    sum += G0_inv(i, idx[0], idx[1])
-//                                         * G_x(i, 0, idx[1]);
-//                                }
-//                                weights_batch(idx[0], idx[1]) = sum;
-//                            }
-//                        );
-//                    }).get();
+                    if (b % group_size == 0) {
+                        linalg::batched_matrix_inverse(G0, G0_inv, false);
+                    }
+                    G_x_future.get();
+
+                    sclx::execute_kernel([&](const sclx::kernel_handler& handler
+                                         ) {
+                        handler.launch(
+                            sclx::md_range_t<2>{support_size, batch_size},
+                            weights_batch,
+                            [=] __device__(const sclx::md_index_t<2>& idx, const auto&) {
+                                value_type sum = 0;
+                                for (uint i = 0;
+                                     i < support_size + dimensions + 1;
+                                     ++i) {
+                                    sum += G0_inv(i, idx[0], idx[1])
+                                         * G_x(i, 0, idx[1]);
+                                }
+                                weights_batch(idx[0], idx[1]) = sum;
+                            }
+                        );
+                    }).get();
                 }
             };
 
-            device_lambda();
-
-//            futures.emplace_back(std::async(std::launch::async, device_lambda));
+            futures.emplace_back(std::async(std::launch::async, device_lambda));
         }
 
         for (auto& future : futures) {
@@ -390,7 +404,7 @@ class radial_point_method {
         sclx::array<value_type, 2> field,
         sclx::array<value_type, 2> destination
     ) {
-        if (field.shape()[0] != source_points_size_) {
+        if (field.shape()[1] != source_points_size_) {
             sclx::throw_exception<std::invalid_argument>(
                 "field array must have the same number of rows as the number "
                 "of source points used to construct the interpolator"
@@ -404,19 +418,59 @@ class radial_point_method {
             );
         }
 
+        auto weights    = weights_;
+        auto indices    = indices_;
+        auto group_size = group_size_;
+
         sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
             handler.launch(
-                sclx::md_range_t<2>{
-                    destination.shape()[0],
-                    destination.shape()[1]},
+                sclx::md_range_t<2>(destination.shape()),
                 destination,
-                [=](const sclx::md_index_t<2>& idx, const auto&) {
+                [=] __device__(const sclx::md_index_t<2>& idx, const auto&) {
                     value_type sum = 0;
-                    for (uint i = 0; i < weights_.shape()[0]; ++i) {
-                        sum += weights_(i, idx[1])
-                             * field(i, indices_(i, idx[1] / group_size_));
+                    for (uint i = 0; i < weights.shape()[0]; ++i) {
+                        sum += weights(i, idx[1])
+                             * field(idx[0], indices(i, idx[1]));
                     }
                     destination(idx[0], idx[1]) = sum;
+                }
+            );
+        });
+    }
+
+    void interpolate(
+        sclx::array<value_type, 1> field,
+        sclx::array<value_type, 1> destination
+    ) {
+        if (field.shape()[0] != source_points_size_) {
+            sclx::throw_exception<std::invalid_argument>(
+                "field array must have the same number of rows as the number "
+                "of source points used to construct the interpolator"
+            );
+        }
+
+        if (destination.shape()[0] != weights_.shape()[1]) {
+            sclx::throw_exception<std::invalid_argument>(
+                "destination array must have the same number of columns as the "
+                "number of points used to construct the interpolator"
+            );
+        }
+
+        auto weights    = weights_;
+        auto indices    = indices_;
+        auto group_size = group_size_;
+
+        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
+            handler.launch(
+                sclx::md_range_t<1>{destination.shape()[0]},
+                destination,
+                [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                    value_type sum = 0;
+                    for (uint i = 0; i < weights.shape()[0]; ++i) {
+                        sum += weights(i, idx[0])
+                             * field(indices(i, idx[0] / group_size));
+                    }
+                    destination(idx[0]) = sum;
                 }
             );
         }).get();
