@@ -36,7 +36,7 @@
 namespace naga {
 
 template<class T, uint Dimensions>
-class rectangular_partitioner;
+class nd_cubic_segmentation;
 
 }
 
@@ -52,9 +52,9 @@ __host__ void compute_bounds(
 template<class T, uint Dimensions>
 __host__ void compute_partition_sizes(
     sclx::array<uint, Dimensions>& partition_sizes_,
-    const sclx::shape_t<Dimensions>& partitioner_shape,
+    const sclx::shape_t<Dimensions>& segmentation_shape,
     sclx::array<const T, 2>& points_,
-    const rectangular_partitioner<T, Dimensions>& partitioner
+    const nd_cubic_segmentation<T, Dimensions>& segmentation
 );
 
 template<uint Dimensions>
@@ -69,7 +69,7 @@ __host__ void assign_indices(
     const sclx::array<const uint, Dimensions>& partition_sizes_,
     const sclx::array<const size_t, Dimensions>& partition_index_offsets_,
     const sclx::array<const T, 2>& points_,
-    const rectangular_partitioner<T, Dimensions>& partitioner
+    const nd_cubic_segmentation<T, Dimensions>& segmentation
 );
 
 }  // namespace naga::detail

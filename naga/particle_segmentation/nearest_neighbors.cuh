@@ -34,7 +34,7 @@
 
 #include "../distance_functions.cuh"
 #include "../point_map.cuh"
-#include "rectangular_partitioner.cuh"
+#include "nd_cubic_segmentation.cuh"
 #include <tuple>
 
 namespace naga {
@@ -48,7 +48,7 @@ using default_distance_squared
 namespace knn {
 
 template<class PointMapType>
-using rectangular_partitioner = ::naga::rectangular_partitioner<
+using nd_cubic_segmentation = ::naga::nd_cubic_segmentation<
     std::decay_t<
         typename point_map_traits<PointMapType>::point_traits::value_type>,
     point_map_traits<PointMapType>::point_traits::dimensions>;
@@ -102,7 +102,7 @@ __host__ void batched_nearest_neighbors(
         2>& distances_squared,
     sclx::array<sclx::index_t, 2>& indices,
     const PointMapType& query_points,
-    const knn::rectangular_partitioner<PointMapType>& segmented_ref_points,
+    const knn::nd_cubic_segmentation<PointMapType>& segmented_ref_points,
     DistanceSquaredOp&& distance_squared_op = DistanceSquaredOp()
 ) {
     using distance_traits = distance_functions::distance_function_traits<
@@ -339,7 +339,7 @@ std::tuple<
 batched_nearest_neighbors(
     uint k,
     const PointMapType& query_points,
-    const knn::rectangular_partitioner<PointMapType>& segmented_ref_points,
+    const knn::nd_cubic_segmentation<PointMapType>& segmented_ref_points,
     DistanceSquaredOp&& distance_squared_op = {}
 ) {
 

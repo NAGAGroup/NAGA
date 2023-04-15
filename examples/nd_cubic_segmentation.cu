@@ -31,7 +31,7 @@
 
 #include <chrono>
 #include <fstream>
-#include <naga/particle_segmentation/rectangular_partitioner.cuh>
+#include <naga/particle_segmentation/nd_cubic_segmentation.cuh>
 #include <scalix/filesystem.hpp>
 #include <string>
 
@@ -53,12 +53,12 @@ int main() {
 
     auto start         = std::chrono::high_resolution_clock::now();
     int partition_size = 64;
-    naga::rectangular_partitioner<float, 2> partitioner2d(
+    naga::nd_cubic_segmentation<float, 2> segmentation2d(
         grid2d,
         partition_size
     );
     auto end = std::chrono::high_resolution_clock::now();
-    std::cout << "Time to build 2D partitioner: "
+    std::cout << "Time to build 2D segmentation: "
               << std::chrono::duration_cast<std::chrono::microseconds>(
                      end - start
                  )
@@ -66,15 +66,15 @@ int main() {
                      / 1000.f
               << "ms" << std::endl;
 
-    const auto& partitioner_shape = partitioner2d.shape();
-    auto partition_count          = partitioner2d.partition_count();
+    const auto& segmentation_shape = segmentation2d.shape();
+    auto partition_count          = segmentation2d.partition_count();
     auto results_path = sclx::filesystem::path(__FILE__).parent_path()
-                      / "rectangular_partitioner_results";
+                      / "nd_cubic_segmentation_results";
     sclx::filesystem::create_directories(results_path);
-    std::ofstream file(results_path / "rectangular_partitioner2d.csv");
+    std::ofstream file(results_path / "nd_cubic_segmentation2d.csv");
     file << "x,y,p" << std::endl;
     size_t p_idx = 0;
-    for (auto partition : partitioner2d) {
+    for (auto partition : segmentation2d) {
         for (const auto& point : partition) {
             file << point.x() << "," << point.y() << "," << p_idx << std::endl;
         }
@@ -99,12 +99,12 @@ int main() {
     }).get();
 
     start = std::chrono::high_resolution_clock::now();
-    naga::rectangular_partitioner<float, 3> partitioner3d(
+    naga::nd_cubic_segmentation<float, 3> segmentation3d(
         grid3d,
         partition_size
     );
     end = std::chrono::high_resolution_clock::now();
-    std::cout << "Time to build 3D partitioner: "
+    std::cout << "Time to build 3D segmentation: "
               << std::chrono::duration_cast<std::chrono::microseconds>(
                      end - start
                  )
@@ -112,12 +112,12 @@ int main() {
                      / 1000.f
               << "ms" << std::endl;
 
-    const auto& partitioner3d_shape = partitioner3d.shape();
-    partition_count                 = partitioner3d.partition_count();
-    file = std::ofstream(results_path / "rectangular_partitioner3d.csv");
+    const auto& segmentation3d_shape = segmentation3d.shape();
+    partition_count                 = segmentation3d.partition_count();
+    file = std::ofstream(results_path / "nd_cubic_segmentation3d.csv");
     file << "x,y,z,p" << std::endl;
     p_idx = 0;
-    for (auto partition : partitioner3d) {
+    for (auto partition : segmentation3d) {
         for (const auto& point : partition) {
             file << point.x() << "," << point.y() << "," << point.z() << ","
                  << p_idx << std::endl;
@@ -133,7 +133,7 @@ int main() {
             dummy,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
                 int p_idx = 0;
-                for (auto partition : partitioner3d) {
+                for (auto partition : segmentation3d) {
                     for (const auto& point : partition) {
                         printf("%f, %f, %d\n", point.x(), point.y(), p_idx);
                     }

@@ -128,12 +128,12 @@ int main() {
     for (auto& part_size : partitioner_sizes) {
         std::cout << "Partitioner size: " << part_size << std::endl;
         using point_map_t   = naga::default_point_map<float, dims>;
-        using partitioner_t = naga::knn::rectangular_partitioner<point_map_t>;
+        using segmentation_t = naga::knn::nd_cubic_segmentation<point_map_t>;
 
         auto start = std::chrono::high_resolution_clock::now();
 
         // build partitioner
-        partitioner_t partitioner(grid, part_size);
+        segmentation_t partitioner(grid, part_size);
         auto end_part_build = std::chrono::high_resolution_clock::now();
 
         // find nearest neighbors

@@ -104,10 +104,10 @@ int main() {
     std::cout << "Interpolated point count: " << interp_grid.shape()[1]
               << std::endl;
 
-    // First, we need to create a partitioner for the source grid, so we
+    // First, we need to create a segmentation for the source grid, so we
     // can compute the nearest neighbors.
     auto start = std::chrono::high_resolution_clock::now();
-    naga::rectangular_partitioner<float, 2> source_partitioner(
+    naga::nd_cubic_segmentation<float, 2> source_segmentation(
         source_grid,
         support_size
     );
@@ -118,7 +118,7 @@ int main() {
     auto [distances, indices] = naga::batched_nearest_neighbors(
         support_size,
         naga::default_point_map<float, 2>{interp_grid},
-        source_partitioner
+        source_segmentation
     );
     auto end_neighbors = std::chrono::high_resolution_clock::now();
 
@@ -186,7 +186,7 @@ int main() {
     std::chrono::duration<double> interpolate_time3
         = (end_interpolate3 - end_interpolate2) * 1000.f;
 
-    std::cout << "Time to construct partitioner: " << partition_time.count()
+    std::cout << "Time to construct segmentation: " << partition_time.count()
               << " ms" << std::endl;
     std::cout << "Time to find nearest neighbors: " << neighbors_time.count()
               << " ms" << std::endl;

@@ -33,7 +33,7 @@
 #pragma once
 
 #include "../point.cuh"
-#include "detail/rectangular_partitioner.cuh"
+#include "detail/nd_cubic_segmentation.cuh"
 #include <scalix/algorithm/inclusive_scan.cuh>
 #include <scalix/fill.cuh>
 
@@ -158,7 +158,7 @@ class partition_iterator {
 };
 
 template<class T, uint Dimensions>
-class rectangular_partitioner;
+class nd_cubic_segmentation;
 
 template<class T, uint Dimensions>
 class partition_t {
@@ -189,7 +189,7 @@ class partition_t {
 
     __host__ __device__ const size_t* indices() const { return indices_; }
 
-    friend class rectangular_partitioner<T, Dimensions>;
+    friend class nd_cubic_segmentation<T, Dimensions>;
 
   private:
     const sclx::array<const T, 2>* points_;
@@ -207,24 +207,24 @@ class partition_t {
 };
 
 template<class T, uint Dimensions>
-class rectangular_partitioner_iterator;
+class nd_cubic_segmentation_iterator;
 
 template<class T, uint Dimensions>
-__host__ __device__ rectangular_partitioner_iterator<T, Dimensions>
-make_rectangular_partitioner_iterator(
-    const rectangular_partitioner<T, Dimensions>* partitioner,
+__host__ __device__ nd_cubic_segmentation_iterator<T, Dimensions>
+make_nd_cubic_segmentation_iterator(
+    const nd_cubic_segmentation<T, Dimensions>* segmentation,
     const sclx::md_index_t<Dimensions>& index
 );
 
 template<class T, uint Dimensions>
-class rectangular_partitioner {
+class nd_cubic_segmentation {
   public:
     using partition_type = partition_t<T, Dimensions>;
-    using iterator       = rectangular_partitioner_iterator<T, Dimensions>;
+    using iterator       = nd_cubic_segmentation_iterator<T, Dimensions>;
 
-    rectangular_partitioner() = default;
+    nd_cubic_segmentation() = default;
 
-    __host__ rectangular_partitioner(
+    __host__ nd_cubic_segmentation(
         const sclx::array<const T, 2>& points,
         uint approx_partition_size
     )
@@ -232,7 +232,7 @@ class rectangular_partitioner {
         if (points_.shape()[0] != Dimensions) {
             sclx::throw_exception<std::invalid_argument>(
                 "The number of dimensions in the points array does not match "
-                "the number of dimensions in the partitioner",
+                "the number of dimensions in the segmentation",
                 "naga::"
             );
         }
@@ -266,22 +266,22 @@ class rectangular_partitioner {
             1.0f / static_cast<T>(Dimensions)
         );
 
-        sclx::shape_t<Dimensions> partitioner_shape{};
+        sclx::shape_t<Dimensions> segmentation_shape{};
         for (uint i = 0; i < Dimensions; ++i) {
-            partitioner_shape[i] = static_cast<uint>(std::ceil(
+            segmentation_shape[i] = static_cast<uint>(std::ceil(
                 (upper_bounds_[i] - lower_bounds_[i]) / partition_width_
             ));
         }
 
         for (uint i = 0; i < Dimensions; ++i) {
             upper_bounds_[i]
-                = lower_bounds_[i] + partitioner_shape[i] * partition_width_;
+                = lower_bounds_[i] + segmentation_shape[i] * partition_width_;
         }
 
         // Calculate partition sizes
         detail::compute_partition_sizes<T, Dimensions>(
             partition_sizes_,
-            partitioner_shape,
+            segmentation_shape,
             points_,
             *this
         );
@@ -355,14 +355,14 @@ class rectangular_partitioner {
     }
 
     __host__ __device__ iterator begin() const {
-        return make_rectangular_partitioner_iterator(
+        return make_nd_cubic_segmentation_iterator(
             this,
             sclx::md_index_t<Dimensions>{}
         );
     }
 
     __host__ __device__ iterator end() const {
-        return make_rectangular_partitioner_iterator(
+        return make_nd_cubic_segmentation_iterator(
             this,
             sclx::md_index_t<Dimensions>::create_from_linear(
                 partition_count(),
@@ -371,7 +371,7 @@ class rectangular_partitioner {
         );
     }
 
-    friend class rectangular_partitioner_iterator<T, Dimensions>;
+    friend class nd_cubic_segmentation_iterator<T, Dimensions>;
 
   private:
     sclx::array<uint, Dimensions> partition_sizes_;
@@ -385,125 +385,125 @@ class rectangular_partitioner {
 };
 
 template<class T, uint Dimensions>
-class rectangular_partitioner_iterator {
+class nd_cubic_segmentation_iterator {
   public:
-    using partitioner_type = rectangular_partitioner<T, Dimensions>;
-    using partition_type   = typename partitioner_type::partition_type;
+    using segmentation_type = nd_cubic_segmentation<T, Dimensions>;
+    using partition_type   = typename segmentation_type::partition_type;
 
     using value_type        = partition_type;
     using difference_type   = sclx::index_t;
     using iterator_category = std::random_access_iterator_tag;
 
     __host__ __device__ operator bool() const {
-        return counter_ < partitioner_->partition_count();
+        return counter_ < segmentation_->partition_count();
     }
 
     __host__ __device__ partition_type operator*() const {
-        return partitioner_->get_partition(counter_);
+        return segmentation_->get_partition(counter_);
     }
 
     __host__ __device__ partition_type operator->() const {
-        return partitioner_->get_partition(counter_);
+        return segmentation_->get_partition(counter_);
     }
 
-    __host__ __device__ rectangular_partitioner_iterator& operator++() {
+    __host__ __device__ nd_cubic_segmentation_iterator& operator++() {
         counter_++;
         return *this;
     }
 
-    __host__ __device__ rectangular_partitioner_iterator operator++(int) {
+    __host__ __device__ nd_cubic_segmentation_iterator operator++(int) {
         auto tmp = *this;
         ++(*this);
         return tmp;
     }
 
     __host__ __device__ bool
-    operator==(const rectangular_partitioner_iterator& other) const {
+    operator==(const nd_cubic_segmentation_iterator& other) const {
         return counter_ == other.counter_;
     }
 
     __host__ __device__ bool
-    operator!=(const rectangular_partitioner_iterator& other) const {
+    operator!=(const nd_cubic_segmentation_iterator& other) const {
         return counter_ != other.counter_;
     }
 
     __host__ __device__ bool
-    operator<(const rectangular_partitioner_iterator& other) const {
+    operator<(const nd_cubic_segmentation_iterator& other) const {
         return counter_ < other.counter_;
     }
 
     __host__ __device__ bool
-    operator<=(const rectangular_partitioner_iterator& other) const {
+    operator<=(const nd_cubic_segmentation_iterator& other) const {
         return counter_ <= other.counter_;
     }
 
     __host__ __device__ bool
-    operator>(const rectangular_partitioner_iterator& other) const {
+    operator>(const nd_cubic_segmentation_iterator& other) const {
         return counter_ > other.counter_;
     }
 
     __host__ __device__ bool
-    operator>=(const rectangular_partitioner_iterator& other) const {
+    operator>=(const nd_cubic_segmentation_iterator& other) const {
         return counter_ >= other.counter_;
     }
 
     __host__ __device__ difference_type
-    operator-(const rectangular_partitioner_iterator& other) const {
+    operator-(const nd_cubic_segmentation_iterator& other) const {
         return counter_ - other.counter_;
     }
 
-    __host__ __device__ rectangular_partitioner_iterator
+    __host__ __device__ nd_cubic_segmentation_iterator
     operator+(difference_type n) const {
-        return rectangular_partitioner_iterator(partitioner_, counter_ + n);
+        return nd_cubic_segmentation_iterator(segmentation_, counter_ + n);
     }
 
-    __host__ __device__ rectangular_partitioner_iterator
+    __host__ __device__ nd_cubic_segmentation_iterator
     operator-(difference_type n) const {
-        return rectangular_partitioner_iterator(partitioner_, counter_ - n);
+        return nd_cubic_segmentation_iterator(segmentation_, counter_ - n);
     }
 
-    __host__ __device__ rectangular_partitioner_iterator&
+    __host__ __device__ nd_cubic_segmentation_iterator&
     operator+=(difference_type n) {
         counter_ += n;
         return *this;
     }
 
-    __host__ __device__ rectangular_partitioner_iterator&
+    __host__ __device__ nd_cubic_segmentation_iterator&
     operator-=(difference_type n) {
         counter_ -= n;
         return *this;
     }
 
-    __host__ __device__ rectangular_partitioner_iterator(
-        const partitioner_type* partitioner,
+    __host__ __device__ nd_cubic_segmentation_iterator(
+        const segmentation_type* segmentation,
         size_t counter
     )
-        : partitioner_(partitioner),
+        : segmentation_(segmentation),
           counter_(counter) {}
 
     __host__ __device__ partition_t<T, Dimensions> operator[](difference_type n
     ) const {
-        return partitioner_->get_partition(n);
+        return segmentation_->get_partition(n);
     }
 
   private:
-    const partitioner_type* partitioner_;
+    const segmentation_type* segmentation_;
 
     size_t counter_;
 };
 
 template<class T, uint Dimensions>
-__host__ __device__ rectangular_partitioner_iterator<T, Dimensions>
-make_rectangular_partitioner_iterator(
-    const rectangular_partitioner<T, Dimensions>* partitioner,
+__host__ __device__ nd_cubic_segmentation_iterator<T, Dimensions>
+make_nd_cubic_segmentation_iterator(
+    const nd_cubic_segmentation<T, Dimensions>* segmentation,
     const sclx::md_index_t<Dimensions>& index
 ) {
-    return rectangular_partitioner_iterator<T, Dimensions>(
-        partitioner,
-        index.as_linear(partitioner->shape())
+    return nd_cubic_segmentation_iterator<T, Dimensions>(
+        segmentation,
+        index.as_linear(segmentation->shape())
     );
 }
 
 }  // namespace naga
 
-#include "detail/rectangular_partitioner.inl"
+#include "detail/nd_cubic_segmentation.inl"
