@@ -29,7 +29,7 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 #include <chrono>
-#include <naga/particle_segmentation/nearest_neighbors.cuh>
+#include <naga/segmentation/nearest_neighbors.cuh>
 
 template<class T, uint Dimensions>
 class grid_point_generator {

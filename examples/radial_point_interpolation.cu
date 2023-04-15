@@ -40,7 +40,7 @@
 #include <chrono>
 #include <fstream>
 #include <naga/interpolation/radial_point_method.cuh>
-#include <naga/particle_segmentation/nearest_neighbors.cuh>
+#include <naga/segmentation/nearest_neighbors.cuh>
 #include <scalix/algorithm/reduce.cuh>
 #include <scalix/filesystem.hpp>
 

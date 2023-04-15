@@ -31,7 +31,7 @@
 
 #include <chrono>
 #include <fstream>
-#include <naga/particle_segmentation/nd_cubic_segmentation.cuh>
+#include <naga/segmentation/nd_cubic_segmentation.cuh>
 #include <scalix/filesystem.hpp>
 #include <string>
 
@@ -67,7 +67,7 @@ int main() {
               << "ms" << std::endl;
 
     const auto& segmentation_shape = segmentation2d.shape();
-    auto partition_count          = segmentation2d.partition_count();
+    auto partition_count           = segmentation2d.partition_count();
     auto results_path = sclx::filesystem::path(__FILE__).parent_path()
                       / "nd_cubic_segmentation_results";
     sclx::filesystem::create_directories(results_path);
@@ -113,7 +113,7 @@ int main() {
               << "ms" << std::endl;
 
     const auto& segmentation3d_shape = segmentation3d.shape();
-    partition_count                 = segmentation3d.partition_count();
+    partition_count                  = segmentation3d.partition_count();
     file = std::ofstream(results_path / "nd_cubic_segmentation3d.csv");
     file << "x,y,z,p" << std::endl;
     p_idx = 0;
