@@ -31,8 +31,8 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
-#include "../cublas.cuh"
 #include "detail/batched_matrix_inverse.cuh"
+#include "../detail/cublas.cuh"
 #include <future>
 #include <scalix/fill.cuh>
 
