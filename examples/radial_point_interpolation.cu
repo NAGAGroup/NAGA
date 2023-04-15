@@ -123,8 +123,8 @@ int main() {
     auto end_neighbors = std::chrono::high_resolution_clock::now();
 
     // construct the interpolator
-    naga::interpolation::radial_point_method<naga::default_point_map<float, 2>>
-        interpolator(
+    auto interpolator
+        = naga::interpolation::radial_point_method<>::create_interpolator(
             source_grid,
             indices,
             naga::default_point_map<float, 2>{interp_grid},
