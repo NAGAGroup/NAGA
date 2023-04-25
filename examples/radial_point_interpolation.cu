@@ -115,7 +115,7 @@ int main() {
 
     // We use the nearest neighbors algorithm to provide the interpolation
     // indices to the radial point method.
-    auto [distances, indices] = naga::segmentation::batched_nearest_neighbors(
+    auto [distances_squared, indices] = naga::segmentation::batched_nearest_neighbors(
         support_size,
         naga::default_point_map<float, 2>{interp_grid},
         source_segmentation
@@ -127,6 +127,7 @@ int main() {
         = naga::interpolation::radial_point_method<>::create_interpolator(
             source_grid,
             indices,
+            distances_squared,
             naga::default_point_map<float, 2>{interp_grid},
             grid_spacing
         );

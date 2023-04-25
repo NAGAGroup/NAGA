@@ -52,17 +52,10 @@ struct mq_shape_function {
           alpha_c_(alpha_c) {}
 
     __host__ __device__ value_type operator()(
-        const PointType& a,
-        const PointType& b,
+        const value_type& r_squared,
         const value_type& approx_particle_spacing
     ) const {
         value_type c = approx_particle_spacing * alpha_c_;
-        value_type r_squared
-            = distance_functions::loopless::euclidean_squared<dimensions>{}(
-                a,
-                b,
-                {}
-            );
         return math::pow(r_squared + c * c, q_);
     }
 
@@ -83,7 +76,8 @@ class radial_point_method {
         class ShapeFunctionType = default_shape_function<PointMapType>>
     static sclx::array<T_, 2> compute_weights(
         sclx::array<T_, 2>& source_points,
-        sclx::array<size_t, 2>& source_indices,
+        sclx::array<size_t, 2>& interpolating_indices,
+        sclx::array<T_, 2>& source2query_dist_squared,
         const PointMapType& query_points,
         const T& approx_particle_spacing,
         uint group_size                         = 1,
@@ -92,7 +86,8 @@ class radial_point_method {
     ) {
         return detail::radial_point_method::compute_weights(
             source_points,
-            source_indices,
+            interpolating_indices,
+            source2query_dist_squared,
             query_points,
             approx_particle_spacing,
             group_size,
@@ -107,7 +102,8 @@ class radial_point_method {
         class ShapeFunctionType = default_shape_function<PointMapType>>
     static radial_point_method<T_> create_interpolator(
         sclx::array<T_, 2>& source_points,
-        sclx::array<size_t, 2>& source_indices,
+        sclx::array<size_t, 2>& interpolating_indices,
+        sclx::array<T_, 2>& source2query_dist_squared,
         const PointMapType& query_points,
         const T& approx_particle_spacing,
         uint group_size                         = 1,
@@ -117,7 +113,8 @@ class radial_point_method {
         radial_point_method<T_> interpolator{};
         auto weights = compute_weights(
             source_points,
-            source_indices,
+            interpolating_indices,
+            source2query_dist_squared,
             query_points,
             approx_particle_spacing,
             group_size,
@@ -125,7 +122,7 @@ class radial_point_method {
             devices
         );
         interpolator.weights_                 = weights;
-        interpolator.indices_                 = source_indices;
+        interpolator.indices_                 = interpolating_indices;
         interpolator.group_size_              = group_size;
         interpolator.source_points_size_      = source_points.shape()[1];
         interpolator.approx_particle_spacing_ = approx_particle_spacing;

@@ -37,7 +37,8 @@ namespace naga::interpolation::detail::radial_point_method {
 template<class T, class PointMapType, class ShapeFunctionType>
 static sclx::array<T, 2> compute_weights(
     sclx::array<T, 2>& source_points,
-    sclx::array<size_t, 2>& source_indices,
+    sclx::array<size_t, 2>& interpolating_indices,
+    sclx::array<T, 2>& source2query_dist_squared,
     const PointMapType& query_points,
     const T& approx_particle_spacing,
     uint group_size                         = 1,
@@ -56,7 +57,7 @@ static sclx::array<T, 2> compute_weights(
 
     size_t num_source_points = source_points.shape()[1];
     size_t num_query_points  = query_points.size();
-    uint support_size        = static_cast<uint>(source_indices.shape()[0]);
+    uint support_size        = static_cast<uint>(interpolating_indices.shape()[0]);
 
     if (num_query_points % group_size != 0) {
         sclx::throw_exception<std::invalid_argument>(
@@ -120,7 +121,7 @@ static sclx::array<T, 2> compute_weights(
     //      4. for each batch solve for the weights using W = G(x)^T *
     //      (G0^-1)[:, 1:num_support]
 
-    sclx::array<T, 2> weights{source_indices.shape()[0], query_points.size()};
+    sclx::array<T, 2> weights{interpolating_indices.shape()[0], query_points.size()};
     if (!devices.empty()) {
         weights.set_primary_devices(devices);
     }
@@ -136,7 +137,11 @@ static sclx::array<T, 2> compute_weights(
         auto device_lambda = [=]() {
             auto weights_slice
                 = weights.get_range({slice_start}, {slice_start + slice_range});
-            auto indices_slice = source_indices.get_range(
+            auto indices_slice = interpolating_indices.get_range(
+                {slice_start / group_size},
+                {(slice_start + slice_range) / group_size}
+            );
+            auto distances_slice = source2query_dist_squared.get_range(
                 {slice_start / group_size},
                 {(slice_start + slice_range) / group_size}
             );
@@ -146,11 +151,17 @@ static sclx::array<T, 2> compute_weights(
             sclx::cuda::memory_status_info host_memory_status
                 = sclx::cuda::host::query_memory_status();
 
+            // we don't want to overload the host, so we have a buffer
+            // of 30% of the total memory
+            size_t host_modified_free
+                = host_memory_status.total * 7 / 10
+                - (host_memory_status.total - host_memory_status.free);
+
             size_t batch_size;
             if (device_memory_status.free > minimum_required_mem) {
                 batch_size = device_memory_status.free / mem_per_query_point;
-            } else if (host_memory_status.free > minimum_required_mem) {
-                batch_size = host_memory_status.free / mem_per_query_point;
+            } else if (host_modified_free > minimum_required_mem) {
+                batch_size = host_modified_free / mem_per_query_point;
             } else {
                 sclx::throw_exception<std::runtime_error>(
                     "Not enough memory to compute interpolation weights",
@@ -159,7 +170,6 @@ static sclx::array<T, 2> compute_weights(
             }
             // here we reduce the batch size by 40% to avoid overloading
             // the memory
-            batch_size = (batch_size * 6 / 10 == 0) ? 1 : batch_size * 6 / 10;
             batch_size = std::min(batch_size, slice_range);
 
             size_t num_batches = (slice_range + batch_size - 1) / batch_size;
@@ -191,6 +201,13 @@ static sclx::array<T, 2> compute_weights(
                     {std::min((b + 1) * batch_size, slice_range)}
                 );
                 auto indices_batch = indices_slice.get_range(
+                    {b * batch_size / group_size},
+                    {std::min(
+                        (b + 1) * batch_size / group_size,
+                        slice_range / group_size
+                    )}
+                );
+                auto distances_batch = distances_slice.get_range(
                     {b * batch_size / group_size},
                     {std::min(
                         (b + 1) * batch_size / group_size,
@@ -231,9 +248,13 @@ static sclx::array<T, 2> compute_weights(
                                                      ? 1
                                                      : xi[j - support_size - 1];
                             } else {
+                                value_type r_squared = distance_functions::
+                                    loopless::euclidean_squared<dimensions>{}(
+                                        xi,
+                                        xj
+                                    );
                                 G0(i, j, idx[0]) = shape_function(
-                                    xi,
-                                    xj,
+                                    r_squared,
                                     approx_particle_spacing
                                 );
                             }
@@ -262,19 +283,13 @@ static sclx::array<T, 2> compute_weights(
                             [idx[0] + slice_start + b * batch_size];
                         for (uint i = 0; i < support_size + dimensions + 1;
                              ++i) {
-                            size_t xi_idx = indices_batch(
-                                math::min(support_size - 1, i),
-                                idx[0]
-                            );
-                            const value_type* xi = &source_points(0, xi_idx);
                             if (i >= support_size) {
                                 G_x(i, 0, idx[0]) = (i - support_size) == 0
                                                       ? 1
                                                       : x[i - support_size - 1];
                             } else {
                                 G_x(i, 0, idx[0]) = shape_function(
-                                    xi,
-                                    x,
+                                    distances_batch(i, idx[0]),
                                     approx_particle_spacing
                                 );
                             }
@@ -313,10 +328,8 @@ static sclx::array<T, 2> compute_weights(
                 }).get();
             }
         };
-        device_lambda();
 
-        //            futures.emplace_back(std::async(std::launch::async,
-        //            device_lambda));
+        futures.emplace_back(std::async(std::launch::async, device_lambda));
     }
 
     for (auto& future : futures) {
