@@ -103,7 +103,7 @@ class euclidean_squared {
     static constexpr bool is_squared  = true;
 
     __host__ __device__ auto
-    operator()(const VectorLikeT& a, const VectorLikeU& b, uint) const {
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint = {}) const {
         return accumulate_pow2_diffs(a, b);
     }
 
@@ -128,7 +128,7 @@ class euclidean_squared<Dimensions, void, void> {
 
     template<class VectorLikeT, class VectorLikeU>
     __host__ __device__ auto
-    operator()(const VectorLikeT& a, const VectorLikeU& b, uint) const {
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint = {}) const {
         return accumulate_pow2_diffs<Dimensions>(a, b);
     }
 
@@ -152,7 +152,7 @@ class euclidean {
     static constexpr bool is_squared  = false;
 
     __host__ __device__ auto
-    operator()(const VectorLikeT& a, const VectorLikeU& b, uint) const {
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint = {}) const {
         return math::sqrt(
             euclidean_squared<Dimensions, VectorLikeT, VectorLikeU>{}(a, b)
         );
