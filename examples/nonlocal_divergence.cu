@@ -96,7 +96,6 @@ int main() {
         = naga::interpolation::radial_point_method<>::create_interpolator(
             source_grid,
             indices,
-            distances_squared,
             quadrature_points_map,
             grid_spacing,
             naga::nonlocal_calculus::detail::num_quad_points_2d

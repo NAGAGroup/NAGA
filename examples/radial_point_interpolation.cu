@@ -128,7 +128,6 @@ int main() {
         = naga::interpolation::radial_point_method<>::create_interpolator(
             source_grid,
             indices,
-            distances_squared,
             naga::default_point_map<float, 2>{interp_grid},
             grid_spacing
         );

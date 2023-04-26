@@ -77,7 +77,6 @@ class radial_point_method {
     static sclx::array<T_, 2> compute_weights(
         sclx::array<T_, 2>& source_points,
         sclx::array<size_t, 2>& interpolating_indices,
-        sclx::array<T_, 2>& source2query_dist_squared,
         const PointMapType& query_points,
         const T& approx_particle_spacing,
         uint group_size                         = 1,
@@ -87,7 +86,6 @@ class radial_point_method {
         return detail::radial_point_method::compute_weights(
             source_points,
             interpolating_indices,
-            source2query_dist_squared,
             query_points,
             approx_particle_spacing,
             group_size,
@@ -103,7 +101,6 @@ class radial_point_method {
     static radial_point_method<T_> create_interpolator(
         sclx::array<T_, 2>& source_points,
         sclx::array<size_t, 2>& interpolating_indices,
-        sclx::array<T_, 2>& source2query_dist_squared,
         const PointMapType& query_points,
         const T& approx_particle_spacing,
         uint group_size                         = 1,
@@ -114,7 +111,6 @@ class radial_point_method {
         auto weights = compute_weights(
             source_points,
             interpolating_indices,
-            source2query_dist_squared,
             query_points,
             approx_particle_spacing,
             group_size,
