@@ -30,6 +30,8 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #include <naga/nonlocal_calculus/operators.cuh>
+#include <naga/segmentation/nearest_neighbors.cuh>
+#include <naga/interpolation/radial_point_method.cuh>
 #include <scalix/filesystem.hpp>
 #include <scalix/fill.cuh>
 #include <chrono>
@@ -40,15 +42,15 @@ __host__ __device__ float field_function(const PointType& x) {
 }
 
 int main() {
+    uint support_size = 32;  // number of support nodes used for interpolation
 
-    size_t grid_size   = 10;
+    size_t grid_size   = 50;
     float grid_length  = 2 * naga::math::pi<float>;
     float grid_spacing = grid_length / (static_cast<float>(grid_size) - 1.0f);
 
-    size_t interp_grid_size  = 500;
-    float interp_grid_length = 2 * naga::math::pi<float>;
-
     sclx::array<float, 2> source_grid{2, grid_size * grid_size};
+    sclx::array<float, 1> source_values{grid_size * grid_size};
+    sclx::array<float, 1> interp_values{grid_size * grid_size * naga::nonlocal_calculus::detail::num_quad_points_2d};
     sclx::array<float, 1> interaction_radii{grid_size * grid_size};
 
     sclx::fill(interaction_radii, grid_spacing * 0.1f);
@@ -63,9 +65,41 @@ int main() {
             }
         );
     });
+    sclx::execute_kernel([&](sclx::kernel_handler& handle) {
+        handle.launch(
+            sclx::md_range_t<1>{grid_size * grid_size},
+            source_values,
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                source_values(idx[0]) = field_function(&source_grid(0, idx[0]));
+            }
+        );
+    });
 
     naga::nonlocal_calculus::detail::quadrature_point_map<float, 2>
         quadrature_points_map(source_grid, interaction_radii);
+
+    naga::segmentation::nd_cubic_segmentation<float, 2> source_segmentation(
+        source_grid,
+        support_size
+    );
+
+    auto [distances_squared, indices] = naga::segmentation::batched_nearest_neighbors(
+        support_size,
+        naga::default_point_map<float, 2>{source_grid},
+        source_segmentation
+    );
+
+    auto interpolator
+        = naga::interpolation::radial_point_method<>::create_interpolator(
+            source_grid,
+            indices,
+            distances_squared,
+            quadrature_points_map,
+            grid_spacing,
+            naga::nonlocal_calculus::detail::num_quad_points_2d
+        );
+
+    interpolator.interpolate(source_values, interp_values);
 
     sclx::array<float, 2> quad_points{2, quadrature_points_map.size()};
 
@@ -91,7 +125,7 @@ int main() {
     save_file << "x,y,f" << std::endl;
     for (size_t i = 0; i < quad_points.shape()[1]; ++i) {
         save_file << quad_points(0, i) << "," << quad_points(1, i) << ","
-                  << field_function(&quad_points(0, i)) << std::endl;
+                  << interp_values(i) << std::endl;
     }
     save_file.close();
 
