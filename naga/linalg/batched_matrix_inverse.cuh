@@ -86,8 +86,8 @@ batched_matrix_inverse(sclx::array<T, 3>& A, sclx::array<T, 3>& A_inv, bool copy
             int *info, *pivot;
             int dims       = A_slice.shape()[0];
             int batch_size = A_slice.shape()[2];
-            cudaMalloc(&info, batch_size * sizeof(int*));
-            cudaMalloc(&pivot, batch_size * dims * sizeof(int*));
+            cudaMalloc(&info, batch_size * sizeof(int));
+            cudaMalloc(&pivot, batch_size * dims * sizeof(int));
 
             sclx::array<T, 3> A_slice_copy;
             std::future<void> prefetched_future1;
