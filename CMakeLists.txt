@@ -27,5 +27,8 @@ target_link_libraries(batched_matrix_inversion PRIVATE naga)
 add_executable(radial_point_interpolation examples/radial_point_interpolation.cu)
 target_link_libraries(radial_point_interpolation PRIVATE naga)
 
+add_executable(radial_point_interpolation_3d examples/radial_point_interpolation_3d.cu)
+target_link_libraries(radial_point_interpolation_3d PRIVATE naga)
+
 add_executable(nonlocal_divergence examples/nonlocal_divergence.cu)
 target_link_libraries(nonlocal_divergence PRIVATE naga)
