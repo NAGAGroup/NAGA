@@ -46,7 +46,13 @@ class handle_t {
     static handle_t create() {
         handle_t handle;
         cublasHandle_t* raw_handle = new cublasHandle_t;
-        cublasCreate(raw_handle);
+        auto error = cublasCreate(raw_handle);
+        if (error != CUBLAS_STATUS_SUCCESS) {
+            sclx::throw_exception<std::runtime_error>(
+                "cublasCreate failed with error code " + std::to_string(error),
+                "naga::detail::cublas::handle_t::"
+            );
+        }
         handle.handle_ = std::shared_ptr<cublasHandle_t>(
             raw_handle,
             [](cublasHandle_t* handle) {
