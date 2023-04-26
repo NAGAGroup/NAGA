@@ -62,14 +62,14 @@ class default_point_map {
 #endif
     }
 
-    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
-    ) const {
-        return point_type(&source_points_(0, index[0]));
-    }
-
     __host__ __device__ point_type operator[](const sclx::index_t& index
     ) const {
         return point_type(&source_points_(0, index));
+    }
+
+    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
+    ) const {
+        return (*this)[index[0]];
     }
 
     __host__ __device__ size_t size() const {
