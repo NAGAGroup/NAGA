@@ -57,7 +57,7 @@ static sclx::array<T, 2> compute_weights(
 
     size_t num_source_points = source_points.shape()[1];
     size_t num_query_points  = query_points.size();
-    uint support_size        = static_cast<uint>(interpolating_indices.shape()[0]);
+    uint support_size = static_cast<uint>(interpolating_indices.shape()[0]);
 
     if (num_query_points % group_size != 0) {
         sclx::throw_exception<std::invalid_argument>(
@@ -105,11 +105,14 @@ static sclx::array<T, 2> compute_weights(
     // Therefore we can compute our weights as w_i = \sum_j=1^num_support
     // (G(x)^T)_j * (G0^-1)_j,i
 
-    size_t G0_size
-        = (support_size + dimensions + 1) * (support_size + dimensions + 1);
-    size_t G0_inv_size          = G0_size;
-    size_t G_x_size             = (support_size + dimensions + 1);
-    size_t mem_per_query_point  = G0_size + G0_inv_size + G_x_size;
+    size_t G0_size = (support_size + dimensions + 1)
+                   * (support_size + dimensions + 1) * sizeof(T);
+    size_t G0_inv_size    = G0_size;
+    size_t G_x_size       = (support_size + dimensions + 1) * sizeof(T);
+    size_t inv_info_size  = sizeof(int);
+    size_t inv_pivot_size = sizeof(int) * (support_size + dimensions + 1);
+    size_t mem_per_query_point
+        = G0_size + G0_inv_size + G_x_size + inv_info_size + inv_pivot_size;
     size_t minimum_required_mem = 1000 * mem_per_query_point;
 
     // algorithm outline
@@ -121,7 +124,9 @@ static sclx::array<T, 2> compute_weights(
     //      4. for each batch solve for the weights using W = G(x)^T *
     //      (G0^-1)[:, 1:num_support]
 
-    sclx::array<T, 2> weights{interpolating_indices.shape()[0], query_points.size()};
+    sclx::array<T, 2> weights{
+        interpolating_indices.shape()[0],
+        query_points.size()};
     if (!devices.empty()) {
         weights.set_primary_devices(devices);
     }
@@ -137,63 +142,72 @@ static sclx::array<T, 2> compute_weights(
         auto device_lambda = [=]() {
             auto weights_slice
                 = weights.get_range({slice_start}, {slice_start + slice_range});
+            auto weights_prefetch_fut
+                = weights_slice.prefetch_async(std::vector<int>{device_id});
             auto indices_slice = interpolating_indices.get_range(
                 {slice_start / group_size},
                 {(slice_start + slice_range) / group_size}
             );
+            auto indices_prefetch_fut
+                = indices_slice.prefetch_async(std::vector<int>{device_id});
             auto distances_slice = source2query_dist_squared.get_range(
                 {slice_start / group_size},
                 {(slice_start + slice_range) / group_size}
             );
+            auto distances_prefetch_fut
+                = distances_slice.prefetch_async(std::vector<int>{device_id});
+
+            weights_prefetch_fut.get();
+            indices_prefetch_fut.get();
+            distances_prefetch_fut.get();
 
             sclx::cuda::memory_status_info device_memory_status
                 = sclx::cuda::query_memory_status(device_id);
-            sclx::cuda::memory_status_info host_memory_status
-                = sclx::cuda::host::query_memory_status();
 
-            // we don't want to overload the host, so we have a buffer
-            // of 30% of the total memory
-            size_t host_modified_free
-                = host_memory_status.total * 7 / 10
-                - (host_memory_status.total - host_memory_status.free);
+            // we don't want to overload the device, so we have a buffer
+            // of 5% of the total memory
+            size_t device_modified_total = 95 * device_memory_status.total / 100;
+            size_t device_modified_free
+                = (device_modified_total
+                   <= (device_memory_status.total - device_memory_status.free))
+                    ? 0
+                    : device_modified_total
+                          - (device_memory_status.total
+                             - device_memory_status.free);
 
             size_t batch_size;
-            if (device_memory_status.free > minimum_required_mem) {
-                batch_size = device_memory_status.free / mem_per_query_point;
-            } else if (host_modified_free > minimum_required_mem) {
-                batch_size = host_modified_free / mem_per_query_point;
+            if (device_modified_free > minimum_required_mem) {
+                batch_size = device_modified_free / mem_per_query_point;
             } else {
                 sclx::throw_exception<std::runtime_error>(
                     "Not enough memory to compute interpolation weights",
                     "naga::interpolation::"
                 );
             }
-            // here we reduce the batch size by 40% to avoid overloading
-            // the memory
             batch_size = std::min(batch_size, slice_range);
 
             size_t num_batches = (slice_range + batch_size - 1) / batch_size;
-            sclx::array<value_type, 3> G0(
+            sclx::array<value_type, 3> G0_storage(
                 {support_size + dimensions + 1,
                  support_size + dimensions + 1,
                  batch_size},
                 false
             );
-            G0.set_primary_devices(std::vector<int>{device_id});
+            G0_storage.set_primary_devices(std::vector<int>{device_id});
 
-            sclx::array<value_type, 3> G0_inv(
+            sclx::array<value_type, 3> G0_inv_storage(
                 {support_size + dimensions + 1,
                  support_size + dimensions + 1,
                  batch_size},
                 false
             );
-            G0_inv.set_primary_devices(std::vector<int>{device_id});
+            G0_inv_storage.set_primary_devices(std::vector<int>{device_id});
 
-            sclx::array<value_type, 3> G_x(
+            sclx::array<value_type, 3> G_x_storage(
                 {support_size + dimensions + 1, 1, batch_size},
                 false
             );
-            G_x.set_primary_devices(std::vector<int>{device_id});
+            G_x_storage.set_primary_devices(std::vector<int>{device_id});
 
             for (size_t b = 0; b < num_batches; ++b) {
                 auto weights_batch = weights_slice.get_range(
@@ -214,10 +228,16 @@ static sclx::array<T, 2> compute_weights(
                         slice_range / group_size
                     )}
                 );
+                auto G0 = G0_storage.get_range({0}, {indices_batch.shape()[1]});
+                auto G0_inv
+                    = G0_inv_storage.get_range({0}, {indices_batch.shape()[1]});
+                auto G_x
+                    = G_x_storage.get_range({0}, {indices_batch.shape()[1]});
 
                 // compute G0, only if b % group_size == 0
+                // since it is the same for all points in the group
                 std::future<void> G0_future;
-                const auto& G0_dev_lambda =
+                const auto& assign_G0 =
                     [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
                         for (uint linear_idx = 0;
                              linear_idx < (support_size + dimensions + 1)
@@ -248,11 +268,9 @@ static sclx::array<T, 2> compute_weights(
                                                      ? 1
                                                      : xi[j - support_size - 1];
                             } else {
-                                value_type r_squared = distance_functions::
-                                    loopless::euclidean_squared<dimensions>{}(
-                                        xi,
-                                        xj
-                                    );
+                                value_type r_squared
+                                    = distance_functions::loopless::
+                                        euclidean_squared<dimensions>{}(xi, xj);
                                 G0(i, j, idx[0]) = shape_function(
                                     r_squared,
                                     approx_particle_spacing
@@ -264,9 +282,9 @@ static sclx::array<T, 2> compute_weights(
                     auto G0_future_ = sclx::execute_kernel(
                         [&](const sclx::kernel_handler& handler) {
                             handler.launch(
-                                sclx::md_range_t<1>{batch_size},
+                                sclx::md_range_t<1>{G0.shape()[2]},
                                 G0,
-                                G0_dev_lambda
+                                assign_G0
                             );
                         }
                     );
@@ -277,7 +295,7 @@ static sclx::array<T, 2> compute_weights(
                         = std::move(std::async(std::launch::deferred, []() {}));
                 }
 
-                const auto& G_x_lambda =
+                const auto& assign_G_x =
                     [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
                         const point_type& x = query_points
                             [idx[0] + slice_start + b * batch_size];
@@ -298,9 +316,9 @@ static sclx::array<T, 2> compute_weights(
                 auto G_x_future = sclx::execute_kernel(
                     [&](const sclx::kernel_handler& handler) {
                         handler.launch(
-                            sclx::md_range_t<1>{batch_size},
+                            sclx::md_range_t<1>{G_x.shape()[2]},
                             G_x,
-                            G_x_lambda
+                            assign_G_x
                         );
                     }
                 );
@@ -313,7 +331,7 @@ static sclx::array<T, 2> compute_weights(
 
                 sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
                     handler.launch(
-                        sclx::md_range_t<2>{support_size, batch_size},
+                        sclx::md_range_t<2>{weights_batch.shape()},
                         weights_batch,
                         [=] __device__(const sclx::md_index_t<2>& idx, const auto&) {
                             value_type sum = 0;
