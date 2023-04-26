@@ -108,7 +108,7 @@ class euclidean_squared {
     }
 
   private:
-    template<uint D=Dimensions>
+    template<uint D = Dimensions>
     __host__ __device__ auto
     accumulate_pow2_diffs(const VectorLikeT& a, const VectorLikeU& b) const {
         if constexpr (D == 0) {

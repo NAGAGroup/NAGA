@@ -29,12 +29,12 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <chrono>
+#include <naga/interpolation/radial_point_method.cuh>
 #include <naga/nonlocal_calculus/operators.cuh>
 #include <naga/segmentation/nearest_neighbors.cuh>
-#include <naga/interpolation/radial_point_method.cuh>
 #include <scalix/filesystem.hpp>
 #include <scalix/fill.cuh>
-#include <chrono>
 
 template<class PointType>
 __host__ __device__ float field_function(const PointType& x) {
@@ -50,7 +50,9 @@ int main() {
 
     sclx::array<float, 2> source_grid{2, grid_size * grid_size};
     sclx::array<float, 1> source_values{grid_size * grid_size};
-    sclx::array<float, 1> interp_values{grid_size * grid_size * naga::nonlocal_calculus::detail::num_quad_points_2d};
+    sclx::array<float, 1> interp_values{
+        grid_size * grid_size
+        * naga::nonlocal_calculus::detail::num_quad_points_2d};
     sclx::array<float, 1> interaction_radii{grid_size * grid_size};
 
     sclx::fill(interaction_radii, grid_spacing * 0.1f);
@@ -83,11 +85,12 @@ int main() {
         support_size
     );
 
-    auto [distances_squared, indices] = naga::segmentation::batched_nearest_neighbors(
-        support_size,
-        naga::default_point_map<float, 2>{source_grid},
-        source_segmentation
-    );
+    auto [distances_squared, indices]
+        = naga::segmentation::batched_nearest_neighbors(
+            support_size,
+            naga::default_point_map<float, 2>{source_grid},
+            source_segmentation
+        );
 
     auto interpolator
         = naga::interpolation::radial_point_method<>::create_interpolator(

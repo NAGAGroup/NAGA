@@ -388,7 +388,7 @@ template<class T, uint Dimensions>
 class nd_cubic_segmentation_iterator {
   public:
     using segmentation_type = nd_cubic_segmentation<T, Dimensions>;
-    using partition_type   = typename segmentation_type::partition_type;
+    using partition_type    = typename segmentation_type::partition_type;
 
     using value_type        = partition_type;
     using difference_type   = sclx::index_t;
@@ -504,6 +504,6 @@ make_nd_cubic_segmentation_iterator(
     );
 }
 
-}  // namespace naga
+}  // namespace naga::segmentation
 
 #include "detail/nd_cubic_segmentation.inl"

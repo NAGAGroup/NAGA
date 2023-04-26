@@ -62,8 +62,11 @@ int main() {
 
     sclx::array<float, 2> source_grid{3, grid_size * grid_size * grid_size};
     sclx::array<float, 1> source_values{grid_size * grid_size * grid_size};
-    sclx::array<float, 2> interp_grid{3, interp_grid_size * interp_grid_size * interp_grid_size};
-    sclx::array<float, 1> interp_values{interp_grid_size * interp_grid_size * interp_grid_size};
+    sclx::array<float, 2> interp_grid{
+        3,
+        interp_grid_size * interp_grid_size * interp_grid_size};
+    sclx::array<float, 1> interp_values{
+        interp_grid_size * interp_grid_size * interp_grid_size};
 
     // populate source grid and field values
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
@@ -92,7 +95,8 @@ int main() {
     // populate interpolated grid
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
         handle.launch(
-            sclx::md_range_t<1>{interp_grid_size * interp_grid_size * interp_grid_size},
+            sclx::md_range_t<1>{
+                interp_grid_size * interp_grid_size * interp_grid_size},
             interp_grid,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
                 interp_grid(0, idx[0])
@@ -156,11 +160,13 @@ int main() {
     auto end_interpolate3 = std::chrono::high_resolution_clock::now();
 
     // compute the l2 error
-    auto interp_errors
-        = sclx::zeros<float, 1>({interp_grid_size * interp_grid_size * interp_grid_size});
+    auto interp_errors = sclx::zeros<float, 1>(
+        {interp_grid_size * interp_grid_size * interp_grid_size}
+    );
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
         handle.launch(
-            sclx::md_range_t<1>{interp_grid_size * interp_grid_size * interp_grid_size},
+            sclx::md_range_t<1>{
+                interp_grid_size * interp_grid_size * interp_grid_size},
             interp_errors,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
                 interp_errors(idx[0]) = naga::math::loopless::pow<2>(
@@ -217,8 +223,8 @@ int main() {
     std::ofstream save_file(save_path);
     save_file << "x,y,z,f" << std::endl;
     for (size_t i = 0; i < interp_grid.shape()[1]; ++i) {
-        save_file << interp_grid(0, i) << "," << interp_grid(1, i) << "," << interp_grid(2, i) << ","
-                  << interp_values(i) << std::endl;
+        save_file << interp_grid(0, i) << "," << interp_grid(1, i) << ","
+                  << interp_grid(2, i) << "," << interp_values(i) << std::endl;
     }
     save_file.close();
 

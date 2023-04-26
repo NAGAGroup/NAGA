@@ -72,4 +72,4 @@ __host__ void assign_indices(
     const nd_cubic_segmentation<T, Dimensions>& segmentation
 );
 
-}  // namespace naga::detail
+}  // namespace naga::segmentation::detail

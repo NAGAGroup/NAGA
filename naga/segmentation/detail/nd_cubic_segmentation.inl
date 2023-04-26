@@ -272,4 +272,4 @@ __host__ void assign_indices(
     }).get();
 }
 
-}  // namespace naga::detail
+}  // namespace naga::segmentation::detail

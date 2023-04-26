@@ -361,4 +361,4 @@ batched_nearest_neighbors(
     return std::make_tuple(distances_squared, indices);
 }
 
-}  // namespace naga
+}  // namespace naga::segmentation

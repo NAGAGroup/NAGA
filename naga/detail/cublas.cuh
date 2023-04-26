@@ -31,11 +31,11 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#include <cublas_v2.h>
 #include <memory>
 #include <mutex>
 #include <scalix/cuda.hpp>
 #include <unordered_map>
-#include <cublas_v2.h>
 
 namespace naga::detail::cublas {
 
@@ -46,7 +46,7 @@ class handle_t {
     static handle_t create() {
         handle_t handle;
         cublasHandle_t* raw_handle = new cublasHandle_t;
-        auto error = cublasCreate(raw_handle);
+        auto error                 = cublasCreate(raw_handle);
         if (error != CUBLAS_STATUS_SUCCESS) {
             sclx::throw_exception<std::runtime_error>(
                 "cublasCreate failed with error code " + std::to_string(error),
@@ -100,4 +100,4 @@ struct this_thread {
     }
 };
 
-}  // namespace naga::cublas
+}  // namespace naga::detail::cublas
