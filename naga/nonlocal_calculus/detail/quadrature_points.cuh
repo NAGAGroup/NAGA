@@ -251,4 +251,23 @@ template<class T, uint Dimensions>
 bool quadrature_point_map<T, Dimensions>::is_host_unscaled_quad_points_init_
     = false;
 
+
+
+template<class T>
+void compute_interaction_radii(
+    const sclx::array<T, 2>& knn_distances_squared,
+    const sclx::array<T, 1>& interaction_radii
+) {
+    sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+        handler.launch(
+            sclx::md_range_t<1>(interaction_radii.shape()),
+            interaction_radii,
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                interaction_radii[idx]
+                    = .5f * sqrt(knn_distances_squared(1, idx[0]));
+            }
+        );
+    });
+}
+
 }  // namespace naga::nonlocal_calculus::detail

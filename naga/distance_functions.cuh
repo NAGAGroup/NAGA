@@ -145,12 +145,13 @@ class euclidean_squared<Dimensions, void, void> {
     }
 };
 
-template<uint Dimensions, class VectorLikeT = void, class VectorLikeU = void>
+template<uint Dimensions>
 class euclidean {
   public:
     static constexpr bool is_loopless = true;
     static constexpr bool is_squared  = false;
 
+    template<class VectorLikeT, class VectorLikeU>
     __host__ __device__ auto
     operator()(const VectorLikeT& a, const VectorLikeU& b, uint = {}) const {
         return math::sqrt(

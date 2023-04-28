@@ -31,10 +31,8 @@
 
 #include <chrono>
 #include <naga/interpolation/radial_point_method.cuh>
-#include <naga/nonlocal_calculus/operators.cuh>
-#include <naga/segmentation/nearest_neighbors.cuh>
+#include <naga/nonlocal_calculus/divergence.cuh>
 #include <scalix/filesystem.hpp>
-#include <scalix/fill.cuh>
 
 template<class PointType>
 __host__ __device__ float field_function(const PointType& x) {
@@ -49,13 +47,7 @@ int main() {
     float grid_spacing = grid_length / (static_cast<float>(grid_size) - 1.0f);
 
     sclx::array<float, 2> source_grid{2, grid_size * grid_size};
-    sclx::array<float, 1> source_values{grid_size * grid_size};
-    sclx::array<float, 1> interp_values{
-        grid_size * grid_size
-        * naga::nonlocal_calculus::detail::num_quad_points_2d};
-    sclx::array<float, 1> interaction_radii{grid_size * grid_size};
-
-    sclx::fill(interaction_radii, grid_spacing * 0.1f);
+    sclx::array<float, 2> source_values{2, grid_size * grid_size};
 
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
         handle.launch(
@@ -72,64 +64,31 @@ int main() {
             sclx::md_range_t<1>{grid_size * grid_size},
             source_values,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                source_values(idx[0]) = field_function(&source_grid(0, idx[0]));
+                source_values(0, idx[0]) = field_function(&source_grid(0, idx[0]));
+                source_values(1, idx[0]) = 0.f;
             }
         );
     });
 
-    naga::nonlocal_calculus::detail::quadrature_point_map<float, 2>
-        quadrature_points_map(source_grid, interaction_radii);
+    naga::nonlocal_calculus::operator_builder<float, 2> builder(source_grid);
 
-    naga::segmentation::nd_cubic_segmentation<float, 2> source_segmentation(
-        source_grid,
-        support_size
-    );
+    auto divergence
+        = builder.create<naga::nonlocal_calculus::divergence_operator>();
 
-    auto [distances_squared, indices]
-        = naga::segmentation::batched_nearest_neighbors(
-            support_size,
-            naga::default_point_map<float, 2>{source_grid},
-            source_segmentation
-        );
+    sclx::array<float, 1> divergence_values{grid_size * grid_size};
 
-    auto interpolator
-        = naga::interpolation::radial_point_method<>::create_interpolator(
-            source_grid,
-            indices,
-            quadrature_points_map,
-            grid_spacing,
-            naga::nonlocal_calculus::detail::num_quad_points_2d
-        );
+    divergence.apply(source_values, divergence_values);
 
-    interpolator.interpolate(source_values, interp_values);
-
-    sclx::array<float, 2> quad_points{2, quadrature_points_map.size()};
-
-    sclx::execute_kernel([&](sclx::kernel_handler& handle) {
-        handle.launch(
-            sclx::md_range_t<1>{quadrature_points_map.size()},
-            quad_points,
-            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                auto quad_point        = quadrature_points_map[idx];
-                quad_points(0, idx[0]) = quad_point[0];
-                quad_points(1, idx[0]) = quad_point[1];
-            }
-        );
-    });
-
-    auto save_dir = sclx::filesystem::path(__FILE__).parent_path()
-                  / "nonlocal_divergence_results";
-    sclx::filesystem::create_directories(save_dir);
-    std::cout << "Save directory: " << save_dir << std::endl;
-    auto save_path = save_dir / "quad_points.csv";
-    quad_points.prefetch_async({sclx::cuda::traits::cpu_device_id});
-    std::ofstream save_file(save_path);
-    save_file << "x,y,f" << std::endl;
-    for (size_t i = 0; i < quad_points.shape()[1]; ++i) {
-        save_file << quad_points(0, i) << "," << quad_points(1, i) << ","
-                  << interp_values(i) << std::endl;
+    auto results_path = sclx::filesystem::path(__FILE__).parent_path()
+                      / "div_results";
+    sclx::filesystem::create_directories(results_path);
+    std::ofstream file(results_path / "div_results.csv");
+    file << "x,y,divergence\n";
+    for (size_t i = 0; i < grid_size * grid_size; ++i) {
+        file << source_grid(0, i) << "," << source_grid(1, i) << ","
+             << divergence_values(i) << "\n";
     }
-    save_file.close();
+    file.close();
 
     return 0;
 }
