@@ -78,7 +78,7 @@ class radial_point_method {
         sclx::array<T_, 2>& source_points,
         sclx::array<size_t, 2>& interpolating_indices,
         const PointMapType& query_points,
-        const T& approx_particle_spacing,
+        const T_& approx_particle_spacing,
         uint group_size                         = 1,
         const ShapeFunctionType& shape_function = ShapeFunctionType{},
         const std::vector<int>& devices         = {}
