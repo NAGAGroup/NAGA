@@ -75,6 +75,12 @@ class point_t {
 
     point_t() = default;
 
+    __host__ __device__ explicit point_t(const T (&x)[Dimensions]) {
+        for (uint i = 0; i < Dimensions; ++i) {
+            data_[i] = x[i];
+        }
+    }
+
     __host__ __device__ point_t(const point_view_t<T, Dimensions>& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
