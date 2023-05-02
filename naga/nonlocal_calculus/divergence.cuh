@@ -71,15 +71,16 @@ class divergence_operator {
                 [=,
                  *this] __device__(const sclx::md_index_t<1>& index, const auto&) {
                     T divergence = 0;
-                    for (uint s = 0; s < support_indices_.shape()[0]; ++s) {
-                        for (uint d = 0; d < Dimensions; ++d) {
-                            divergence
-                                += weights_(d, s, index[0])
-                                 * (field(d, support_indices_(s, index[0]))
-                                    - centering_offset);
-                        }
+                    for (uint idx = 0;
+                         idx < support_indices_.shape()[0] * Dimensions;
+                         ++idx) {
+                        uint d = idx % Dimensions;
+                        uint s = idx / Dimensions;
+                        divergence += weights_(d, s, index[0])
+                                    * (field(d, support_indices_(s, index[0]))
+                                       - centering_offset);
                     }
-                    result(index[0]) = divergence;
+                    result[index] = divergence;
                 }
             );
         });

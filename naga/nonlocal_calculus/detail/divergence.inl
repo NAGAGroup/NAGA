@@ -51,24 +51,21 @@ void compute_divergence_weights(
     );
 
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-        sclx::local_array<T, 2> local_weights(
+        sclx::local_array<T, 3> local_weights(
             handler,
-            {Dimensions, num_interp_support}
-        );
-        sclx::local_array<T, 2> support_points(
-            handler,
-            {Dimensions, num_interp_support}
+            {Dimensions, num_interp_support, 64}
         );
 
         handler.launch(
             sclx::md_range_t<1>{weights.shape()[2]},
             weights,
-            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) mutable {
+            [=] __device__(
+                const sclx::md_index_t<1>& idx,
+                const sclx::kernel_info<>& info
+            ) mutable {
                 for (uint s = 0; s < num_interp_support; ++s) {
                     for (uint d = 0; d < Dimensions; ++d) {
-                        support_points(d, s)
-                            = domain(d, support_indices(s, idx[0]));
-                        local_weights(d, s) = T(0);
+                        local_weights(d, s, info.local_thread_id()[0]) = T(0);
                     }
                 }
 
@@ -84,7 +81,7 @@ void compute_divergence_weights(
                     auto x_k
                         = quadrature_points_map[num_quad_points * idx[0] + q];
                     T alpha[Dimensions];
-                    T r    = distance_func(x_i, x_k);
+                    T r    = 2.f * distance_func(x_i, x_k) / delta;
                     T _int = (3.f * (3.f * r - 4.f)) / 4.f;
                     _int   = (r < 1.f)
                                ? _int
@@ -95,16 +92,20 @@ void compute_divergence_weights(
                         if constexpr (Dimensions == 2) {
                             alpha[d] *= 10.f / (14.f);
                         } else {
-                            alpha[d] *= 2.f
-                                      * distance_functions::loopless::euclidean<
-                                            Dimensions>{}(x_i, x_k)
-                                      / delta;
+                            alpha[d]
+                                *= 2.f
+                                 * distance_functions::loopless::euclidean<2>{}(
+                                       x_i,
+                                       x_k
+                                 )
+                                 / delta;
                             alpha[d] *= 16.f / (30.f * math::pi<T>);
                         }
+                        alpha[d] *= r * 4.f * 2.f / delta;
                     }
 
-                    T quad_weight
-                        = const_radial_quad_weights<T>[q % num_quad_points];
+                    T quad_weight = const_radial_quad_weights<
+                        T>[q % num_radial_quad_points];
                     quad_weight *= 2.f * math::pi<T>
                                  / static_cast<T>(num_theta_quad_points);
                     if (Dimensions == 3) {
@@ -112,22 +113,24 @@ void compute_divergence_weights(
                                      / static_cast<T>(num_phi_quad_points);
                     }
 
-                    for (uint index = 0; index < num_interp_support * Dimensions;
+                    for (uint index = 0;
+                         index < num_interp_support * Dimensions;
                          ++index) {
                         uint d = index % Dimensions;
                         uint s = index / Dimensions;
-                        local_weights(d, s) += alpha[d] * quad_weight
-                                                 * quad_interp_weights(s, idx[0])
-                                             + static_cast<T>(s == 0);
+                        local_weights(d, s, info.local_thread_id()[0]) += alpha[d] * quad_weight
+                                             * (quad_interp_weights(s, num_quad_points * idx[0] + q)
+                                                + static_cast<T>(s == 0));
                     }
                 }
 
                 memcpy(
                     &weights(0, 0, idx[0]),
-                    &local_weights(0, 0),
+                    &local_weights(0, 0, info.local_thread_id()[0]),
                     sizeof(T) * num_interp_support * Dimensions
                 );
-            }
+            },
+            {64}
         );
     }).get();
 }

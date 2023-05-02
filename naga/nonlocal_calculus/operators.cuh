@@ -74,7 +74,7 @@ class operator_builder {
 
         auto min_particle_spacing_sum = sclx::algorithm::reduce(
             interaction_radii_,
-            0.f,
+            T(0),
             sclx::algorithm::plus<>{}
         );
 
