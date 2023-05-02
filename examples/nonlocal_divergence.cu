@@ -34,28 +34,38 @@
 #include <naga/nonlocal_calculus/divergence.cuh>
 #include <scalix/filesystem.hpp>
 
+using value_type = float ;
+
 template<class PointType>
-__host__ __device__ float field_function(const PointType& x) {
-    return naga::math::sin(x[0]) * naga::math::cos(x[1]);
+__host__ __device__ naga::point_t<value_type, 2>
+field_function(const PointType& x) {
+    return naga::point_t<value_type, 2>{
+        {naga::math::sin(x[0]) * naga::math::cos(x[1]), 0}};
+}
+
+template<class PointType>
+__host__ __device__ value_type expected_divergence_function(const PointType& x
+) {
+    return naga::math::cos(x[0]) * naga::math::cos(x[1]);
 }
 
 int main() {
-    uint support_size = 32;  // number of support nodes used for interpolation
+    size_t grid_size       = 400;
+    value_type grid_length = 2 * naga::math::pi<value_type>;
+    value_type grid_spacing
+        = grid_length / (static_cast<value_type>(grid_size) - 1.0f);
 
-    size_t grid_size   = 50;
-    float grid_length  = 2 * naga::math::pi<float>;
-    float grid_spacing = grid_length / (static_cast<float>(grid_size) - 1.0f);
-
-    sclx::array<float, 2> source_grid{2, grid_size * grid_size};
-    sclx::array<float, 2> source_values{2, grid_size * grid_size};
+    sclx::array<value_type, 2> source_grid{2, grid_size * grid_size};
+    sclx::array<value_type, 2> source_values{2, grid_size * grid_size};
+    sclx::array<value_type, 1> expected_divergence{grid_size * grid_size};
 
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
         handle.launch(
             sclx::md_range_t<1>{grid_size * grid_size},
             source_grid,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                source_grid(0, idx[0]) = (idx[0] % grid_size) * grid_spacing;
-                source_grid(1, idx[0]) = (idx[0] / grid_size) * grid_spacing;
+                source_grid(0, idx[0]) = static_cast<value_type>(idx[0] % grid_size) * grid_spacing;
+                source_grid(1, idx[0]) = static_cast<value_type>(idx[0] / grid_size) * grid_spacing;
             }
         );
     });
@@ -64,31 +74,61 @@ int main() {
             sclx::md_range_t<1>{grid_size * grid_size},
             source_values,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                source_values(0, idx[0]) = field_function(&source_grid(0, idx[0]));
-                source_values(1, idx[0]) = 0.f;
+                const auto& field_value
+                    = field_function(&source_grid(0, idx[0]));
+                source_values(0, idx[0]) = field_value[0];
+                source_values(1, idx[0]) = field_value[1];
+            }
+        );
+    });
+    sclx::execute_kernel([&](sclx::kernel_handler& handle) {
+        handle.launch(
+            sclx::md_range_t<1>{grid_size * grid_size},
+            expected_divergence,
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                expected_divergence[idx]
+                    = expected_divergence_function(&source_grid(0, idx[0]));
             }
         );
     });
 
-    naga::nonlocal_calculus::operator_builder<float, 2> builder(source_grid);
+    naga::nonlocal_calculus::operator_builder<value_type, 2> builder(source_grid
+    );
 
     auto divergence
         = builder.create<naga::nonlocal_calculus::divergence_operator>();
 
-    sclx::array<float, 1> divergence_values{grid_size * grid_size};
+    sclx::array<value_type, 1> divergence_values{grid_size * grid_size};
+
+    auto start = std::chrono::high_resolution_clock::now();
+    divergence.apply(source_values, divergence_values);
+    auto end1 = std::chrono::high_resolution_clock::now();
 
     divergence.apply(source_values, divergence_values);
+    auto end2 = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double> elapsed_ms1 = (end1 - start) * 1000;
+    std::chrono::duration<double> elapsed_ms2 = (end2 - end1) * 1000;
+
+    std::cout << "First run: " << elapsed_ms1.count() << " ms\n";
+    std::cout << "Second run: " << elapsed_ms2.count() << " ms\n";
 
     auto results_path = sclx::filesystem::path(__FILE__).parent_path()
-                      / "div_results";
+                      / "nonlocal_divergence_results";
     sclx::filesystem::create_directories(results_path);
-    std::ofstream file(results_path / "div_results.csv");
+    std::ofstream file(results_path / "nonlocal_divergence_results.csv");
     file << "x,y,divergence\n";
     for (size_t i = 0; i < grid_size * grid_size; ++i) {
         file << source_grid(0, i) << "," << source_grid(1, i) << ","
              << divergence_values(i) << "\n";
     }
     file.close();
+    file = std::ofstream(results_path / "nonlocal_divergence_expected.csv");
+    file << "x,y,divergence\n";
+    for (size_t i = 0; i < grid_size * grid_size; ++i) {
+        file << source_grid(0, i) << "," << source_grid(1, i) << ","
+             << expected_divergence(i) << "\n";
+    }
 
     return 0;
 }
