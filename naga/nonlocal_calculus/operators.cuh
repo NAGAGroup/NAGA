@@ -47,7 +47,7 @@ class operator_builder {
     );
 
   public:
-    explicit operator_builder(const sclx::array<T, Dimensions>& domain)
+    explicit operator_builder(const sclx::array<T, 2>& domain)
         : domain_(domain) {
         naga::segmentation::nd_cubic_segmentation<T, Dimensions>
             domain_segmentation(domain, detail::num_interp_support);

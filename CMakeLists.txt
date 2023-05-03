@@ -34,3 +34,6 @@ target_link_libraries(radial_point_interpolation_3d PRIVATE naga)
 
 add_executable(nonlocal_divergence examples/nonlocal_divergence.cu)
 target_link_libraries(nonlocal_divergence PRIVATE naga)
+
+add_executable(nonlocal_divergence_3d examples/nonlocal_divergence_3d.cu)
+target_link_libraries(nonlocal_divergence_3d PRIVATE naga)

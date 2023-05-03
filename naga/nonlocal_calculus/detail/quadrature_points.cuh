@@ -264,7 +264,7 @@ void compute_interaction_radii(
             interaction_radii,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
                 interaction_radii[idx]
-                    = .5f * sqrt(knn_distances_squared(1, idx[0]));
+                    = .2f * sqrt(knn_distances_squared(1, idx[0]));
             }
         );
     });
