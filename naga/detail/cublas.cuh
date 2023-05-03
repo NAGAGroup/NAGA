@@ -41,25 +41,19 @@ namespace naga::detail::cublas {
 
 class handle_t {
   public:
-    const cublasHandle_t& get() const { return *handle_; }
+    const cublasHandle_t& get() const { return handle_; }
 
     static handle_t create() {
         handle_t handle;
-        cublasHandle_t* raw_handle = new cublasHandle_t;
-        auto error                 = cublasCreate(raw_handle);
+        int current_device = sclx::cuda::traits::current_device();
+        auto error         = cublasCreate(&(handle.handle_));
         if (error != CUBLAS_STATUS_SUCCESS) {
             sclx::throw_exception<std::runtime_error>(
                 "cublasCreate failed with error code " + std::to_string(error),
                 "naga::detail::cublas::handle_t::"
             );
         }
-        handle.handle_ = std::shared_ptr<cublasHandle_t>(
-            raw_handle,
-            [](cublasHandle_t* handle) {
-                cublasDestroy(*handle);
-                delete handle;
-            }
-        );
+        handle.device_ = current_device;
         return handle;
     }
 
@@ -74,30 +68,31 @@ class handle_t {
     // allow implicit conversion to cublasHandle_t
     operator cublasHandle_t() const { return get(); }
 
-  private:
-    std::shared_ptr<cublasHandle_t> handle_ = nullptr;
-};
-
-class handle_registry {
-  public:
-    static const handle_t& get_handle_for_current_thread() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto id = std::this_thread::get_id();
-        if (handles_.count(id) == 0) {
-            handles_[id] = handle_t::create();
+    ~handle_t() {
+        if (handle_ != nullptr) {
+            cublasDestroy(handle_);
         }
-        return handles_[id];
+    }
+
+    handle_t() = default;
+
+    handle_t(const handle_t&)            = delete;
+    handle_t& operator=(const handle_t&) = delete;
+
+    handle_t(handle_t&& other) noexcept {
+        handle_       = other.handle_;
+        other.handle_ = nullptr;
+    }
+
+    handle_t& operator=(handle_t&& other) noexcept {
+        handle_       = other.handle_;
+        other.handle_ = nullptr;
+        return *this;
     }
 
   private:
-    static inline std::unordered_map<std::thread::id, handle_t> handles_;
-    static inline std::mutex mutex_;
-};
-
-struct this_thread {
-    static const handle_t& get_cublas_handle() {
-        return handle_registry::get_handle_for_current_thread();
-    }
+    cublasHandle_t handle_{};
+    int device_{};
 };
 
 }  // namespace naga::detail::cublas

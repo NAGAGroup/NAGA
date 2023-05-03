@@ -79,8 +79,7 @@ __host__ void batched_matrix_inverse(
         size_t slice_len   = std::get<2>(split);
 
         auto task_lambda = [=]() {
-            auto handle
-                = ::naga::detail::cublas::this_thread::get_cublas_handle();
+            auto handle = naga::detail::cublas::handle_t::create();
 
             auto A_slice
                 = A.get_range({slice_start}, {slice_start + slice_len});
@@ -90,8 +89,16 @@ __host__ void batched_matrix_inverse(
             int *info, *pivot;
             int dims       = A_slice.shape()[0];
             int batch_size = A_slice.shape()[2];
-            cudaMalloc(&info, batch_size * sizeof(int));
-            cudaMalloc(&pivot, batch_size * dims * sizeof(int));
+            auto error = cudaMalloc(&info, batch_size * sizeof(int));
+            sclx::cuda::cuda_exception::raise_if_not_success(
+                error,
+                current,
+                "naga::linalg::");
+            error = cudaMalloc(&pivot, batch_size * dims * sizeof(int));
+            sclx::cuda::cuda_exception::raise_if_not_success(
+                error,
+                current,
+                "naga::linalg::");
 
             sclx::array<T, 3> A_slice_copy;
             std::future<void> prefetched_future1;
@@ -192,7 +199,10 @@ __host__ void batched_matrix_inverse(
 
             if (status_getrf != CUBLAS_STATUS_SUCCESS) {
                 sclx::throw_exception<std::runtime_error>(
-                    "CUBLAS error on getrf: " + std::to_string(status_getrf),
+                    "CUBLAS error on getrf: "
+                        + std::string(cublasGetStatusString(
+                            static_cast<cublasStatus_t>(status_getrf)
+                        )),
                     "naga::linalg::",
                     current
                 );
@@ -200,12 +210,19 @@ __host__ void batched_matrix_inverse(
 
             if (status_getri != CUBLAS_STATUS_SUCCESS) {
                 sclx::throw_exception<std::runtime_error>(
-                    "CUBLAS error on getri: " + std::to_string(status_getri),
+                    "CUBLAS error on getri: "
+                        + std::string(cublasGetStatusString(
+                            static_cast<cublasStatus_t>(status_getri)
+                        )),
                     "naga::linalg::",
                     current
                 );
             }
         };
+
+        //        sclx::cuda::set_device(device_id);
+        //        task_lambda();
+        //        sclx::cuda::set_device(0);
 
         futures.emplace_back(
             sclx::cuda::task_scheduler::submit_task(device_id, task_lambda)
