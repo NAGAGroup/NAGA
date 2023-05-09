@@ -36,30 +36,34 @@
 
 namespace naga::nonlocal_calculus {
 
+
 template<class T, uint Dimensions>
 class divergence_operator {
   public:
     friend class operator_builder<T, Dimensions>;
+
+    using default_field_map = default_point_map<T, Dimensions>;
 
     static divergence_operator create(const sclx::array<T, 2>& domain) {
         operator_builder<T, Dimensions> builder(domain);
         return builder.template create<detail::divergence_operator_type>();
     }
 
+    template<class FieldMap = default_field_map>
     void apply(
-        const sclx::array<T, 2>& field,
+        const FieldMap& field,
         const sclx::array<T, 1>& result,
         const T& centering_offset = T(0)
     ) const {
+        using field_type                = typename FieldMap::point_type;
+        constexpr uint field_dimensions = field_type::dimensions;
+        static_assert(
+            field_dimensions == Dimensions,
+            "Field map has incorrect dimensions."
+        );
         if (result.elements() != weights_.shape()[2]) {
             sclx::throw_exception<std::invalid_argument>(
                 "Result array has incorrect shape.",
-                "naga::nonlocal_calculus::divergence_operator::"
-            );
-        }
-        if (Dimensions != field.shape()[0]) {
-            sclx::throw_exception<std::invalid_argument>(
-                "Field array has incorrect shape.",
                 "naga::nonlocal_calculus::divergence_operator::"
             );
         }
@@ -71,19 +75,29 @@ class divergence_operator {
                 [=,
                  *this] __device__(const sclx::md_index_t<1>& index, const auto&) {
                     T divergence = 0;
-                    for (uint idx = 0;
-                         idx < support_indices_.shape()[0] * Dimensions;
-                         ++idx) {
-                        uint d = idx % Dimensions;
-                        uint s = idx / Dimensions;
-                        divergence += weights_(d, s, index[0])
-                                    * (field(d, support_indices_(s, index[0]))
-                                       - centering_offset);
+                    for (uint s = 0; s < support_indices_.shape()[0]; ++s) {
+                        field_type support_point
+                            = field[support_indices_(s, index[0])];
+                        for (uint d = 0; d < Dimensions; ++d) {
+                            divergence += weights_(d, s, index[0])
+                                        * (support_point[d] - centering_offset);
+                        }
                     }
                     result[index] = divergence;
                 }
             );
         });
+    }
+
+    void apply(
+        const sclx::array<T, 2>& field,
+        const sclx::array<T, 1>& result,
+        const T& centering_offset = T(0)
+    ) const {
+        apply(
+            default_field_map{field},
+            result,
+            centering_offset);
     }
 
   private:

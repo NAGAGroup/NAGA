@@ -34,7 +34,7 @@
 #include <naga/nonlocal_calculus/divergence.cuh>
 #include <scalix/filesystem.hpp>
 
-using value_type = float;
+using value_type = double;
 
 template<class PointType>
 __host__ __device__ naga::point_t<value_type, 3>
@@ -50,7 +50,7 @@ __host__ __device__ value_type expected_divergence_function(const PointType& x
 }
 
 int main() {
-    size_t grid_size       = 100;
+    size_t grid_size       = 60;
     value_type grid_length = 2 * naga::math::pi<value_type>;
     value_type grid_spacing
         = grid_length / (static_cast<value_type>(grid_size) - 1.0f);
