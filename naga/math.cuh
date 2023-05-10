@@ -81,6 +81,11 @@ __host__ __device__ auto pow(const T& x, const E& e)
     return std::pow(x, e);
 }
 
+template <class T>
+__host__ __device__ auto exp(const T& x) -> decltype(std::exp(x)) {
+    return std::exp(x);
+}
+
 namespace loopless {
 
 template<uint N, class T>
