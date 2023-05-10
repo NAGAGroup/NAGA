@@ -37,3 +37,6 @@ target_link_libraries(nonlocal_divergence PRIVATE naga)
 
 add_executable(nonlocal_divergence_3d examples/nonlocal_divergence_3d.cu)
 target_link_libraries(nonlocal_divergence_3d PRIVATE naga)
+
+add_executable(nonlocal_advection examples/nonlocal_advection.cu)
+target_link_libraries(nonlocal_advection PRIVATE naga)
