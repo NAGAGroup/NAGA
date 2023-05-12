@@ -219,7 +219,7 @@ static sclx::array<T, 2> compute_weights(
             size_t allocated_mem
                 = device_memory_status.total - device_memory_status.free;
             size_t device_modified_total
-                = 75 * device_memory_status.total / 100;
+                = 90 * device_memory_status.total / 100;
             size_t device_modified_free
                 = (device_modified_total <= allocated_mem)
                     ? 0
