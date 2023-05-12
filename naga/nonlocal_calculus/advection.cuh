@@ -35,6 +35,7 @@
 #include "divergence.cuh"
 #include <scalix/algorithm/elementwise_reduce.cuh>
 #include <scalix/algorithm/transform.cuh>
+#include <scalix/assign_array.cuh>
 
 namespace naga::nonlocal_calculus {
 
@@ -146,7 +147,7 @@ class advection_operator {
         T centering_offset = T(0)
     ) {
 
-        f.assign_from(f0);
+        sclx::assign_array(static_cast<sclx::array<const T, 1>>(f0), f);
 
         divergence_field_map<FieldMap> div_input_field{
             velocity_field,
@@ -176,7 +177,10 @@ class advection_operator {
                 rk_df_dt_list_[i + 1],
                 centering_offset
             );
-            f.assign_from(f0);
+            sclx::assign_array(
+                static_cast<sclx::array<const T, 1>>(f0),
+                f
+            );
         }
 
         sclx::algorithm::transform(
