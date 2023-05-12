@@ -52,20 +52,22 @@ class operator_builder {
         naga::segmentation::nd_cubic_segmentation<T, Dimensions>
             domain_segmentation(domain, detail::num_interp_support);
 
-        auto knn_result = naga::segmentation::batched_nearest_neighbors(
-            detail::num_interp_support,
-            default_point_map<T, Dimensions>{domain},
-            domain_segmentation
-        );
+        {
+            auto knn_result = naga::segmentation::batched_nearest_neighbors(
+                detail::num_interp_support,
+                default_point_map<T, Dimensions>{domain},
+                domain_segmentation
+            );
 
-        auto distances_squared = std::get<0>(knn_result);
-        interaction_radii_ = sclx::array<T, 1>{distances_squared.shape()[1]};
-        detail::compute_interaction_radii(
-            distances_squared,
-            interaction_radii_
-        );
+            auto distances_squared = std::get<0>(knn_result);
+            interaction_radii_ = sclx::array<T, 1>{distances_squared.shape()[1]};
+            detail::compute_interaction_radii(
+                distances_squared,
+                interaction_radii_
+            );
 
-        support_indices_ = std::get<1>(knn_result);
+            support_indices_ = std::get<1>(knn_result);
+        }
 
         detail::quadrature_point_map<T, Dimensions> quadrature_points_map(
             domain_,
