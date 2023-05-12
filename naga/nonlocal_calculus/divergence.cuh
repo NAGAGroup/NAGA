@@ -37,6 +37,10 @@
 namespace naga::nonlocal_calculus {
 
 
+
+REGISTER_SCALIX_KERNEL_TAG(apply_divergence);
+
+
 template<class T, uint Dimensions>
 class divergence_operator {
   public:
@@ -69,7 +73,7 @@ class divergence_operator {
         }
 
         sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
-            handler.launch(
+            handler.launch<apply_divergence>(
                 sclx::md_range_t<1>{result.shape()[0]},
                 result,
                 [=,
