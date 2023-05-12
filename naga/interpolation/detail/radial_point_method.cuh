@@ -129,8 +129,9 @@ static sclx::array<T, 2> compute_weights(
                    * (support_size + dimensions + 1) * sizeof(T);
     size_t G0_inv_size = G0_size;
     size_t G_x_size = (support_size + dimensions + 1) * sizeof(T) * group_size;
-    size_t inv_info_size  = sizeof(int) * group_size;
-    size_t inv_pivot_size = sizeof(int) * (support_size + dimensions + 1) * group_size;
+    size_t inv_info_size = sizeof(int) * group_size;
+    size_t inv_pivot_size
+        = sizeof(int) * (support_size + dimensions + 1) * group_size;
     size_t mem_per_group
         = G0_size + G0_inv_size + G_x_size + inv_info_size + inv_pivot_size;
     size_t minimum_required_mem = 1 * mem_per_group;
@@ -146,8 +147,7 @@ static sclx::array<T, 2> compute_weights(
 
     sclx::array<T, 2> weights{
         interpolating_indices.shape()[0],
-        query_points.size()
-    };
+        query_points.size()};
     if (!devices.empty()) {
         weights.set_primary_devices(devices, false /*call_prefetch*/);
     }
@@ -193,7 +193,7 @@ static sclx::array<T, 2> compute_weights(
     }
 
     device_split_info = std::move(modified_device_split_info);
-    weights.set_primary_devices(device_split_info, false /*call_prefetch*/);
+    weights.set_primary_devices(device_split_info);
 
     std::vector<std::future<void>> futures;
 
@@ -216,15 +216,14 @@ static sclx::array<T, 2> compute_weights(
 
             // we don't want to overload the device, so we have a buffer
             // of 25% of the total memory
+            size_t allocated_mem
+                = device_memory_status.total - device_memory_status.free;
             size_t device_modified_total
                 = 75 * device_memory_status.total / 100;
             size_t device_modified_free
-                = (device_modified_total
-                   <= (device_memory_status.total - device_memory_status.free))
+                = (device_modified_total <= allocated_mem)
                     ? 0
-                    : device_modified_total
-                          - (device_memory_status.total
-                             - device_memory_status.free);
+                    : device_modified_total - allocated_mem;
 
             size_t batch_size;
             if (device_modified_free > minimum_required_mem) {
@@ -244,7 +243,7 @@ static sclx::array<T, 2> compute_weights(
                  batch_size / group_size},
                 false
             );
-            G0_storage.set_primary_devices(std::vector<int>{device_id}, false);
+            G0_storage.set_primary_devices(std::vector<int>{device_id});
 
             sclx::array<value_type, 3> G0_inv_storage(
                 {support_size + dimensions + 1,
@@ -252,14 +251,15 @@ static sclx::array<T, 2> compute_weights(
                  batch_size / group_size},
                 false
             );
-            G0_inv_storage.set_primary_devices(std::vector<int>{device_id},
-                false);
+            G0_inv_storage.set_primary_devices(
+                std::vector<int>{device_id}
+            );
 
             sclx::array<value_type, 3> G_x_storage(
                 {support_size + dimensions + 1, 1, batch_size},
                 false
             );
-            G_x_storage.set_primary_devices(std::vector<int>{device_id}, false);
+            G_x_storage.set_primary_devices(std::vector<int>{device_id});
 
             for (size_t b = 0; b < num_batches; ++b) {
                 auto weights_batch = weights_slice.get_range(
@@ -388,23 +388,20 @@ static sclx::array<T, 2> compute_weights(
                 }).get();
             }
         };
+//        device_lambda();
 
-        device_lambda();
-
-//        futures.emplace_back(std::async(std::launch::async, device_lambda));
+        futures.emplace_back(std::async(std::launch::async, device_lambda));
     }
 
     for (auto& future : futures) {
         future.get();
     }
 
-    std::vector<int> devices_end = devices;
-    if (devices_end.empty()) {
-        for (int d = 0; d < sclx::cuda::traits::device_count(); ++d) {
-            devices_end.push_back(d);
-        }
+    if (devices.empty()) {
+        weights.set_primary_devices();
+    } else {
+        weights.set_primary_devices(devices);
     }
-    weights.set_primary_devices(devices_end);
 
     return weights;
 }
