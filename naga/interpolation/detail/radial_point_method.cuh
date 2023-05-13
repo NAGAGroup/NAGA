@@ -197,12 +197,20 @@ static sclx::array<T, 2> compute_weights(
 
     std::vector<std::future<void>> futures;
 
+#define NAGA_RAD_POINT_INTERP_LAMBDA_START auto device_lambda = [=]()
+#ifdef SCALIX_EMULATE_MULTIDEVICE
+    std::atomic<int> barrier_count{0};
+    int num_devices = device_split_info.size();
+#undef NAGA_RAD_POINT_INTERP_LAMBDA_START
+#define NAGA_RAD_POINT_INTERP_LAMBDA_START auto device_lambda = [=, &barrier_count]()
+#endif
+
     for (auto& split_info : device_split_info) {
         int device_id      = std::get<0>(split_info);
         size_t slice_start = std::get<1>(split_info);
         size_t slice_range = std::get<2>(split_info);
 
-        auto device_lambda = [=]() {
+        NAGA_RAD_POINT_INTERP_LAMBDA_START {
             auto weights_slice
                 = weights.get_range({slice_start}, {slice_start + slice_range});
 
@@ -213,6 +221,15 @@ static sclx::array<T, 2> compute_weights(
 
             sclx::cuda::memory_status_info device_memory_status
                 = sclx::cuda::query_memory_status(device_id);
+
+#ifdef SCALIX_EMULATE_MULTIDEVICE
+            // we do this when emulating multiple devices so that the below
+            // allocations don't affect the memory status query
+            barrier_count++;
+            while (barrier_count < num_devices) {
+                std::this_thread::yield();
+            }
+#endif
 
             // we don't want to overload the device, so we have a buffer
             // of 25% of the total memory
