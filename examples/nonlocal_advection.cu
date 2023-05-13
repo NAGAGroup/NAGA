@@ -128,7 +128,7 @@ int main() {
             file.close();
             ++save_frame;
         }
-        source_values.assign_from(advection_result);
+        sclx::assign_array(advection_result, source_values);
     }
 
     return 0;
