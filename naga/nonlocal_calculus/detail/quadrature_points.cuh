@@ -97,14 +97,21 @@ __host__ void init_quad_points_2d() {
         calc_unscaled_quad_point_2d(q_idx, quad_points + 2 * q_idx);
     }
 
-    cudaMemcpyToSymbol(
-        unscaled_quad_points_2d<T>,
-        quad_points,
-        2 * num_quad_points_2d * sizeof(T),
-        0,
-        cudaMemcpyHostToDevice
-    );
-
+    int num_devices = sclx::cuda::traits::device_count();
+    int current_device = sclx::cuda::traits::current_device();
+    auto current_location = std::experimental::source_location::current();
+    for (int dev_idx = 0; dev_idx < num_devices; ++dev_idx) {
+        sclx::cuda::set_device(dev_idx);
+        auto err = cudaMemcpyToSymbol(
+            unscaled_quad_points_2d<T>,
+            quad_points,
+            2 * num_quad_points_2d * sizeof(T),
+            0,
+            cudaMemcpyHostToDevice
+        );
+        sclx::cuda::cuda_exception::raise_if_not_success(err, current_location, "naga::nonlocal_calculus::detail::");
+    }
+    sclx::cuda::set_device(current_device);
     is_quad_points_2d_init<T> = true;
 }
 
@@ -140,14 +147,21 @@ __host__ void init_quad_points_3d() {
         calc_unscaled_quad_point_3d(q_idx, quad_points + 3 * q_idx);
     }
 
-    cudaMemcpyToSymbol(
-        unscaled_quad_points_3d<T>,
-        quad_points,
-        3 * num_quad_points_3d * sizeof(T),
-        0,
-        cudaMemcpyHostToDevice
-    );
-
+    int num_devices = sclx::cuda::traits::device_count();
+    int current_device = sclx::cuda::traits::current_device();
+    auto current_location = std::experimental::source_location::current();
+    for (int dev_idx = 0; dev_idx < num_devices; ++dev_idx) {
+        sclx::cuda::set_device(dev_idx);
+        auto err = cudaMemcpyToSymbol(
+            unscaled_quad_points_3d<T>,
+            quad_points,
+            3 * num_quad_points_3d * sizeof(T),
+            0,
+            cudaMemcpyHostToDevice
+        );
+        sclx::cuda::cuda_exception::raise_if_not_success(err, current_location, "naga::nonlocal_calculus::detail::");
+    }
+    sclx::cuda::set_device(current_device);
     is_quad_points_3d_init<T> = true;
 }
 
