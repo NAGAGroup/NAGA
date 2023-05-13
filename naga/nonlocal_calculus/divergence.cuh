@@ -71,20 +71,29 @@ class divergence_operator {
                 "naga::nonlocal_calculus::divergence_operator::"
             );
         }
+        if (result.elements() != field.size()) {
+            sclx::throw_exception<std::invalid_argument>(
+                "Result array has incorrect size.",
+                "naga::nonlocal_calculus::divergence_operator::"
+            );
+        }
 
         sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
             handler.launch<apply_divergence>(
-                sclx::md_range_t<1>{result.shape()[0]},
+                sclx::md_range_t<1>{result.elements()},
                 result,
                 [=,
                  *this] __device__(const sclx::md_index_t<1>& index, const auto&) {
                     T divergence = 0;
                     for (uint s = 0; s < support_indices_.shape()[0]; ++s) {
-                        field_type support_point
+                        field_type support_point_field_value
                             = field[support_indices_(s, index[0])];
                         for (uint d = 0; d < Dimensions; ++d) {
+//                            if (weights_(d, s, index[0]) == T(0) && index[0] == result.shape()[0] / 2 + result.shape()[0] / 4) {
+//                                printf("Oh NO! Weight is exactly zero at idx %u, %u, %u\n", static_cast<uint>(d), static_cast<uint>(s), static_cast<uint>(index[0]));
+//                            }
                             divergence += weights_(d, s, index[0])
-                                        * (support_point[d] - centering_offset);
+                                        * (support_point_field_value[d] - centering_offset);
                         }
                     }
                     result[index] = divergence;
