@@ -92,6 +92,21 @@ struct euclidean {
     }
 };
 
+template<>
+struct euclidean<void, void> {
+    static constexpr bool is_loopless = false;
+    static constexpr bool is_squared  = false;
+
+    template<class VectorLikeT, class VectorLikeU>
+    __host__ __device__ auto
+    operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions)
+        const {
+        return math::sqrt(
+            euclidean_squared<VectorLikeT, VectorLikeU>{}(a, b, dimensions)
+        );
+    }
+};
+
 }  // namespace naga::distance_functions
 
 namespace naga::distance_functions::loopless {
