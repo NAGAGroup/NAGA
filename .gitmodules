@@ -1,3 +1,12 @@
 [submodule "extern/Scalix"]
 	path = extern/Scalix
 	url = ../Scalix
+[submodule "extern/nanoflann"]
+	path = extern/nanoflann
+	url = https://github.com/jlblancoc/nanoflann.git
+[submodule "extern/sdf"]
+	path = extern/sdf
+	url = https://github.com/sxyu/sdf
+[submodule "extern/eigen"]
+	path = extern/eigen
+	url = https://gitlab.com/libeigen/eigen
