@@ -76,7 +76,9 @@ int main() {
                     = static_cast<value_type>((idx[0] / grid_size) % grid_size)
                     * grid_spacing;
                 source_grid(2, idx[0])
-                    = static_cast<value_type>(idx[0] / (grid_size * grid_size) % grid_size)
+                    = static_cast<value_type>(
+                          idx[0] / (grid_size * grid_size) % grid_size
+                      )
                     * grid_spacing;
             }
         );

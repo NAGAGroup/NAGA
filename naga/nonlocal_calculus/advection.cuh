@@ -102,8 +102,8 @@ class advection_operator {
 
         __host__ __device__ point_type operator[](const sclx::index_t& index
         ) const {
-            point_type velocity      = velocity_field_[index];
-            T scalar                 = scalar_field_[index];
+            point_type velocity = velocity_field_[index];
+            T scalar            = scalar_field_[index];
             for (uint i = 0; i < Dimensions; ++i) {
                 velocity[i] *= -(scalar - centering_offset_);
             }
@@ -177,10 +177,7 @@ class advection_operator {
                 rk_df_dt_list_[i + 1],
                 centering_offset
             );
-            sclx::assign_array(
-                static_cast<sclx::array<const T, 1>>(f0),
-                f
-            );
+            sclx::assign_array(static_cast<sclx::array<const T, 1>>(f0), f);
         }
 
         sclx::algorithm::transform(

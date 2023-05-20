@@ -89,16 +89,18 @@ __host__ void batched_matrix_inverse(
             int *info, *pivot;
             int dims       = A_slice.shape()[0];
             int batch_size = A_slice.shape()[2];
-            auto error = cudaMallocManaged(&info, batch_size * sizeof(int));
+            auto error     = cudaMallocManaged(&info, batch_size * sizeof(int));
             sclx::cuda::cuda_exception::raise_if_not_success(
                 error,
                 current,
-                "naga::linalg::");
+                "naga::linalg::"
+            );
             error = cudaMallocManaged(&pivot, batch_size * dims * sizeof(int));
             sclx::cuda::cuda_exception::raise_if_not_success(
                 error,
                 current,
-                "naga::linalg::");
+                "naga::linalg::"
+            );
 
             sclx::array<T, 3> A_slice_copy;
             std::future<void> prefetched_future1;

@@ -32,22 +32,28 @@
 
 #pragma once
 
+#include "triangular_mesh.cuh"
 #include <scalix/array.cuh>
 #include <scalix/filesystem.hpp>
-#include "triangular_mesh.cuh"
 
 namespace naga::mesh {
 
-template <class T>
+template<class T>
 struct closed_surface_t {
     sclx::array<T, 2> vertices;
     sclx::array<T, 2> vertex_normals;
     sclx::array<sclx::index_t, 2> faces;
 
-    static closed_surface_t import(const sclx::filesystem::path &path) {
+    static closed_surface_t import(const sclx::filesystem::path& path) {
         auto mesh = triangular_mesh_t<T>::import(path);
-        std::vector<T> vertices(mesh.vertices.data().get(), mesh.vertices.data().get() + mesh.vertices.elements());
-        std::vector<size_t> faces(mesh.faces.data().get(), mesh.faces.data().get() + mesh.faces.elements());
+        std::vector<T> vertices(
+            mesh.vertices.data().get(),
+            mesh.vertices.data().get() + mesh.vertices.elements()
+        );
+        std::vector<size_t> faces(
+            mesh.faces.data().get(),
+            mesh.faces.data().get() + mesh.faces.elements()
+        );
         std::vector<T> vertex_normals(mesh.vertices.shape()[1] * 3, 0);
         std::vector<bool> vertex_normal_set(mesh.vertices.shape()[1], false);
         for (size_t f = 0; f < mesh.face_normals.shape()[1]; f++) {
@@ -56,18 +62,27 @@ struct closed_surface_t {
                 if (!vertex_normal_set[global_v]) {
                     vertex_normal_set[global_v] = true;
                     for (uint d = 0; d < 3; d++) {
-                        vertex_normals[global_v * 3 + d] = mesh.normals(d, mesh.face_normals(v, f));
+                        vertex_normals[global_v * 3 + d]
+                            = mesh.normals(d, mesh.face_normals(v, f));
                     }
                 }
             }
         }
 
         return closed_surface_t{
-            sclx::array<T, 2>(sclx::shape_t<2>{3, mesh.vertices.shape()[1]}, vertices.data()),
-            sclx::array<T, 2>(sclx::shape_t<2>{3, mesh.vertices.shape()[1]}, vertex_normals.data()),
-            sclx::array<sclx::index_t, 2>(sclx::shape_t<2>{3, mesh.faces.shape()[1]}, faces.data())
-        };
+            sclx::array<T, 2>(
+                sclx::shape_t<2>{3, mesh.vertices.shape()[1]},
+                vertices.data()
+            ),
+            sclx::array<T, 2>(
+                sclx::shape_t<2>{3, mesh.vertices.shape()[1]},
+                vertex_normals.data()
+            ),
+            sclx::array<sclx::index_t, 2>(
+                sclx::shape_t<2>{3, mesh.faces.shape()[1]},
+                faces.data()
+            )};
     }
 };
 
-}
+}  // namespace naga::mesh

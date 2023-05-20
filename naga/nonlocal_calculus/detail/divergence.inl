@@ -118,9 +118,13 @@ void compute_divergence_weights(
                          ++index) {
                         uint d = index % Dimensions;
                         uint s = index / Dimensions;
-                        local_weights(d, s, info.local_thread_id()[0]) += alpha[d] * quad_weight
-                                             * (quad_interp_weights(s, num_quad_points * idx[0] + q)
-                                                + static_cast<T>(s == 0));
+                        local_weights(d, s, info.local_thread_id()[0])
+                            += alpha[d] * quad_weight
+                             * (quad_interp_weights(
+                                    s,
+                                    num_quad_points * idx[0] + q
+                                )
+                                + static_cast<T>(s == 0));
                     }
                 }
 

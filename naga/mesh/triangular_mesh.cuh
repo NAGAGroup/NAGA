@@ -95,13 +95,23 @@ struct triangular_mesh_t {
             }
         }
 
-
         return triangular_mesh_t{
-            sclx::array<T, 2>(sclx::shape_t<2>{3, vertices.size() / 3}, vertices.data()),
-            sclx::array<T, 2>(sclx::shape_t<2>{3, normals.size() / 3}, normals.data()),
-            sclx::array<sclx::index_t, 2>(sclx::shape_t<2>{3, faces.size() / 3}, faces.data()),
-            sclx::array<sclx::index_t, 2>(sclx::shape_t<2>{3, face_normals.size() / 3}, face_normals.data())
-        };
+            sclx::array<T, 2>(
+                sclx::shape_t<2>{3, vertices.size() / 3},
+                vertices.data()
+            ),
+            sclx::array<T, 2>(
+                sclx::shape_t<2>{3, normals.size() / 3},
+                normals.data()
+            ),
+            sclx::array<sclx::index_t, 2>(
+                sclx::shape_t<2>{3, faces.size() / 3},
+                faces.data()
+            ),
+            sclx::array<sclx::index_t, 2>(
+                sclx::shape_t<2>{3, face_normals.size() / 3},
+                face_normals.data()
+            )};
     }
 };
 

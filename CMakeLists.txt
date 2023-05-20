@@ -13,7 +13,8 @@ add_subdirectory(extern/sdf)
 
 # naga is a header only library
 add_library(naga INTERFACE)
-target_include_directories(naga INTERFACE ${PROJECT_SOURCE_DIR}/. extern/nanoflann/include)
+target_include_directories(naga INTERFACE ${PROJECT_SOURCE_DIR}/.
+                                          extern/nanoflann/include)
 target_link_libraries(naga INTERFACE scalix cublas Eigen3::Eigen sdf)
 
 # naga examples
@@ -46,5 +47,7 @@ target_link_libraries(nonlocal_advection PRIVATE naga)
 add_executable(nonlocal_advection_3d examples/nonlocal_advection_3d.cu)
 target_link_libraries(nonlocal_advection_3d PRIVATE naga)
 
-add_executable(nonlocal_lattice_boltzmann examples/nonlocal_lattice_boltzmann.cu examples/nonlocal_lattice_boltzmann.cu)
+add_executable(
+  nonlocal_lattice_boltzmann examples/nonlocal_lattice_boltzmann.cu
+                             examples/nonlocal_lattice_boltzmann.cu)
 target_link_libraries(nonlocal_lattice_boltzmann PRIVATE naga)

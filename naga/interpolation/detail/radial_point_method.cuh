@@ -202,7 +202,8 @@ static sclx::array<T, 2> compute_weights(
     std::atomic<int> barrier_count{0};
     int num_devices = device_split_info.size();
 #undef NAGA_RAD_POINT_INTERP_LAMBDA_START
-#define NAGA_RAD_POINT_INTERP_LAMBDA_START auto device_lambda = [=, &barrier_count]()
+#define NAGA_RAD_POINT_INTERP_LAMBDA_START                                     \
+    auto device_lambda = [=, &barrier_count]()
 #endif
 
     for (auto& split_info : device_split_info) {
@@ -268,9 +269,7 @@ static sclx::array<T, 2> compute_weights(
                  batch_size / group_size},
                 false
             );
-            G0_inv_storage.set_primary_devices(
-                std::vector<int>{device_id}
-            );
+            G0_inv_storage.set_primary_devices(std::vector<int>{device_id});
 
             sclx::array<value_type, 3> G_x_storage(
                 {support_size + dimensions + 1, 1, batch_size},
@@ -405,7 +404,7 @@ static sclx::array<T, 2> compute_weights(
                 }).get();
             }
         };
-//        device_lambda();
+        //        device_lambda();
 
         futures.emplace_back(std::async(std::launch::async, device_lambda));
     }

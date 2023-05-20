@@ -60,7 +60,8 @@ class operator_builder {
             );
 
             auto distances_squared = std::get<0>(knn_result);
-            interaction_radii_ = sclx::array<T, 1>{distances_squared.shape()[1]};
+            interaction_radii_
+                = sclx::array<T, 1>{distances_squared.shape()[1]};
             detail::compute_interaction_radii(
                 distances_squared,
                 interaction_radii_

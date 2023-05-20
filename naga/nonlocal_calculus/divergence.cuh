@@ -36,10 +36,7 @@
 
 namespace naga::nonlocal_calculus {
 
-
-
 REGISTER_SCALIX_KERNEL_TAG(apply_divergence);
-
 
 template<class T, uint Dimensions>
 class divergence_operator {
@@ -89,11 +86,23 @@ class divergence_operator {
                         field_type support_point_field_value
                             = field[support_indices_(s, index[0])];
                         for (uint d = 0; d < Dimensions; ++d) {
-//                            if (weights_(d, s, index[0]) == T(0) && index[0] == result.shape()[0] / 2 + result.shape()[0] / 4) {
-//                                printf("Oh NO! Weight is exactly zero at idx %u, %u, %u\n", static_cast<uint>(d), static_cast<uint>(s), static_cast<uint>(index[0]));
-//                            }
+                            //                            if (weights_(d, s,
+                            //                            index[0]) == T(0) &&
+                            //                            index[0] ==
+                            //                            result.shape()[0] / 2
+                            //                            + result.shape()[0] /
+                            //                            4) {
+                            //                                printf("Oh NO!
+                            //                                Weight is exactly
+                            //                                zero at idx %u,
+                            //                                %u, %u\n",
+                            //                                static_cast<uint>(d),
+                            //                                static_cast<uint>(s),
+                            //                                static_cast<uint>(index[0]));
+                            //                            }
                             divergence += weights_(d, s, index[0])
-                                        * (support_point_field_value[d] - centering_offset);
+                                        * (support_point_field_value[d]
+                                           - centering_offset);
                         }
                     }
                     result[index] = divergence;
@@ -107,10 +116,7 @@ class divergence_operator {
         const sclx::array<T, 1>& result,
         const T& centering_offset = T(0)
     ) const {
-        apply(
-            default_field_map{field},
-            result,
-            centering_offset);
+        apply(default_field_map{field}, result, centering_offset);
     }
 
   private:

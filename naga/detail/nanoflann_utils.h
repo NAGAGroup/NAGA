@@ -35,8 +35,8 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <vector>
 #include <nanoflann.hpp>
+#include <vector>
 
 namespace naga::detail {
 
@@ -225,4 +225,4 @@ inline void dump_mem_usage() {
     fclose(f);
 }
 
-}
+}  // namespace naga::detail

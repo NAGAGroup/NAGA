@@ -702,10 +702,10 @@ simulation_domain<T> hycaps3d_load_domain(
         domain.layer_absorption.data().get()
     );
 
-    domain.num_bulk_points = bulk_size;
-    domain.num_layer_points = layer_size;
+    domain.num_bulk_points     = bulk_size;
+    domain.num_layer_points    = layer_size;
     domain.num_boundary_points = boundary_size;
-    domain.nodal_spacing = nodal_spacing;
+    domain.nodal_spacing       = nodal_spacing;
 
     return domain;
 }

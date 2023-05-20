@@ -34,7 +34,7 @@
 #include <naga/nonlocal_calculus/divergence.cuh>
 #include <scalix/filesystem.hpp>
 
-using value_type = float ;
+using value_type = float;
 
 template<class PointType>
 __host__ __device__ naga::point_t<value_type, 2>
@@ -64,8 +64,12 @@ int main() {
             sclx::md_range_t<1>{grid_size * grid_size},
             source_grid,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                source_grid(0, idx[0]) = static_cast<value_type>(idx[0] % grid_size) * grid_spacing;
-                source_grid(1, idx[0]) = static_cast<value_type>(idx[0] / grid_size) * grid_spacing;
+                source_grid(0, idx[0])
+                    = static_cast<value_type>(idx[0] % grid_size)
+                    * grid_spacing;
+                source_grid(1, idx[0])
+                    = static_cast<value_type>(idx[0] / grid_size)
+                    * grid_spacing;
             }
         );
     });

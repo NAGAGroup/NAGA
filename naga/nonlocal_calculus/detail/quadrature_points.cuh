@@ -97,8 +97,8 @@ __host__ void init_quad_points_2d() {
         calc_unscaled_quad_point_2d(q_idx, quad_points + 2 * q_idx);
     }
 
-    int num_devices = sclx::cuda::traits::device_count();
-    int current_device = sclx::cuda::traits::current_device();
+    int num_devices       = sclx::cuda::traits::device_count();
+    int current_device    = sclx::cuda::traits::current_device();
     auto current_location = std::experimental::source_location::current();
     for (int dev_idx = 0; dev_idx < num_devices; ++dev_idx) {
         sclx::cuda::set_device(dev_idx);
@@ -109,7 +109,11 @@ __host__ void init_quad_points_2d() {
             0,
             cudaMemcpyHostToDevice
         );
-        sclx::cuda::cuda_exception::raise_if_not_success(err, current_location, "naga::nonlocal_calculus::detail::");
+        sclx::cuda::cuda_exception::raise_if_not_success(
+            err,
+            current_location,
+            "naga::nonlocal_calculus::detail::"
+        );
     }
     sclx::cuda::set_device(current_device);
     is_quad_points_2d_init<T> = true;
@@ -147,8 +151,8 @@ __host__ void init_quad_points_3d() {
         calc_unscaled_quad_point_3d(q_idx, quad_points + 3 * q_idx);
     }
 
-    int num_devices = sclx::cuda::traits::device_count();
-    int current_device = sclx::cuda::traits::current_device();
+    int num_devices       = sclx::cuda::traits::device_count();
+    int current_device    = sclx::cuda::traits::current_device();
     auto current_location = std::experimental::source_location::current();
     for (int dev_idx = 0; dev_idx < num_devices; ++dev_idx) {
         sclx::cuda::set_device(dev_idx);
@@ -159,7 +163,11 @@ __host__ void init_quad_points_3d() {
             0,
             cudaMemcpyHostToDevice
         );
-        sclx::cuda::cuda_exception::raise_if_not_success(err, current_location, "naga::nonlocal_calculus::detail::");
+        sclx::cuda::cuda_exception::raise_if_not_success(
+            err,
+            current_location,
+            "naga::nonlocal_calculus::detail::"
+        );
     }
     sclx::cuda::set_device(current_device);
     is_quad_points_3d_init<T> = true;
@@ -264,8 +272,6 @@ T quadrature_point_map<T, Dimensions>::host_unscaled_quad_points_
 template<class T, uint Dimensions>
 bool quadrature_point_map<T, Dimensions>::is_host_unscaled_quad_points_init_
     = false;
-
-
 
 template<class T>
 void compute_interaction_radii(
