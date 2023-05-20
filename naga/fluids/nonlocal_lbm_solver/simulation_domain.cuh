@@ -32,8 +32,8 @@
 
 #pragma once
 
-#include <scalix/array.cuh>
 #include "detail/hycaps3d_load_domain.cuh"
+#include <scalix/array.cuh>
 
 namespace naga::fluids::nonlocal_lbm {
 
@@ -45,7 +45,7 @@ struct boundary_specification {
     T absorption_coefficient;
 
     boundary_specification(
-        std::string  obj_file_path,
+        std::string obj_file_path,
         uint node_layer_count,
         uint absorption_layer_count,
         T absorption_coefficient
@@ -76,16 +76,30 @@ struct simulation_domain {
 
     T nodal_spacing{};
 
-    template <uint Dimensions>
+    template<uint Dimensions>
     static simulation_domain import(
         const boundary_specification<T>& outer_boundary,
-        const std::vector<boundary_specification<T>>& inner_boundaries) {
-        static_assert(Dimensions == 2 || Dimensions == 3,
-                      "Dimensions must be 2 or 3");
+        const std::vector<boundary_specification<T>>& inner_boundaries
+    ) {
+        static_assert(
+            Dimensions == 2 || Dimensions == 3,
+            "Dimensions must be 2 or 3"
+        );
+
+        if constexpr (Dimensions == 3) {
+            return detail::hycaps3d_load_domain<T>(
+                outer_boundary,
+                inner_boundaries
+            );
+        } else {
+            sclx::throw_exception<std::runtime_error>(
+                "Only 3D domains are supported",
+                "naga::fluids::nonlocal_lbm::simulation_domain::import"
+            );
+        }
     }
 };
 
 }  // namespace naga::fluids::nonlocal_lbm
-
 
 #include "detail/hycaps3d_load_domain.inl"
