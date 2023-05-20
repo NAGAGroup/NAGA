@@ -8,14 +8,13 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
 
 add_subdirectory(extern/Scalix)
-add_subdirectory(extern/eigen)
 add_subdirectory(extern/sdf)
 
 # naga is a header only library
 add_library(naga INTERFACE)
 target_include_directories(naga INTERFACE ${PROJECT_SOURCE_DIR}/.
-                                          extern/nanoflann/include)
-target_link_libraries(naga INTERFACE scalix cublas Eigen3::Eigen sdf)
+                                          extern/nanoflann/include extern/eigen)
+target_link_libraries(naga INTERFACE scalix cublas sdf)
 
 # naga examples
 add_executable(nd_cubic_segmentation examples/nd_cubic_segmentation.cu)
