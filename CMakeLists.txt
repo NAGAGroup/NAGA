@@ -7,13 +7,18 @@ project(
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
 
+set(EIGEN_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/extern/eigen)
+set(NANOFLANN_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/extern/nanoflann/include)
+
 add_subdirectory(extern/Scalix)
+
+set(SDF_USE_SYSTEM_EIGEN OFF)
 add_subdirectory(extern/sdf)
 
 # naga is a header only library
 add_library(naga INTERFACE)
 target_include_directories(naga INTERFACE ${PROJECT_SOURCE_DIR}/.
-                                          extern/nanoflann/include extern/eigen)
+                                           ${EIGEN_INCLUDE_DIR} ${NANOFLANN_INCLUDE_DIR})
 target_link_libraries(naga INTERFACE scalix cublas sdf)
 
 # naga examples
