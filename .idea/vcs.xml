@@ -3,5 +3,8 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/extern/Scalix" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/extern/eigen" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/extern/nanoflann" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/extern/sdf" vcs="Git" />
   </component>
 </project>
