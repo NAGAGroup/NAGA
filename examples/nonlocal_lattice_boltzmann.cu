@@ -34,6 +34,7 @@
 int main() {
     auto results_path = sclx::filesystem::path(__FILE__).parent_path()
                       / "nonlocal_lattice_boltzmann_results";
+    sclx::filesystem::create_directories(results_path);
 
     sclx::filesystem::path domain_dir
         = results_path / "../../resources/lbm_example_domains/3_cube";
@@ -56,7 +57,6 @@ int main() {
             {inner_ball_spec}
         );
 
-    sclx::filesystem::create_directories(results_path);
     std::ofstream file(results_path / "nonlocal_lattice_boltzmann_results.csv");
     file << "x,y,z,nx,ny,nz,type\n";
     for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
