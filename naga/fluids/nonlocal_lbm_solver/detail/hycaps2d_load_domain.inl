@@ -67,10 +67,8 @@ struct pps_temporary_layer_2d_t {
 };
 
 template<class T>
-std::vector<T> calculate_field(
-    const T* p,
-    const closed_contour_t<T>& source_contour
-) {
+std::vector<T>
+calculate_field(const T* p, const closed_contour_t<T>& source_contour) {
     std::vector<T> field = {0, 0};
     for (size_t i = 0; i < source_contour.vertices.shape()[1]; i++) {
         T diff[2]
@@ -99,10 +97,7 @@ void populate_layer_field_lines(pps_temporary_layer_2d_t<T>& layer) {
 }
 
 template<class T>
-void add_layer(
-    pps_temporary_layer_2d_t<T>& layer,
-    T layer_thickness
-) {
+void add_layer(pps_temporary_layer_2d_t<T>& layer, T layer_thickness) {
     T average_field_mag = 0;
 
     for (size_t i = 0; i < layer.field_lines.size(); i += 2) {
@@ -265,8 +260,7 @@ bool test_point_with_boundaries(
 ) {
     T min_distance_to_edge  = std::numeric_limits<T>::max();
     T min_distance_to_layer = std::numeric_limits<T>::max();
-    for (const pps_temporary_layer_2d_t<T>& layer :
-         inner_boundary_layers) {
+    for (const pps_temporary_layer_2d_t<T>& layer : inner_boundary_layers) {
         if (&layer == excluded_layer) {
             continue;
         }
@@ -425,9 +419,8 @@ void advance_front(
                     * std::pow<T>(
                         (outer_boundary_layer.absorption_layer_count - 1
                          - layer_idx)
-                            / ( T ) (outer_boundary_layer
-                                              .absorption_layer_count
-                                          - 1),
+                            / ( T
+                            ) (outer_boundary_layer.absorption_layer_count - 1),
                         2
                     )
                 );
@@ -544,8 +537,8 @@ simulation_domain<T> hycaps2d_load_domain(
         T{-1},
         sclx::algorithm::multiplies<>()
     );
-    T min_outer_edge_length = get_smallest_edge_length(domain_contour);
-    auto outer_boundary_layer    = init_pps_layer(
+    T min_outer_edge_length   = get_smallest_edge_length(domain_contour);
+    auto outer_boundary_layer = init_pps_layer(
         domain_contour,
         outer_boundary.node_layer_count,
         outer_boundary.absorption_layer_count,
@@ -558,92 +551,88 @@ simulation_domain<T> hycaps2d_load_domain(
         boundary_normals.push_back(domain_contour.vertex_normals(1, i));
     }
 
-        /********************** inner boundaries ************************/
-        std::vector<pps_temporary_layer_2d_t<T>> inner_boundary_layers;
-        for (const boundary_specification<T>& inner_boundary :
-             inner_boundaries) {
-            auto inner_boundary_contour =
-            mesh::closed_contour_t<T>::import(
-                inner_boundary.obj_file_path,
-                true,
-                particle_spacing
-            );
-            inner_boundary_layers.emplace_back(init_pps_layer(
-                inner_boundary_contour,
-                inner_boundary.node_layer_count,
-                inner_boundary.absorption_layer_count,
-                inner_boundary.absorption_coefficient
-            ));
-
-            for (size_t i = 0; i < inner_boundary_contour.vertices.shape()[1];
-                 i++) {
-                boundary_points.push_back(inner_boundary_contour.vertices(0,
-                i));
-                boundary_points.push_back(inner_boundary_contour.vertices(1,
-                i)); boundary_normals.push_back(
-                    inner_boundary_contour.vertex_normals(0, i)
-                );
-                boundary_normals.push_back(
-                    inner_boundary_contour.vertex_normals(1, i)
-                );
-            }
-        }
-
-        nanoflann_cloud_t<T> outer_boundary_cloud;
-        kd_tree_t<T> outer_boundary_tree(
-            3,
-            outer_boundary_cloud,
-            nanoflann::KDTreeSingleIndexAdaptorParams(10)
+    /********************** inner boundaries ************************/
+    std::vector<pps_temporary_layer_2d_t<T>> inner_boundary_layers;
+    for (const boundary_specification<T>& inner_boundary : inner_boundaries) {
+        auto inner_boundary_contour = mesh::closed_contour_t<T>::import(
+            inner_boundary.obj_file_path,
+            true,
+            particle_spacing
         );
+        inner_boundary_layers.emplace_back(init_pps_layer(
+            inner_boundary_contour,
+            inner_boundary.node_layer_count,
+            inner_boundary.absorption_layer_count,
+            inner_boundary.absorption_coefficient
+        ));
 
-        uint max_layer_count = outer_boundary.node_layer_count;
-        for (const auto& layer : inner_boundary_layers) {
-            max_layer_count = std::max(max_layer_count,
-            layer.node_layer_count);
-        }
-        for (size_t i = 0; i < max_layer_count; i++) {
-            advance_front(
-                i,
-                outer_boundary_cloud,
-                outer_boundary_tree,
-                min_outer_edge_length,
-                bulk_points,
-                layer_points,
-                layer_absorption,
-                outer_boundary_layer,
-                inner_boundary_layers,
-                particle_spacing
+        for (size_t i = 0; i < inner_boundary_contour.vertices.shape()[1];
+             i++) {
+            boundary_points.push_back(inner_boundary_contour.vertices(0, i));
+            boundary_points.push_back(inner_boundary_contour.vertices(1, i));
+            boundary_normals.push_back(
+                inner_boundary_contour.vertex_normals(0, i)
+            );
+            boundary_normals.push_back(
+                inner_boundary_contour.vertex_normals(1, i)
             );
         }
+    }
 
-        auto domain_bounds = get_contour_bounds(domain_contour);
-        size_t num_x
-            = (domain_bounds[0][1] - domain_bounds[0][0]) / particle_spacing;
-        size_t num_y
-            = (domain_bounds[1][1] - domain_bounds[1][0]) / particle_spacing;
-        T x_spacing = (domain_bounds[0][1] - domain_bounds[0][0]) /
-        num_x; T y_spacing = (domain_bounds[1][1] - domain_bounds[1][0])
-        / num_y; for (size_t i = 0; i < num_x; i++) {
-            for (size_t j = 0; j < num_y; j++) {
-                T query_point[3]
-                    = {domain_bounds[0][0] + i * x_spacing,
-                       domain_bounds[1][0] + j * y_spacing,
-                       0.f};
-                if (is_point_valid(
-                        query_point,
-                        outer_boundary_layer,
-                        outer_boundary_cloud,
-                        outer_boundary_tree,
-                        min_outer_edge_length,
-                        inner_boundary_layers,
-                        ( pps_temporary_layer_2d_t<T>* ) nullptr,
-                        particle_spacing
-                    )) {
-                    bulk_points.push_back(query_point[0]);
-                    bulk_points.push_back(query_point[1]);
-                }
+    nanoflann_cloud_t<T> outer_boundary_cloud;
+    kd_tree_t<T> outer_boundary_tree(
+        3,
+        outer_boundary_cloud,
+        nanoflann::KDTreeSingleIndexAdaptorParams(10)
+    );
+
+    uint max_layer_count = outer_boundary.node_layer_count;
+    for (const auto& layer : inner_boundary_layers) {
+        max_layer_count = std::max(max_layer_count, layer.node_layer_count);
+    }
+    for (size_t i = 0; i < max_layer_count; i++) {
+        advance_front(
+            i,
+            outer_boundary_cloud,
+            outer_boundary_tree,
+            min_outer_edge_length,
+            bulk_points,
+            layer_points,
+            layer_absorption,
+            outer_boundary_layer,
+            inner_boundary_layers,
+            particle_spacing
+        );
+    }
+
+    auto domain_bounds = get_contour_bounds(domain_contour);
+    size_t num_x
+        = (domain_bounds[0][1] - domain_bounds[0][0]) / particle_spacing;
+    size_t num_y
+        = (domain_bounds[1][1] - domain_bounds[1][0]) / particle_spacing;
+    T x_spacing = (domain_bounds[0][1] - domain_bounds[0][0]) / num_x;
+    T y_spacing = (domain_bounds[1][1] - domain_bounds[1][0]) / num_y;
+    for (size_t i = 0; i < num_x; i++) {
+        for (size_t j = 0; j < num_y; j++) {
+            T query_point[3]
+                = {domain_bounds[0][0] + i * x_spacing,
+                   domain_bounds[1][0] + j * y_spacing,
+                   0.f};
+            if (is_point_valid(
+                    query_point,
+                    outer_boundary_layer,
+                    outer_boundary_cloud,
+                    outer_boundary_tree,
+                    min_outer_edge_length,
+                    inner_boundary_layers,
+                    ( pps_temporary_layer_2d_t<T>* ) nullptr,
+                    particle_spacing
+                )) {
+                bulk_points.push_back(query_point[0]);
+                bulk_points.push_back(query_point[1]);
             }
         }
+    }
 
     simulation_domain<T> domain;
 
@@ -657,11 +646,8 @@ simulation_domain<T> hycaps2d_load_domain(
     );
 
     if (bulk_size != 0) {
-        domain.points.copy_range_from(
-            {0, 0},
-            {0, bulk_size},
-            bulk_points.data()
-        );
+        domain.points
+            .copy_range_from({0, 0}, {0, bulk_size}, bulk_points.data());
     }
     if (layer_size != 0) {
         domain.points.copy_range_from(

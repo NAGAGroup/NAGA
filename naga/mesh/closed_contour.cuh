@@ -184,8 +184,7 @@ void populate_contour_data(
             continue;
         }
 
-        FPType length_sub_div
-            = edge_length / num_subdivisions;
+        FPType length_sub_div = edge_length / num_subdivisions;
         edge_dir[0] /= edge_length;
         edge_dir[1] /= edge_length;
 

@@ -101,8 +101,9 @@ __host__ __device__ auto norm(const VectorType& v, uint dims) {
     return sqrt(norm_squared(v, dims));
 }
 
-template <class VectorTypeT, class VectorTypeU>
-__host__ __device__ auto dot(const VectorTypeT& v, const VectorTypeU& u, uint dims) {
+template<class VectorTypeT, class VectorTypeU>
+__host__ __device__ auto
+dot(const VectorTypeT& v, const VectorTypeU& u, uint dims) {
     using T = decltype(v[0]);
     T sum   = 0;
     for (int i = 0; i < dims; ++i) {
@@ -128,7 +129,7 @@ __host__ __device__ auto pow(const T& x) -> decltype(x * x) {
     }
 }
 
-template <uint Dimensions, class VectorTypeT, class VectorTypeU>
+template<uint Dimensions, class VectorTypeT, class VectorTypeU>
 __host__ __device__ auto dot(const VectorTypeT& v, const VectorTypeU& u) {
     using T = decltype(v[0]);
     if constexpr (Dimensions == 1) {

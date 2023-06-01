@@ -370,8 +370,8 @@ __host__ void advance_front(
                     * std::pow<T>(
                         (outer_boundary_layer.absorption_layer_count - 1
                          - layer_idx)
-                            / ( T ) (outer_boundary_layer.absorption_layer_count
-                                     - 1),
+                            / ( T
+                            ) (outer_boundary_layer.absorption_layer_count - 1),
                         2
                     )
                 );
@@ -665,11 +665,8 @@ simulation_domain<T> hycaps3d_load_domain(
     );
 
     if (bulk_size != 0) {
-        domain.points.copy_range_from(
-            {0, 0},
-            {0, bulk_size},
-            bulk_points.data()
-        );
+        domain.points
+            .copy_range_from({0, 0}, {0, bulk_size}, bulk_points.data());
     }
     if (layer_size != 0) {
         domain.points.copy_range_from(

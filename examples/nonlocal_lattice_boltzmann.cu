@@ -33,12 +33,13 @@
 
 int main() {
     auto examples_path = sclx::filesystem::path(__FILE__).parent_path();
-    auto results_path = examples_path / "nonlocal_lattice_boltzmann_results";
+    auto results_path  = examples_path / "nonlocal_lattice_boltzmann_results";
 
     sclx::filesystem::create_directories(results_path);
 
     sclx::filesystem::path domain_dir
-        = examples_path / "../resources/lbm_example_domains/circles_in_rectangle";
+        = examples_path
+        / "../resources/lbm_example_domains/circles_in_rectangle";
 
     naga::fluids::nonlocal_lbm::boundary_specification<float> outer_boundary{
         domain_dir / "domain.obj",
@@ -47,26 +48,28 @@ int main() {
         .01f,
     };
 
-    std::vector<naga::fluids::nonlocal_lbm::boundary_specification<float>> inner_boundaries{
-        {
-            domain_dir / "circle1.obj",
-            4,
-            2,
-            .01f,
-        },
-        {
-            domain_dir / "circle2.obj",
-            8,
-            4,
-            .01f,
-        },
-    };
+    std::vector<naga::fluids::nonlocal_lbm::boundary_specification<float>>
+        inner_boundaries{
+            {
+                domain_dir / "circle1.obj",
+                4,
+                2,
+                .01f,
+            },
+            {
+                domain_dir / "circle2.obj",
+                8,
+                4,
+                .01f,
+            },
+        };
 
-    auto domain = naga::fluids::nonlocal_lbm::simulation_domain<float>::import<2>(
-        outer_boundary,
-        inner_boundaries,
-        .01f
-    );
+    auto domain
+        = naga::fluids::nonlocal_lbm::simulation_domain<float>::import <2>(
+            outer_boundary,
+            inner_boundaries,
+            .01f
+        );
 
     std::ofstream domain_file(results_path / "domain.csv");
     domain_file << "x,y,nx,ny,type,absorption\n";
@@ -75,20 +78,23 @@ int main() {
         float absorption = 0;
         float normal[2]{0, 0};
         if (i >= domain.num_bulk_points + domain.num_layer_points) {
-            type = 3;
-            normal[0] = domain.boundary_normals(0, i - domain.num_bulk_points - domain.num_layer_points);
-            normal[1] = domain.boundary_normals(1, i - domain.num_bulk_points - domain.num_layer_points);
+            type      = 3;
+            normal[0] = domain.boundary_normals(
+                0,
+                i - domain.num_bulk_points - domain.num_layer_points
+            );
+            normal[1] = domain.boundary_normals(
+                1,
+                i - domain.num_bulk_points - domain.num_layer_points
+            );
         } else if (i >= domain.num_bulk_points) {
-            type = 2;
+            type       = 2;
             absorption = domain.layer_absorption[i - domain.num_bulk_points];
         } else {
             type = 1;
         }
-        domain_file << domain.points(0, i) << ","
-                    << domain.points(1, i) << ","
-                    << normal[0] << ","
-                    << normal[1] << ","
-                    << type << ","
+        domain_file << domain.points(0, i) << "," << domain.points(1, i) << ","
+                    << normal[0] << "," << normal[1] << "," << type << ","
                     << absorption << "\n";
     }
 
