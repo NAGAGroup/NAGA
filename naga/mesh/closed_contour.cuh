@@ -32,20 +32,21 @@
 
 #pragma once
 
+#include "../math.cuh"
 #include "triangular_mesh.cuh"
 #include <scalix/array.cuh>
 #include <scalix/filesystem.hpp>
-#include "../math.cuh"
 
 namespace naga::mesh {
 
-template<class T>
+template<class FPType>
 bool is_edge_shared(
     size_t face,
-    const int *face_edge,
-    const triangular_mesh_t<T>& mesh
+    const int* face_edge,
+    const triangular_mesh_t<FPType>& mesh
 ) {
-    for (size_t face_check = 0; face_check < mesh.faces.shape()[1]; face_check++) {
+    for (size_t face_check = 0; face_check < mesh.faces.shape()[1];
+         face_check++) {
         if (face_check == face) {
             continue;
         }
@@ -68,22 +69,22 @@ bool is_edge_shared(
     return false;
 }
 
-template<class T>
-std::vector<T> calc_edge_normal_of_face(
+template<class FPType>
+std::vector<FPType> calc_edge_normal_of_face(
     size_t face,
-    const int *face_edge,
-    const triangular_mesh_t<T>& mesh
+    const int* face_edge,
+    const triangular_mesh_t<FPType>& mesh
 ) {
-    std::vector<T> edge_normal(2);
+    std::vector<FPType> edge_normal(2);
 
-    T v1[2]
+    FPType v1[2]
         = {mesh.vertices(0, mesh.faces(face_edge[0], face)),
            mesh.vertices(1, mesh.faces(face_edge[0], face))};
-    T v2[2]
+    FPType v2[2]
         = {mesh.vertices(0, mesh.faces(face_edge[1], face)),
            mesh.vertices(1, mesh.faces(face_edge[1], face))};
     int v3_id = (face_edge[1] + 1) % 3;
-    T v3[2]
+    FPType v3[2]
         = {mesh.vertices(0, mesh.faces(v3_id, face)),
            mesh.vertices(1, mesh.faces(v3_id, face))};
 
@@ -91,7 +92,7 @@ std::vector<T> calc_edge_normal_of_face(
     edge_normal[0] = v2[1] - v1[1];
     edge_normal[1] = v1[0] - v2[0];
 
-    T v1_to_v3[2] = {v3[0] - v1[0], v3[1] - v1[1]};
+    FPType v1_to_v3[2] = {v3[0] - v1[0], v3[1] - v1[1]};
 
     if (math::loopless::dot<2>(edge_normal.data(), v1_to_v3) > 0) {
         edge_normal[0] = -edge_normal[0];
@@ -105,16 +106,16 @@ std::vector<T> calc_edge_normal_of_face(
     return edge_normal;
 }
 
-template<class T>
+template<class FPType>
 void populate_contour_data(
     const std::vector<size_t>& mesh_edges,
-    const std::vector<T>& mesh_edge_normals,
+    const std::vector<FPType>& mesh_edge_normals,
     std::vector<size_t>& contour_edges,
-    std::vector<T>& contour_vertices,
-    std::vector<T>& contour_vertex_normals,
-    const triangular_mesh_t<T>& mesh,
+    std::vector<FPType>& contour_vertices,
+    std::vector<FPType>& contour_vertex_normals,
+    const triangular_mesh_t<FPType>& mesh,
     bool subdivide            = false,
-    T approx_edge_length = 0.
+    FPType approx_edge_length = 0.
 ) {
     contour_edges = mesh_edges;
     contour_vertices.clear();
@@ -133,18 +134,24 @@ void populate_contour_data(
         contour_vertices.push_back(mesh.vertices(0, id));
         contour_vertices.push_back(mesh.vertices(1, id));
         auto edge_1_it = std::find(mesh_edges.begin(), mesh_edges.end(), id);
-        size_t edge_1  = std::distance(mesh_edges.begin(), edge_1_it) / 2;
-        auto edge_2_it = std::find(edge_1_it + 2, mesh_edges.end(), id);
-        size_t edge_2  = std::distance(mesh_edges.begin(), edge_2_it) / 2;
+        auto edge_1    = std::distance(mesh_edges.begin(), edge_1_it) / 2;
+        auto edge_2_it = std::find(
+            mesh_edges.begin() + 2 * (edge_1 + 1),
+            mesh_edges.end(),
+            id
+        );
+        auto edge_2 = std::distance(mesh_edges.begin(), edge_2_it) / 2;
         float normal[2];
         normal[0] = mesh_edge_normals[2 * edge_1 + 0]
-                    + mesh_edge_normals[2 * edge_2 + 0];
+                  + mesh_edge_normals[2 * edge_2 + 0];
         normal[0] /= 2;
         normal[1] = mesh_edge_normals[2 * edge_1 + 1]
-                    + mesh_edge_normals[2 * edge_2 + 1];
-        auto norm_normal = math::loopless::norm<2>(normal);
-        normal[0] /= norm_normal;
-        normal[1] /= norm_normal;
+                  + mesh_edge_normals[2 * edge_2 + 1];
+        normal[1] /= 2;
+        auto normal_norm = math::loopless::norm<2>(normal);
+        normal[0] /= normal_norm;
+        normal[1] /= normal_norm;
+
         contour_vertex_normals.push_back(normal[0]);
         contour_vertex_normals.push_back(normal[1]);
         contour_edges[std::distance(mesh_edges.begin(), edge_1_it)]
@@ -161,13 +168,13 @@ void populate_contour_data(
     for (size_t e = 0; e < num_edges; e++) {
         size_t edge_start = contour_edges[e * 2];
         size_t edge_end   = contour_edges[e * 2 + 1];
-        T edge_start_pos[2]
+        FPType edge_start_pos[2]
             = {contour_vertices[edge_start * 2],
                contour_vertices[edge_start * 2 + 1]};
-        T edge_end_pos[2]
+        FPType edge_end_pos[2]
             = {contour_vertices[edge_end * 2],
                contour_vertices[edge_end * 2 + 1]};
-        T edge_dir[2]
+        FPType edge_dir[2]
             = {edge_end_pos[0] - edge_start_pos[0],
                edge_end_pos[1] - edge_start_pos[1]};
         auto edge_length = math::loopless::norm<2>(edge_dir);
@@ -177,25 +184,20 @@ void populate_contour_data(
             continue;
         }
 
-        T length_sub_div = math::loopless::norm<2>(edge_dir) / num_subdivisions;
+        FPType length_sub_div
+            = edge_length / num_subdivisions;
         edge_dir[0] /= edge_length;
         edge_dir[1] /= edge_length;
 
         for (size_t s = 1; s < num_subdivisions; s++) {
-            T sub_div_pos[2]
+            FPType sub_div_pos[2]
                 = {edge_start_pos[0] + edge_dir[0] * length_sub_div * s,
                    edge_start_pos[1] + edge_dir[1] * length_sub_div * s};
             contour_vertices.push_back(sub_div_pos[0]);
             contour_vertices.push_back(sub_div_pos[1]);
-            if (std::isnan(mesh_edge_normals[2 * e + 0])
-                || std::isnan(mesh_edge_normals[2 * e + 1])) {
-                throw std::runtime_error(
-                    std::string("NaN encountered in mesh edge normals at edge ")
-                    + std::to_string(e)
-                );
-            }
             contour_vertex_normals.push_back(mesh_edge_normals[2 * e + 0]);
             contour_vertex_normals.push_back(mesh_edge_normals[2 * e + 1]);
+
             if (s == 1) {
                 contour_edges[e * 2 + 1] = contour_vertices.size() / 2 - 1;
             } else {
@@ -208,19 +210,21 @@ void populate_contour_data(
     }
 }
 
-template<class T>
+template<class FPType>
 struct closed_contour_t {
-    sclx::array<T, 2> vertices;
-    sclx::array<T, 2> vertex_normals;
+    sclx::array<FPType, 2> vertices;
+    sclx::array<FPType, 2> vertex_normals;
     sclx::array<size_t, 2> edges;
 
-    static closed_contour_t import(const sclx::filesystem::path& path,
-                                   bool subdivide            = false,
-                                   T approx_edge_length = 0.) {
-        auto mesh = triangular_mesh_t<T>::import(path);
+    static closed_contour_t import(
+        const sclx::filesystem::path& path,
+        bool subdivide            = false,
+        FPType approx_edge_length = 0.
+    ) {
+        auto mesh = triangular_mesh_t<FPType>::import(path);
 
         std::vector<size_t> mesh_edges;
-        std::vector<T> mesh_edge_normals;
+        std::vector<FPType> mesh_edge_normals;
 
         for (size_t face = 0; face < mesh.faces.shape()[1]; face++) {
             for (int e = 0; e < 3; e++) {
@@ -229,15 +233,16 @@ struct closed_contour_t {
                     continue;
                 mesh_edges.push_back(mesh.faces(face_edge[0], face));
                 mesh_edges.push_back(mesh.faces(face_edge[1], face));
-                auto edge_normal = calc_edge_normal_of_face(face, face_edge, mesh);
+                auto edge_normal
+                    = calc_edge_normal_of_face(face, face_edge, mesh);
                 mesh_edge_normals.push_back(edge_normal[0]);
                 mesh_edge_normals.push_back(edge_normal[1]);
             }
         }
 
         std::vector<size_t> contour_edges;
-        std::vector<T> contour_vertices;
-        std::vector<T> contour_vertex_normals;
+        std::vector<FPType> contour_vertices;
+        std::vector<FPType> contour_vertex_normals;
 
         populate_contour_data(
             mesh_edges,
@@ -250,12 +255,12 @@ struct closed_contour_t {
             approx_edge_length
         );
 
-        return closed_contour_t<T>{
-            sclx::array<T, 2>(
+        return closed_contour_t<FPType>{
+            sclx::array<FPType, 2>(
                 sclx::shape_t<2>{2, contour_vertices.size() / 2},
                 contour_vertices.data()
             ),
-            sclx::array<T, 2>(
+            sclx::array<FPType, 2>(
                 sclx::shape_t<2>{2, contour_vertex_normals.size() / 2},
                 contour_vertex_normals.data()
             ),

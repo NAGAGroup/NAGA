@@ -32,20 +32,22 @@
 
 #pragma once
 
+#include "detail/hycaps2d_load_domain.cuh"
 #include "detail/hycaps3d_load_domain.cuh"
 #include <scalix/array.cuh>
+#include <scalix/filesystem.hpp>
 
 namespace naga::fluids::nonlocal_lbm {
 
 template<class T>
 struct boundary_specification {
-    std::string obj_file_path;
+    sclx::filesystem::path obj_file_path;
     uint node_layer_count;
     uint absorption_layer_count;
     T absorption_coefficient;
 
     boundary_specification(
-        std::string obj_file_path,
+        sclx::filesystem::path obj_file_path,
         uint node_layer_count,
         uint absorption_layer_count,
         T absorption_coefficient
@@ -79,7 +81,8 @@ struct simulation_domain {
     template<uint Dimensions>
     static simulation_domain import(
         const boundary_specification<T>& outer_boundary,
-        const std::vector<boundary_specification<T>>& inner_boundaries
+        const std::vector<boundary_specification<T>>& inner_boundaries,
+        const T& particle_spacing = T(0)
     ) {
         static_assert(
             Dimensions == 2 || Dimensions == 3,
@@ -87,14 +90,22 @@ struct simulation_domain {
         );
 
         if constexpr (Dimensions == 3) {
+            if (particle_spacing != T(0)) {
+                sclx::throw_exception<std::runtime_error>(
+                    "Particle spacing must be 0 for 3D simulations as "
+                    "subdivision is not supported",
+                    "naga::fluids::nonlocal_lbm::"
+                );
+            }
             return detail::hycaps3d_load_domain<T>(
                 outer_boundary,
                 inner_boundaries
             );
         } else {
-            sclx::throw_exception<std::runtime_error>(
-                "Only 3D domains are supported",
-                "naga::fluids::nonlocal_lbm::simulation_domain::import"
+            return detail::hycaps2d_load_domain<T>(
+                outer_boundary,
+                inner_boundaries,
+                particle_spacing
             );
         }
     }
@@ -102,4 +113,5 @@ struct simulation_domain {
 
 }  // namespace naga::fluids::nonlocal_lbm
 
+#include "detail/hycaps2d_load_domain.inl"
 #include "detail/hycaps3d_load_domain.inl"

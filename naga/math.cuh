@@ -101,6 +101,16 @@ __host__ __device__ auto norm(const VectorType& v, uint dims) {
     return sqrt(norm_squared(v, dims));
 }
 
+template <class VectorTypeT, class VectorTypeU>
+__host__ __device__ auto dot(const VectorTypeT& v, const VectorTypeU& u, uint dims) {
+    using T = decltype(v[0]);
+    T sum   = 0;
+    for (int i = 0; i < dims; ++i) {
+        sum += v[i] * u[i];
+    }
+    return sum;
+}
+
 namespace loopless {
 
 template<uint N, class T>
@@ -118,15 +128,20 @@ __host__ __device__ auto pow(const T& x) -> decltype(x * x) {
     }
 }
 
-template<uint Dimensions, class VectorType>
-__host__ __device__ auto norm_squared(const VectorType& v) {
+template <uint Dimensions, class VectorTypeT, class VectorTypeU>
+__host__ __device__ auto dot(const VectorTypeT& v, const VectorTypeU& u) {
     using T = decltype(v[0]);
     if constexpr (Dimensions == 1) {
-        return v[0] * v[0];
+        return v[0] * u[0];
     } else {
-        return v[Dimensions - 1] * v[Dimensions - 1]
-             + norm_squared<Dimensions - 1, VectorType>(v);
+        return v[Dimensions - 1] * u[Dimensions - 1]
+             + dot<Dimensions - 1, VectorTypeT, VectorTypeU>(v, u);
     }
+}
+
+template<uint Dimensions, class VectorType>
+__host__ __device__ auto norm_squared(const VectorType& v) {
+    return dot<Dimensions, VectorType, VectorType>(v, v);
 }
 
 template<uint Dimensions, class VectorType>

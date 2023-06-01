@@ -33,6 +33,8 @@
  * All I did was put the utils in a namespace and include <nanoflann.hpp>
  */
 
+#pragma once
+
 #include <cstdlib>
 #include <iostream>
 #include <nanoflann.hpp>

@@ -41,20 +41,9 @@
 #include "../../../distance_functions.cuh"
 #include "../../../math.cuh"
 #include "../../../mesh/closed_surface.cuh"
-#include <scalix/algorithm/transform.cuh>
 #include <sdf/sdf.hpp>
 
 namespace naga::fluids::nonlocal_lbm::detail {
-
-template<class T>
-using nanoflann_cloud_t = ::naga::detail::PointCloud<T>;
-
-template<class T>
-using kd_tree_t = nanoflann::KDTreeSingleIndexDynamicAdaptor<
-    nanoflann::L2_Simple_Adaptor<T, nanoflann_cloud_t<T>>,
-    nanoflann_cloud_t<T>,
-    3 /* dim */
-    >;
 
 template<class T>
 struct pps_temporary_layer_3d_t {
@@ -664,43 +653,52 @@ simulation_domain<T> hycaps3d_load_domain(
         }
     }
 
-    size_t bulk_size     = bulk_points.size() / 3;
-    size_t layer_size    = layer_points.size() / 3;
-    size_t boundary_size = boundary_points.size() / 3;
-
     simulation_domain<T> domain;
 
-    domain.points
-        = sclx::array<T, 2>{3, bulk_size + layer_size + boundary_size};
-    std::copy(
-        bulk_points.begin(),
-        bulk_points.end(),
-        domain.points.data().get()
-    );
-    std::copy(
-        layer_points.begin(),
-        layer_points.end(),
-        domain.points.data().get() + 3 * bulk_size
-    );
-    std::copy(
-        boundary_points.begin(),
-        boundary_points.end(),
-        domain.points.data().get() + 3 * (bulk_size + layer_size)
+    uint dims            = 2;
+    size_t bulk_size     = bulk_points.size() / dims;
+    size_t layer_size    = layer_points.size() / dims;
+    size_t boundary_size = boundary_points.size() / dims;
+
+    domain.points = sclx::array<T, 2>(
+        sclx::shape_t<2>{dims, bulk_size + layer_size + boundary_size}
     );
 
-    domain.boundary_normals = sclx::array<T, 2>{3, boundary_size};
-    std::copy(
-        boundary_normals.begin(),
-        boundary_normals.end(),
-        domain.boundary_normals.data().get()
-    );
+    if (bulk_size != 0) {
+        domain.points.copy_range_from(
+            {0, 0},
+            {0, bulk_size},
+            bulk_points.data()
+        );
+    }
+    if (layer_size != 0) {
+        domain.points.copy_range_from(
+            {0, bulk_size},
+            {0, bulk_size + layer_size},
+            layer_points.data()
+        );
+    }
+    if (boundary_size != 0) {
+        domain.points.copy_range_from(
+            {0, bulk_size + layer_size},
+            {0, bulk_size + layer_size + boundary_size},
+            boundary_points.data()
+        );
+    }
 
-    domain.layer_absorption = sclx::array<T, 1>{layer_size};
-    std::copy(
-        layer_absorption.begin(),
-        layer_absorption.end(),
-        domain.layer_absorption.data().get()
-    );
+    if (boundary_size != 0) {
+        domain.boundary_normals = sclx::array<T, 2>(
+            sclx::shape_t<2>{dims, boundary_size},
+            boundary_normals.data()
+        );
+    }
+
+    if (layer_size != 0) {
+        domain.layer_absorption = sclx::array<T, 1>(
+            sclx::shape_t<1>{layer_size},
+            layer_absorption.data()
+        );
+    }
 
     domain.num_bulk_points     = bulk_size;
     domain.num_layer_points    = layer_size;
@@ -708,11 +706,8 @@ simulation_domain<T> hycaps3d_load_domain(
     domain.nodal_spacing       = nodal_spacing;
 
     return domain;
+
+    return domain;
 }
-
-template<class T>
-using f_type = decltype(hycaps3d_load_domain<T>);
-
-template f_type<float> hycaps3d_load_domain;
 
 }  // namespace naga::fluids::nonlocal_lbm::detail
