@@ -32,4 +32,4 @@
 
 #pragma once
 
-#include "nonlocal_lbm_solver/solver.cuh"
+#include "nonlocal_lattice_boltzmann/solver.cuh"

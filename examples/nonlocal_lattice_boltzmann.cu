@@ -29,7 +29,8 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include <naga/fluids/nonlocal_lbm_solver.cuh>
+#include "naga/fluids/nonlocal_lattice_boltzmann/solver.cuh"
+#include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
 
 int main() {
     auto examples_path = sclx::filesystem::path(__FILE__).parent_path();
