@@ -43,6 +43,7 @@ struct d2q9_lattice {
     using value_type                 = T;
 
     __host__ __device__ static const T* lattice_weights() { return detail::d2q9_lattice_weights<T>; }
+    __host__ __device__ static const T* lattice_velocities() { return detail::d2q9_lattice_velocities<T>; }
 };
 
 }
