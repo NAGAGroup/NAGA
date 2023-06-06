@@ -32,11 +32,7 @@
 
 #pragma once
 
-#include "../../interpolation/radial_point_method.cuh"
-#include "../../nonlocal_calculus/advection.cuh"
-#include "lattices.cuh"
-#include "simulation_domain.cuh"
-#include <scalix/fill.cuh>
+#include "detail/simulation_engine.cuh"
 
 namespace naga::fluids::nonlocal_lbm {
 
@@ -58,121 +54,35 @@ class simulation_engine {
         value_type characteristic_velocity,
         value_type lattice_characteristic_velocity
     ) {
-
-        parameters_.nondim_factors.length_scale = characteristic_length;
-        parameters_.nondim_factors.velocity_scale
-            = characteristic_velocity / lattice_characteristic_velocity;
-        parameters_.nondim_factors.time_scale
-            = parameters_.nondim_factors.length_scale
-            / parameters_.nondim_factors.velocity_scale;
-        parameters_.nondim_factors.viscosity_scale
-            = math::loopless::pow<2>(parameters_.nondim_factors.length_scale)
-            / parameters_.nondim_factors.time_scale;
-
-        parameters_.fluid_viscosity = fluid_viscosity;
-        parameters_.nominal_density = nominal_density;
-        parameters_.time_step       = time_step;
+        engine_ptr_->set_problem_parameters(
+            fluid_viscosity,
+            nominal_density,
+            time_step,
+            characteristic_length,
+            characteristic_velocity,
+            lattice_characteristic_velocity
+        );
     }
 
     void init_domain(simulation_domain<value_type> domain) {
-        domain_                 = domain;
-        advection_operator_ptr_ = std::make_shared<advection_operator_t>(
-            advection_operator_t::create(domain.points)
-        );
+        engine_ptr_ -> init_domain(domain);
+    }
 
-        {
-            uint num_interp_points = 32;
-            segmentation::nd_cubic_segmentation<float, 2> source_segmentation(
-                domain_.points,
-                num_interp_points
-            );
+    void step_forward(){
+        engine_ptr_->step_forward();
+    }
 
-            // We use the nearest neighbors algorithm to provide the
-            // interpolation indices to the radial point method.
-            const sclx::array<value_type, 2>& boundary_points
-                = domain.points.get_range(
-                    {domain.num_bulk_points + domain.num_layer_points},
-                    {domain.points.shape()[1]}
-                );
-            naga::default_point_map<float, 2> boundary_point_map{
-                boundary_points};
-            auto [distances_squared, indices]
-                = naga::segmentation::batched_nearest_neighbors(
-                    num_interp_points,
-                    boundary_point_map,
-                    source_segmentation
-                );
+    void reset() {
+        engine_ptr_->reset();
+    }
 
-            boundary_interpolator_ptr_ = std::make_shared<interpolater_t>(
-                interpolater_t::create_interpolator(
-                    domain.points,
-                    indices,
-                    boundary_point_map,
-                    domain.nodal_spacing
-                )
-            );
-        }
-
-        for (auto& f_alpha : solution_.lattice_distributions) {
-            f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
-        }
-        for (auto& f_alpha_tmp : temporary_distributions_) {
-            f_alpha_tmp = sclx::array<value_type, 1>{domain_.points.shape()[1]};
-        }
-        init_distribution();
-
-        solution_.macroscopic_values.fluid_velocity
-            = sclx::array<value_type, 2>(domain_.points.shape());
-        solution_.macroscopic_values.fluid_density
-            = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+    void add_density_source(density_source<value_type>& source) {
+        engine_ptr_->add_density_source(source);
     }
 
   private:
-    problem_parameters<value_type> parameters_{};
-    state_variables<lattice_type> solution_{};
-    simulation_domain<value_type> domain_{};
-
-    using advection_operator_t
-        = nonlocal_calculus::advection_operator<value_type, dimensions>;
-    std::shared_ptr<advection_operator_t> advection_operator_ptr_{};
-
-    using interpolater_t = interpolation::radial_point_method<value_type>;
-    std::shared_ptr<interpolater_t> boundary_interpolator_ptr_{};
-
-    sclx::array<value_type, 1> density_source_term_{};
-    sclx::array<value_type, 1> temporary_distributions_[lattice_size]{};
-    uint frame_number_ = 0;
-
-    void init_distribution() {
-        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-            sclx::local_array<value_type, 1> lattice_weights(
-                handler,
-                {lattice_size}
-            );
-            sclx::array_list<value_type, 1, lattice_size> result_arrays{
-                solution_.lattice_distributions};
-            handler.launch(
-                sclx::md_range_t<2>{lattice_size, domain_.points.shape()[1]},
-                result_arrays,
-                [=](const sclx::md_index_t<2>& idx,
-                    const sclx::kernel_info<2>& info) mutable {
-                    if (info.local_thread_id().as_linear(
-                            info.thread_block_shape()
-                        )
-                        == 0) {
-                        for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                            lattice_weights[alpha] = lattice_interface<
-                                lattice_type>::lattice_weights()[alpha];
-                        }
-                    }
-                    handler.syncthreads();
-
-                    auto& f_alpha   = result_arrays[idx[0]];
-                    f_alpha[idx[1]] = lattice_weights[idx[0]];
-                }
-            );
-        });
-    }
+    std::shared_ptr<detail::simulation_engine<Lattice>> engine_ptr_ =
+        std::make_shared<detail::simulation_engine<Lattice>>();
 };
 
 template class simulation_engine<d2q9_lattice<float>>;
