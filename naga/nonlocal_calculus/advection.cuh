@@ -87,13 +87,13 @@ class advection_operator {
   public:
     friend class operator_builder<T, Dimensions>;
 
-    template<class FieldMap>
+    template<class VelocityFieldMap>
     class divergence_field_map {
       public:
         using point_type = point_t<T, Dimensions>;
 
         divergence_field_map(
-            const FieldMap& velocity_field,
+            const VelocityFieldMap& velocity_field,
             const sclx::array<T, 1>& scalar_field,
             T centering_offset = T(0)
         )
@@ -121,7 +121,7 @@ class advection_operator {
         }
 
       private:
-        FieldMap velocity_field_;
+        VelocityFieldMap velocity_field_;
         sclx::array<T, 1> scalar_field_;
         T centering_offset_;
     };
