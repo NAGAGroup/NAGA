@@ -32,4 +32,31 @@
 
 #pragma once
 
-#include "nonlocal_lattice_boltzmann/simulation_engine.cuh"
+namespace naga::fluids::nonlocal_lbm::detail {
+// clang-format off
+template<class T>
+__managed__ static const T d2q9_lattice_velocities[2 * 9]
+    = {
+     0,  0,
+    -1,  1,
+    -1,  0,
+    -1, -1,
+     0, -1,
+     1, -1,
+     1,  0,
+     1,  1,
+     0,  1};
+
+template<class T>
+__managed__ static const T d2q9_lattice_weights[9]
+    = {4.0 / 9.0,
+       1.0 / 36.0,
+       1.0 / 9.0,
+       1.0 / 36.0,
+       1.0 / 9.0,
+       1.0 / 36.0,
+       1.0 / 9.0,
+       1.0 / 36.0,
+       1.0 / 9.0};
+// clang-format on
+}

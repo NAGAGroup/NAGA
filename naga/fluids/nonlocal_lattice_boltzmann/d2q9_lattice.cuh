@@ -32,4 +32,17 @@
 
 #pragma once
 
-#include "simulation_domain.cuh"
+#include "detail/d2q9_lattice.cuh"
+
+namespace naga::fluids::nonlocal_lbm {
+
+template <class T>
+struct d2q9_lattice {
+    static constexpr uint size       = 9;
+    static constexpr uint dimensions = 2;
+    using value_type                 = T;
+
+    __host__ __device__ static const T* lattice_weights() { return detail::d2q9_lattice_weights<T>; }
+};
+
+}
