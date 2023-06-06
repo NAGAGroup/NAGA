@@ -109,6 +109,19 @@ struct simulation_domain {
             );
         }
     }
+
+    template <class T_ = const T>
+    operator simulation_domain<T_>() const { // NOLINT(google-explicit-constructor)
+        return simulation_domain<T_>{
+            points,
+            boundary_normals,
+            layer_absorption,
+            num_bulk_points,
+            num_layer_points,
+            num_boundary_points,
+            nodal_spacing
+        };
+    }
 };
 
 }  // namespace naga::fluids::nonlocal_lbm
