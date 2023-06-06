@@ -40,31 +40,6 @@
 
 namespace naga::fluids::nonlocal_lbm {
 
-template<class T>
-struct problem_parameters {
-    T nominal_density;
-    T fluid_viscosity;
-    T time_step;
-    T nodal_spacing;
-    struct {
-        T velocity_scale;
-        T length_scale;
-        T time_scale;
-        T viscosity_scale;
-    } nondim_factors;
-};
-
-template<class Lattice>
-struct state_variables {
-    using value_type = typename lattice_traits<Lattice>::value_type;
-    static constexpr uint lattice_size = lattice_traits<Lattice>::size;
-    sclx::array<value_type, 1> lattice_distributions[lattice_size];
-    struct {
-        sclx::array<value_type, 2> fluid_velocity;
-        sclx::array<value_type, 1> fluid_density;
-    } macroscopic_values;
-};
-
 template<class Lattice>
 class simulation_engine {
   public:
