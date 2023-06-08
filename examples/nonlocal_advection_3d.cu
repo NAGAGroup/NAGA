@@ -85,7 +85,7 @@ int main() {
         );
     });
 
-    auto results_path = sclx::filesystem::path(__FILE__).parent_path()
+    auto results_path = get_examples_results_dir()
                       / "nonlocal_advection_results_3d";
     sclx::filesystem::create_directories(results_path);
     std::ofstream file(results_path / "initial_condition.csv");

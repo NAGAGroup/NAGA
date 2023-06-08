@@ -214,7 +214,7 @@ int main() {
               << " ms" << std::endl;
 
     // save the results to view in paraview
-    auto save_dir = sclx::filesystem::path(__FILE__).parent_path()
+    auto save_dir = get_examples_results_dir()
                   / "radial_point_method_results_3d";
     sclx::filesystem::create_directories(save_dir);
     auto save_path = save_dir / "radial_point_method_results_3d.csv";

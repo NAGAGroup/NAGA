@@ -7,12 +7,18 @@ project(
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
 
+# if NAGA_EXAMPLES_RESULTS_DIR is passed as a cmake variable
+# add it as a preprocessor definition
+if(NAGA_EXAMPLES_RESULTS_DIR)
+  add_compile_definitions(NAGA_EXAMPLES_RESULTS_DIR=${NAGA_EXAMPLES_RESULTS_DIR})
+endif()
+
 set(EIGEN_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/extern/eigen)
 set(NANOFLANN_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/extern/nanoflann/include)
 
 add_subdirectory(extern/Scalix)
 
-set(SDF_USE_SYSTEM_EIGEN OFF)
+option(SDF_USE_SYSTEM_EIGEN "" OFF)
 add_subdirectory(extern/sdf)
 
 # naga is a header only library

@@ -29,12 +29,15 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include "naga/fluids/nonlocal_lattice_boltzmann/solver.cuh"
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
+#include <naga/regions/hypersphere.cuh>
 
 int main() {
-    auto examples_path = sclx::filesystem::path(__FILE__).parent_path();
+    auto examples_path = get_examples_results_dir();
     auto results_path  = examples_path / "nonlocal_lattice_boltzmann_results";
+
+    naga::fluids::nonlocal_lbm::problem_parameters<float> metadata{};
+    std::cout << metadata.nondim_factors.length_scale << std::endl;
 
     sclx::filesystem::create_directories(results_path);
 
