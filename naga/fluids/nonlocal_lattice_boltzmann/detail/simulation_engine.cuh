@@ -338,7 +338,8 @@ class simulation_engine {
             }
 
             sclx::array_list<value_type, 1, lattice_size> result_arrays(
-                f_boundary);
+                f_boundary
+            );
             auto boundary_normals = domain_.boundary_normals;
 
             handler.launch(
@@ -398,7 +399,8 @@ class simulation_engine {
                 {lattice_size}
             );
             sclx::array_list<value_type, 1, lattice_size> result_arrays(
-                solution_.lattice_distributions);
+                solution_.lattice_distributions
+            );
             auto& density_source_term = density_source_term_;
 
             handler.launch(
@@ -472,14 +474,14 @@ class simulation_engine {
                     );
                 }
             ));
+            sclx::assign_array(
+                temporary_distributions_[alpha],
+                solution_.lattice_distributions[alpha]
+            );
         }
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             advection_futures[alpha].get();
-            std::swap(
-                solution_.lattice_distributions[alpha],
-                temporary_distributions_[alpha]
-            );
         }
     }
 
@@ -488,11 +490,11 @@ class simulation_engine {
         compute_macroscopic_values();
 
         //        collision_step();
-                bounce_back_step();
+        bounce_back_step();
         //
-                apply_density_source_terms(std::move(source_future));
+        apply_density_source_terms(std::move(source_future));
         //
-                streaming_step();
+        streaming_step();
 
         ++frame_number_;
     }
@@ -513,7 +515,8 @@ class simulation_engine {
                 {lattice_size}
             );
             sclx::array_list<value_type, 1, lattice_size> result_arrays(
-                solution_.lattice_distributions);
+                solution_.lattice_distributions
+            );
             handler.launch(
                 sclx::md_range_t<2>{lattice_size, domain_.points.shape()[1]},
                 result_arrays,

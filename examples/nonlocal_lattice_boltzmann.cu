@@ -75,7 +75,7 @@ int main() {
         = naga::fluids::nonlocal_lbm::simulation_domain<float>::import <2>(
             outer_boundary,
             inner_boundaries,
-            .05f
+            .01f
         );
 
     sim_engine_t engine;
@@ -88,8 +88,22 @@ int main() {
         0.1f
     );
     engine.init_domain(domain);
+    auto start = std::chrono::high_resolution_clock::now();
     engine.step_forward();
+    auto end1 = std::chrono::high_resolution_clock::now();
     engine.step_forward();
+    auto end2 = std::chrono::high_resolution_clock::now();
+
+    std::cout << "First step took "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(end1
+                                                                        - start)
+                     .count()
+              << " milliseconds\n";
+    std::cout << "Second step took "
+                << std::chrono::duration_cast<std::chrono::milliseconds>(end2
+                                                                            - end1)
+                         .count()
+                << " milliseconds\n";
 
     std::ofstream domain_check_file(results_path / "domain_check.csv");
     domain_check_file << "x,y,nx,ny,absorption,ux,uy,rho";
