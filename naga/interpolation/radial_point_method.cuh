@@ -125,7 +125,11 @@ class radial_point_method {
         return interpolator;
     }
 
-    void interpolate(sclx::array<T, 2> field, sclx::array<T, 2> destination) {
+    std::future<void> interpolate(
+        const sclx::array<T, 2>& field,
+        sclx::array<T, 2>& destination,
+        T centering_offset = T{0}
+    ) const {
         if (field.shape()[1] != source_points_size_) {
             sclx::throw_exception<std::invalid_argument>(
                 "field array must have the same number of rows as the number "
@@ -144,7 +148,8 @@ class radial_point_method {
         auto indices    = indices_;
         auto group_size = group_size_;
 
-        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
+        return sclx::execute_kernel([=](const sclx::kernel_handler& handler
+                                    ) mutable {
             handler.launch(
                 sclx::md_range_t<2>(destination.shape()),
                 destination,
@@ -152,15 +157,20 @@ class radial_point_method {
                     T sum = 0;
                     for (uint i = 0; i < weights.shape()[0]; ++i) {
                         sum += weights(i, idx[1])
-                             * field(idx[0], indices(i, idx[1]));
+                             * (field(idx[0], indices(i, idx[1] / group_size))
+                                - centering_offset);
                     }
-                    destination(idx[0], idx[1]) = sum;
+                    destination(idx[0], idx[1]) = sum + centering_offset;
                 }
             );
         });
     }
 
-    void interpolate(sclx::array<T, 1> field, sclx::array<T, 1> destination) {
+    std::future<void> interpolate(
+        const sclx::array<T, 1>& field,
+        sclx::array<T, 1>& destination,
+        T centering_offset = T{0}
+    ) const {
         if (field.shape()[0] != source_points_size_) {
             sclx::throw_exception<std::invalid_argument>(
                 "field array must have the same number of rows as the number "
@@ -179,7 +189,8 @@ class radial_point_method {
         auto indices    = indices_;
         auto group_size = group_size_;
 
-        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
+        return sclx::execute_kernel([=](const sclx::kernel_handler& handler
+                                    ) mutable {
             handler.launch(
                 sclx::md_range_t<1>{destination.shape()[0]},
                 destination,
@@ -187,12 +198,13 @@ class radial_point_method {
                     T sum = 0;
                     for (uint i = 0; i < weights.shape()[0]; ++i) {
                         sum += weights(i, idx[0])
-                             * field(indices(i, idx[0] / group_size));
+                             * (field(indices(i, idx[0] / group_size))
+                                - centering_offset);
                     }
-                    destination(idx[0]) = sum;
+                    destination(idx[0]) = sum + centering_offset;
                 }
             );
-        }).get();
+        });
     }
 
     template<class T_>
