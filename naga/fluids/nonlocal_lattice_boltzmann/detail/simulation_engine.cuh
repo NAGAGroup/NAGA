@@ -283,7 +283,102 @@ class simulation_engine {
 
     void collision_step() {}
 
-    void bounce_back_step() {}
+    void bounce_back_step() {
+        std::vector<std::future<void>> interpolation_futures;
+        interpolation_futures.reserve(lattice_size);
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            auto& f_alpha = solution_.lattice_distributions[alpha];
+            sclx::array<value_type, 1> boundary_f_alpha = f_alpha.get_range(
+                {domain_.num_bulk_points + domain_.num_layer_points},
+                {domain_.points.shape()[1]}
+            );
+            const sclx::array<value_type, 1>& bulk_f_alpha = f_alpha.get_range(
+                {0},
+                {domain_.num_bulk_points + domain_.num_layer_points}
+            );
+            interpolation_futures.emplace_back(
+                boundary_interpolator_ptr_->interpolate(
+                    bulk_f_alpha,
+                    boundary_f_alpha,
+                    lattice_interface<Lattice>::lattice_weights()[alpha]
+                )
+            );
+        }
+
+        for (auto& fut : interpolation_futures) {
+            fut.get();
+        }
+
+        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            sclx::local_array<value_type, 2> lattice_velocities(
+                handler,
+                {dimensions, lattice_size}
+            );
+            sclx::local_array<value_type, 2> lattice_weights(
+                handler,
+                {lattice_size}
+            );
+
+            sclx::array<value_type, 1> f_boundary[lattice_size];
+            for (int alpha = 0; alpha < lattice_size; ++alpha) {
+                f_boundary[alpha]
+                    = solution_.lattice_distributions[alpha].get_range(
+                        {domain_.num_bulk_points + domain_.num_layer_points},
+                        {domain_.points.shape()[1]}
+                    );
+            }
+
+            sclx::array_list<value_type, 1, lattice_size> result_arrays{
+                f_boundary};
+            auto boundary_normals = domain_.boundary_normals;
+
+            handler.launch(
+                sclx::md_range_t<1>{domain_.num_boundary_points},
+                result_arrays,
+                [=] __device__(
+                    const sclx::md_index_t<1>& idx,
+                    const sclx::kernel_info<>& info
+                ) mutable {
+                    if (info.local_thread_linear_id() == 0) {
+                        for (int i = 0; i < dimensions * lattice_size; ++i) {
+                            lattice_velocities(i % dimensions, i / dimensions)
+                                = lattice_interface<
+                                    Lattice>::lattice_velocities()[i];
+                            if (i % dimensions == 0) {
+                                continue;
+                            }
+                            lattice_weights(i / dimensions)
+                                = lattice_interface<Lattice>::lattice_weights(
+                                )[i / dimensions];
+                        }
+                    }
+                    handler.syncthreads();
+
+                    value_type normal[dimensions]{};
+                    for (int d = 0; d < dimensions; ++d) {
+                        normal[d] = boundary_normals(d, idx[0]);
+                    }
+
+                    for (int alpha = 0; alpha < lattice_size; ++alpha) {
+                        if (math::loopless::dot<dimensions>(
+                                normal,
+                                &lattice_velocities(0, alpha)
+                            )
+                            < 0) {
+                            continue;
+                        } else if (math::loopless::dot<dimensions>(normal, &lattice_velocities(0, alpha)) == 0) {
+                            result_arrays[alpha][idx[0]]
+                                = lattice_weights(alpha);
+                            continue;
+                        }
+                        result_arrays[alpha][idx[0]]
+                            = result_arrays[lattice_interface<
+                                Lattice>::get_bounce_back_idx(alpha)][idx[0]];
+                    }
+                }
+            );
+        }).get();
+    }
 
     void apply_density_source_terms(std::future<void>&& source_future) {
         source_future.get();
