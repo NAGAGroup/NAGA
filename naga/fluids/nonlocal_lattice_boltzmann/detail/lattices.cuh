@@ -47,5 +47,10 @@ struct lattice_interface {
         static_assert(std::is_same_v<Lattice, Lattice>,
                       "lattice_interface not specialized for this lattice");
     }
+
+    __host__ __device__ static int get_bounce_back_idx(const int &idx) {
+        static_assert(std::is_same_v<Lattice, Lattice>,
+                      "lattice_interface not specialized for this lattice");
+    }
 };
 }

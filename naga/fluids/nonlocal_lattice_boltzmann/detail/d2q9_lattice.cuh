@@ -67,7 +67,7 @@ __managed__ static const T d2q9_lattice_weights[9]
        1.0 / 9.0};
 // clang-format on
 
-template <class T>
+template<class T>
 struct lattice_interface<d2q9_lattice<T>> {
     static constexpr uint size       = d2q9_lattice<T>::size;
     static constexpr uint dimensions = d2q9_lattice<T>::dimensions;
@@ -80,6 +80,32 @@ struct lattice_interface<d2q9_lattice<T>> {
     __host__ __device__ static const value_type* lattice_weights() {
         return d2q9_lattice_weights<T>;
     }
+
+    __host__ __device__ static int get_bounce_back_idx(const int& idx) {
+        typedef enum {
+            r  = 0,
+            nw = 1,
+            w  = 2,
+            sw = 3,
+            s  = 4,
+            se = 5,
+            e  = 6,
+            ne = 7,
+            n  = 8,
+        } lattice_directions;
+        switch (idx) {
+        case lattice_directions::r: return lattice_directions::r;
+        case lattice_directions::n: return lattice_directions::s;
+        case lattice_directions::ne: return lattice_directions::sw;
+        case lattice_directions::e: return lattice_directions::w;
+        case lattice_directions::se: return lattice_directions::nw;
+        case lattice_directions::s: return lattice_directions::n;
+        case lattice_directions::sw: return lattice_directions::ne;
+        case lattice_directions::w: return lattice_directions::e;
+        case lattice_directions::nw: return lattice_directions::se;
+        default: return -1;
+        }
+    }
 };
 
-}
+}  // namespace naga::fluids::nonlocal_lbm::detail
