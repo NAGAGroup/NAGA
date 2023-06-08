@@ -152,19 +152,24 @@ class simulation_engine {
         );
 
         {
-            uint num_interp_points = 32;
-            segmentation::nd_cubic_segmentation<float, 2> source_segmentation(
-                domain_.points,
-                num_interp_points
-            );
 
             // We use the nearest neighbors algorithm to provide the
             // interpolation indices to the radial point method.
-            const sclx::array<value_type, 2>& boundary_points
+            sclx::array<value_type, 2> bulk_points = domain.points.get_range(
+                {0},
+                {domain.num_bulk_points + domain.num_layer_points}
+            );
+            sclx::array<value_type, 2> boundary_points
                 = domain.points.get_range(
                     {domain.num_bulk_points + domain.num_layer_points},
                     {domain.points.shape()[1]}
                 );
+
+            uint num_interp_points = 32;
+            segmentation::nd_cubic_segmentation<float, 2> source_segmentation(
+                bulk_points,
+                num_interp_points
+            );
             naga::default_point_map<float, 2> boundary_point_map{
                 boundary_points};
             auto [distances_squared, indices]
@@ -176,7 +181,7 @@ class simulation_engine {
 
             boundary_interpolator_ptr_ = std::make_shared<interpolater_t>(
                 interpolater_t::create_interpolator(
-                    domain.points,
+                    bulk_points,
                     indices,
                     boundary_point_map,
                     domain.nodal_spacing
