@@ -34,9 +34,13 @@
 
 #include <scalix/filesystem.hpp>
 
-std::filesystem::path get_examples_results_dir() {
-#ifndef NAGA_EXAMPLES_RESULTS_DIR
+sclx::filesystem::path get_examples_dir() {
     return sclx::filesystem::path(__FILE__).parent_path();
+}
+
+sclx::filesystem::path get_examples_results_dir() {
+#ifndef NAGA_EXAMPLES_RESULTS_DIR
+    return get_examples_dir() / "results";
 #else
     return {NAGA_EXAMPLES_RESULTS_DIR};
 #endif
