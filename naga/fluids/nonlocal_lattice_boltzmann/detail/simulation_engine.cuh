@@ -415,7 +415,55 @@ class simulation_engine {
         });
     }
 
-    void streaming_step() {}
+    void streaming_step() {
+        std::vector<std::future<void>> advection_futures;
+        advection_futures.reserve(lattice_size);
+
+        static value_type lattice_velocities[dimensions * lattice_size];
+        static bool lattice_velocities_initialized = false;
+        if (!lattice_velocities_initialized) {
+            for (int alpha = 0; alpha < lattice_size; ++alpha) {
+                for (int d = 0; d < dimensions; ++d) {
+                    lattice_velocities[alpha * dimensions + d]
+                        = lattice_interface<Lattice>::lattice_velocities(
+                        )[alpha * dimensions + d];
+                }
+            }
+            lattice_velocities_initialized = true;
+        }
+
+        using velocity_map = ::naga::nonlocal_calculus::
+            constant_velocity_field<value_type, dimensions>;
+
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            auto& time_scale   = parameters_.nondim_factors.time_scale;
+            auto& length_scale = parameters_.nondim_factors.length_scale;
+            value_type time_step
+                = parameters_.time_step / time_scale * length_scale;
+            const value_type* lat_vel = &lattice_velocities[alpha * dimensions];
+            auto velocity_map         = velocity_map::create(lat_vel);
+            auto& f_alpha0            = solution_.lattice_distributions[alpha];
+            auto& f_alpha             = temporary_distributions_[alpha];
+            value_type centering_offset = lattice_interface<Lattice>::lattice_weights()[alpha];
+            advection_futures.emplace_back(
+                std::async(
+                    std::launch::async,
+                    [this, &velocity_map, &f_alpha0, &f_alpha, time_step, centering_offset]() {
+                        advection_operator_ptr_
+                            ->step_forward(velocity_map, f_alpha0, f_alpha, time_step, centering_offset);
+                    }
+                )
+            );
+        }
+
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            advection_futures[alpha].get();
+            std::swap(
+                solution_.lattice_distributions[alpha],
+                temporary_distributions_[alpha]
+            );
+        }
+    }
 
     void step_forward() {
         auto source_future = compute_density_source_terms();
