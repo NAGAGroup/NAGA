@@ -85,6 +85,4 @@ class simulation_engine {
         std::make_shared<detail::simulation_engine<Lattice>>();
 };
 
-template class simulation_engine<d2q9_lattice<float>>;
-
 }  // namespace naga::fluids::nonlocal_lbm

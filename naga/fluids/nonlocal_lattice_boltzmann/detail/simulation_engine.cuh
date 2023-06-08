@@ -38,7 +38,6 @@
 #include "../lattices.cuh"
 #include "../simulation_domain.cuh"
 #include "../simulation_variables.cuh"
-#include "naga/fluids/nonlocal_lattice_boltzmann/simulation_variables.cuh"
 #include <scalix/fill.cuh>
 
 namespace naga::fluids::nonlocal_lbm::detail {
@@ -66,7 +65,7 @@ __device__ void compute_unitary_macroscopic_quants(
         rho += f_shared(alpha, linear_thread_id);
         for (uint d = 0; d < dimensions; ++d) {
             u[d] += f_shared(alpha, linear_thread_id)
-                  * lattice_velocities(alpha, d);
+                  * lattice_velocities(d, alpha);
         }
     }
     for (uint d = 0; d < dimensions; ++d) {
@@ -152,7 +151,6 @@ class simulation_engine {
         );
 
         {
-
             // We use the nearest neighbors algorithm to provide the
             // interpolation indices to the radial point method.
             sclx::array<value_type, 2> bulk_points = domain.points.get_range(
@@ -198,9 +196,16 @@ class simulation_engine {
         init_distribution();
 
         solution_.macroscopic_values.fluid_velocity
-            = sclx::array<value_type, 2>(domain_.points.shape());
+            = sclx::zeros<value_type, 2>(domain_.points.shape());
         solution_.macroscopic_values.fluid_density
             = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+        sclx::fill(
+            solution_.macroscopic_values.fluid_density,
+            parameters_.nondim_factors.density_scale
+        );
+
+        density_source_term_
+            = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
     }
 
     std::future<void> compute_density_source_terms() {
@@ -238,8 +243,12 @@ class simulation_engine {
                 result_arrays{
                     solution_.macroscopic_values.fluid_density,
                     solution_.macroscopic_values.fluid_velocity};
-            auto lattice_distributions = solution_.lattice_distributions;
-            auto nondim_factors        = parameters_.nondim_factors;
+            sclx::array<value_type, 1> lattice_distributions[lattice_size];
+            for (int alpha = 0; alpha < lattice_size; ++alpha) {
+                lattice_distributions[alpha]
+                    = solution_.lattice_distributions[alpha];
+            }
+            auto parameters = parameters_;
 
             handler.launch(
                 sclx::md_range_t<1>{domain_.points.shape()[1]},
@@ -271,10 +280,10 @@ class simulation_engine {
                         lattice_velocities
                     );
                     thrust::get<0>(result_arrays)[idx[0]]
-                        = rho * nondim_factors.density_scale;
+                        = rho * parameters.nondim_factors.density_scale;
                     for (int d = 0; d < dimensions; ++d) {
                         thrust::get<1>(result_arrays)(d, idx[0])
-                            = u[d] * nondim_factors.velocity_scale;
+                            = u[d] * parameters.nondim_factors.velocity_scale;
                     }
                 }
             );
@@ -314,7 +323,7 @@ class simulation_engine {
                 handler,
                 {dimensions, lattice_size}
             );
-            sclx::local_array<value_type, 2> lattice_weights(
+            sclx::local_array<value_type, 1> lattice_weights(
                 handler,
                 {lattice_size}
             );
@@ -328,8 +337,8 @@ class simulation_engine {
                     );
             }
 
-            sclx::array_list<value_type, 1, lattice_size> result_arrays{
-                f_boundary};
+            sclx::array_list<value_type, 1, lattice_size> result_arrays(
+                f_boundary);
             auto boundary_normals = domain_.boundary_normals;
 
             handler.launch(
@@ -388,8 +397,8 @@ class simulation_engine {
                 handler,
                 {lattice_size}
             );
-            sclx::array_list<value_type, 1, lattice_size> result_arrays{
-                solution_.lattice_distributions};
+            sclx::array_list<value_type, 1, lattice_size> result_arrays(
+                solution_.lattice_distributions);
             auto& density_source_term = density_source_term_;
 
             handler.launch(
@@ -444,16 +453,25 @@ class simulation_engine {
             auto velocity_map         = velocity_map::create(lat_vel);
             auto& f_alpha0            = solution_.lattice_distributions[alpha];
             auto& f_alpha             = temporary_distributions_[alpha];
-            value_type centering_offset = lattice_interface<Lattice>::lattice_weights()[alpha];
-            advection_futures.emplace_back(
-                std::async(
-                    std::launch::async,
-                    [this, &velocity_map, &f_alpha0, &f_alpha, time_step, centering_offset]() {
-                        advection_operator_ptr_
-                            ->step_forward(velocity_map, f_alpha0, f_alpha, time_step, centering_offset);
-                    }
-                )
-            );
+            value_type centering_offset
+                = lattice_interface<Lattice>::lattice_weights()[alpha];
+            advection_futures.emplace_back(std::async(
+                std::launch::async,
+                [this,
+                 &velocity_map,
+                 &f_alpha0,
+                 &f_alpha,
+                 time_step,
+                 centering_offset]() {
+                    advection_operator_ptr_->step_forward(
+                        velocity_map,
+                        f_alpha0,
+                        f_alpha,
+                        time_step,
+                        centering_offset
+                    );
+                }
+            ));
         }
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
@@ -469,12 +487,12 @@ class simulation_engine {
         auto source_future = compute_density_source_terms();
         compute_macroscopic_values();
 
-        collision_step();
-        bounce_back_step();
-
-        apply_density_source_terms(std::move(source_future));
-
-        streaming_step();
+        //        collision_step();
+                bounce_back_step();
+        //
+                apply_density_source_terms(std::move(source_future));
+        //
+                streaming_step();
 
         ++frame_number_;
     }
@@ -494,8 +512,8 @@ class simulation_engine {
                 handler,
                 {lattice_size}
             );
-            sclx::array_list<value_type, 1, lattice_size> result_arrays{
-                solution_.lattice_distributions};
+            sclx::array_list<value_type, 1, lattice_size> result_arrays(
+                solution_.lattice_distributions);
             handler.launch(
                 sclx::md_range_t<2>{lattice_size, domain_.points.shape()[1]},
                 result_arrays,
@@ -535,7 +553,5 @@ class simulation_engine {
 
     std::vector<density_source<value_type>*> density_sources_{};
 };
-
-template class simulation_engine<d2q9_lattice<float>>;
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

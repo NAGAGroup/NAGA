@@ -29,16 +29,18 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include "utils.hpp"
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
 #include <naga/regions/hypersphere.cuh>
-#include "utils.hpp"
+
+using lattice_t = naga::fluids::nonlocal_lbm::d2q9_lattice<float>;
+using sim_engine_t
+    = naga::fluids::nonlocal_lbm::detail::simulation_engine<lattice_t>;
 
 int main() {
-    auto examples_path = get_examples_results_dir();
-    auto results_path  = examples_path / "nonlocal_lattice_boltzmann_results";
-
-    naga::fluids::nonlocal_lbm::problem_parameters<float> metadata{};
-    std::cout << metadata.nondim_factors.length_scale << std::endl;
+    auto examples_path = get_examples_dir();
+    auto results_path
+        = get_examples_results_dir() / "nonlocal_lattice_boltzmann_results";
 
     sclx::filesystem::create_directories(results_path);
 
@@ -73,51 +75,56 @@ int main() {
         = naga::fluids::nonlocal_lbm::simulation_domain<float>::import <2>(
             outer_boundary,
             inner_boundaries,
-            .01f
+            .05f
         );
 
-    std::ofstream domain_file(results_path / "domain.csv");
-    domain_file << "x,y,nx,ny,type,absorption\n";
-    for (uint i = 0; i < domain.points.shape()[1]; ++i) {
-        uint type;
-        float absorption = 0;
-        float normal[2]{0, 0};
-        if (i >= domain.num_bulk_points + domain.num_layer_points) {
-            type      = 3;
-            normal[0] = domain.boundary_normals(
-                0,
-                i - domain.num_bulk_points - domain.num_layer_points
-            );
-            normal[1] = domain.boundary_normals(
-                1,
-                i - domain.num_bulk_points - domain.num_layer_points
-            );
-        } else if (i >= domain.num_bulk_points) {
-            type       = 2;
-            absorption = domain.layer_absorption[i - domain.num_bulk_points];
-        } else {
-            type = 1;
-        }
-        domain_file << domain.points(0, i) << "," << domain.points(1, i) << ","
-                    << normal[0] << "," << normal[1] << "," << type << ","
-                    << absorption << "\n";
-    }
-
-    auto domain_contour = naga::mesh::closed_contour_t<float>::import(
-        outer_boundary.obj_file_path,
-        true,
-        0.01f
+    sim_engine_t engine;
+    engine.set_problem_parameters(
+        0.0f,
+        1.0f,
+        domain.nodal_spacing * domain.nodal_spacing,
+        2.f,
+        0.1f,
+        0.1f
     );
+    engine.init_domain(domain);
+    engine.step_forward();
+    engine.step_forward();
 
-    std::ofstream domain_contour_file(results_path / "domain_contour.csv");
-    domain_contour_file << "x,y,nx,ny\n";
-    for (uint i = 0; i < domain_contour.vertices.shape()[1]; ++i) {
-        domain_contour_file << domain_contour.vertices(0, i) << ","
-                            << domain_contour.vertices(1, i) << ","
-                            << domain_contour.vertex_normals(0, i) << ","
-                            << domain_contour.vertex_normals(1, i) << "\n";
+    std::ofstream domain_check_file(results_path / "domain_check.csv");
+    domain_check_file << "x,y,nx,ny,absorption,ux,uy,rho";
+    for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
+        domain_check_file << ",f" << alpha;
     }
-    domain_contour_file.close();
+    domain_check_file << "\n";
+    auto& f                = engine.solution_.lattice_distributions;
+    auto& rho              = engine.solution_.macroscopic_values.fluid_density;
+    auto& velocity         = engine.solution_.macroscopic_values.fluid_velocity;
+    auto& layer_absorption = engine.domain_.layer_absorption;
+    auto& normals          = engine.domain_.boundary_normals;
+    auto& points           = engine.domain_.points;
+    size_t num_bulk_points = engine.domain_.num_bulk_points;
+    size_t num_layer_points    = engine.domain_.num_layer_points;
+    size_t num_boundary_points = engine.domain_.num_boundary_points;
+    for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
+        float absorption = 0;
+        float normal[2]  = {0, 0};
+        if (i >= num_bulk_points + num_layer_points) {
+            normal[0] = normals(0, i - num_bulk_points - num_layer_points);
+            normal[1] = normals(1, i - num_bulk_points - num_layer_points);
+        } else if (i >= num_bulk_points) {
+            absorption = layer_absorption(i - num_bulk_points);
+        }
+        domain_check_file << points(0, i) << "," << points(1, i) << ","
+                          << normal[0] << "," << normal[1] << "," << absorption
+                          << "," << velocity(0, i) << "," << velocity(1, i)
+                          << "," << rho(i);
+        for (const auto & f_alpha : f) {
+            domain_check_file << "," << f_alpha(i);
+        }
+        domain_check_file << "\n";
+    }
+    domain_check_file.close();
 
     return 0;
 }

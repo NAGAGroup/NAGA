@@ -41,16 +41,19 @@ struct lattice_interface {
     __host__ __device__ static const value_type* lattice_velocities() {
         static_assert(std::is_same_v<Lattice, Lattice>,
                       "lattice_interface not specialized for this lattice");
+        return nullptr;
     }
 
     __host__ __device__ static const value_type* lattice_weights() {
         static_assert(std::is_same_v<Lattice, Lattice>,
                       "lattice_interface not specialized for this lattice");
+        return nullptr;
     }
 
     __host__ __device__ static int get_bounce_back_idx(const int &idx) {
         static_assert(std::is_same_v<Lattice, Lattice>,
                       "lattice_interface not specialized for this lattice");
+        return 0;
     }
 };
 }
