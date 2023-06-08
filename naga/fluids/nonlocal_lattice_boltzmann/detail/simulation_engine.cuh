@@ -200,9 +200,7 @@ class simulation_engine {
 
     std::future<void> compute_density_source_terms() {
         sclx::fill(density_source_term_, value_type{0});
-        std::future<void> fut = std::async(std::launch::async, []() {
-
-        });
+        std::future<void> fut = std::async(std::launch::async, []() {});
 
         for (density_source<value_type>* source : density_sources_) {
             fut.get();
@@ -235,6 +233,8 @@ class simulation_engine {
                 result_arrays{
                     solution_.macroscopic_values.fluid_density,
                     solution_.macroscopic_values.fluid_velocity};
+            auto lattice_distributions = solution_.lattice_distributions;
+            auto nondim_factors        = parameters_.nondim_factors;
 
             handler.launch(
                 sclx::md_range_t<1>{domain_.points.shape()[1]},
@@ -252,7 +252,7 @@ class simulation_engine {
                     }
                     for (int alpha = 0; alpha < lattice_size; ++alpha) {
                         f_shared(alpha, info.local_thread_linear_id())
-                            = solution_.lattice_distributions[alpha][idx[0]];
+                            = lattice_distributions[alpha][idx[0]];
                     }
                     handler.syncthreads();
 
@@ -265,10 +265,11 @@ class simulation_engine {
                         info.local_thread_linear_id(),
                         lattice_velocities
                     );
-                    thrust::get<0>(result_arrays)[idx[0]] = rho * parameters_.nondim_factors.density_scale;
+                    thrust::get<0>(result_arrays)[idx[0]]
+                        = rho * nondim_factors.density_scale;
                     for (int d = 0; d < dimensions; ++d) {
                         thrust::get<1>(result_arrays)(d, idx[0])
-                            = u[d] * parameters_.nondim_factors.velocity_scale;
+                            = u[d] * nondim_factors.velocity_scale;
                     }
                 }
             );
