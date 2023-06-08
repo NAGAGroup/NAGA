@@ -33,6 +33,7 @@
 #pragma once
 
 #include "d2q9_lattice.cuh"
+#include "detail/lattices.cuh"
 
 namespace naga::fluids::nonlocal_lbm {
 
@@ -41,21 +42,6 @@ struct lattice_traits {
     static constexpr uint size       = Lattice::size;
     static constexpr uint dimensions = Lattice::dimensions;
     using value_type                 = typename Lattice::value_type;
-};
-
-template <class Lattice>
-struct lattice_interface {
-    using value_type = typename lattice_traits<Lattice>::value_type;
-    static constexpr uint size = lattice_traits<Lattice>::size;
-    static constexpr uint dimensions = lattice_traits<Lattice>::dimensions;
-
-    __host__ __device__ static const value_type* lattice_velocities() {
-        return Lattice::lattice_velocities();
-    }
-
-    __host__ __device__ static const value_type* lattice_weights() {
-        return Lattice::lattice_weights();
-    }
 };
 
 }

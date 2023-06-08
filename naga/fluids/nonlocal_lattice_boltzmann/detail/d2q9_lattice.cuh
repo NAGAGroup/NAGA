@@ -32,6 +32,13 @@
 
 #pragma once
 
+#include "lattices.cuh"
+
+namespace naga::fluids::nonlocal_lbm {
+template<class T>
+struct d2q9_lattice;
+}
+
 namespace naga::fluids::nonlocal_lbm::detail {
 // clang-format off
 template<class T>
@@ -59,4 +66,20 @@ __managed__ static const T d2q9_lattice_weights[9]
        1.0 / 36.0,
        1.0 / 9.0};
 // clang-format on
+
+template <class T>
+struct lattice_interface<d2q9_lattice<T>> {
+    static constexpr uint size       = d2q9_lattice<T>::size;
+    static constexpr uint dimensions = d2q9_lattice<T>::dimensions;
+    using value_type                 = typename d2q9_lattice<T>::value_type;
+
+    __host__ __device__ static const value_type* lattice_velocities() {
+        return d2q9_lattice_velocities<T>;
+    }
+
+    __host__ __device__ static const value_type* lattice_weights() {
+        return d2q9_lattice_weights<T>;
+    }
+};
+
 }

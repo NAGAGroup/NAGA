@@ -1,4 +1,3 @@
-
 // BSD 3-Clause License
 //
 // Copyright (c) 2023 Jack Myers
@@ -32,15 +31,21 @@
 
 #pragma once
 
-#include "detail/d2q9_lattice.cuh"
+namespace naga::fluids::nonlocal_lbm::detail {
+template <class Lattice>
+struct lattice_interface {
+    static constexpr uint size       = Lattice::size;
+    static constexpr uint dimensions = Lattice::dimensions;
+    using value_type                 = typename Lattice::value_type;
 
-namespace naga::fluids::nonlocal_lbm {
+    __host__ __device__ static const value_type* lattice_velocities() {
+        static_assert(std::is_same_v<Lattice, Lattice>,
+                      "lattice_interface not specialized for this lattice");
+    }
 
-template <class T>
-struct d2q9_lattice {
-    static constexpr uint size       = 9;
-    static constexpr uint dimensions = 2;
-    using value_type                 = T;
+    __host__ __device__ static const value_type* lattice_weights() {
+        static_assert(std::is_same_v<Lattice, Lattice>,
+                      "lattice_interface not specialized for this lattice");
+    }
 };
-
 }
