@@ -278,7 +278,7 @@ class simulation_engine {
                     }
                 }
             );
-        });
+        }).get();
     }
 
     void collision_step() {}
