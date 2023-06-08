@@ -31,6 +31,7 @@
 
 #include <naga/nonlocal_calculus/advection.cuh>
 #include <scalix/filesystem.hpp>
+#include "utils.hpp"
 
 using value_type = double;
 

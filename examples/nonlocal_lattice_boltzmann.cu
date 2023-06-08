@@ -31,6 +31,7 @@
 
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
 #include <naga/regions/hypersphere.cuh>
+#include "utils.hpp"
 
 int main() {
     auto examples_path = get_examples_results_dir();

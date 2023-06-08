@@ -33,6 +33,7 @@
 #include <naga/interpolation/radial_point_method.cuh>
 #include <naga/nonlocal_calculus/divergence.cuh>
 #include <scalix/filesystem.hpp>
+#include "utils.hpp"
 
 using value_type = float;
 
