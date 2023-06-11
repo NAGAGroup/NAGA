@@ -274,17 +274,17 @@ bool quadrature_point_map<T, Dimensions>::is_host_unscaled_quad_points_init_
     = false;
 
 template<class T>
-void compute_interaction_radii(
+void get_min_distances_squared(
     const sclx::array<T, 2>& knn_distances_squared,
-    const sclx::array<T, 1>& interaction_radii
+    const sclx::array<T, 1>& min_distances_squared
 ) {
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         handler.launch(
-            sclx::md_range_t<1>(interaction_radii.shape()),
-            interaction_radii,
+            sclx::md_range_t<1>(min_distances_squared.shape()),
+            min_distances_squared,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                interaction_radii[idx]
-                    = .2f * sqrt(knn_distances_squared(1, idx[0]));
+                min_distances_squared[idx]
+                    = knn_distances_squared(1, idx[0]);
             }
         );
     });

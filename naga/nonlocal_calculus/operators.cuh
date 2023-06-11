@@ -36,6 +36,7 @@
 #include "../segmentation/nearest_neighbors.cuh"
 #include "detail/quadrature_points.cuh"
 #include <scalix/algorithm/reduce.cuh>
+#include <scalix/algorithm/transform.cuh>
 
 namespace naga::nonlocal_calculus {
 
@@ -52,6 +53,8 @@ class operator_builder {
         naga::segmentation::nd_cubic_segmentation<T, Dimensions>
             domain_segmentation(domain, detail::num_interp_support);
 
+        T interaction_scaling_factor = 0.2f;
+        T approx_particle_spacing;
         {
             auto knn_result = naga::segmentation::batched_nearest_neighbors(
                 detail::num_interp_support,
@@ -60,11 +63,28 @@ class operator_builder {
             );
 
             auto distances_squared = std::get<0>(knn_result);
-            interaction_radii_
-                = sclx::array<T, 1>{distances_squared.shape()[1]};
-            detail::compute_interaction_radii(
+
+            sclx::array<T, 1> min_distances_squared{
+                distances_squared.shape()[1]};
+            detail::get_min_distances_squared(
                 distances_squared,
-                interaction_radii_
+                min_distances_squared
+            );
+            approx_particle_spacing = sclx::algorithm::reduce(
+                min_distances_squared,
+                T(0),
+                sclx::algorithm::plus<>{}
+            );
+            approx_particle_spacing
+                /= static_cast<T>(min_distances_squared.elements());
+            approx_particle_spacing = math::sqrt(approx_particle_spacing);
+
+            interaction_radii_ = min_distances_squared;
+            sclx::algorithm::transform(
+                interaction_radii_,
+                interaction_radii_,
+                interaction_scaling_factor,
+                sclx::algorithm::multiplies<>{}
             );
 
             support_indices_ = std::get<1>(knn_result);
@@ -74,15 +94,6 @@ class operator_builder {
             domain_,
             interaction_radii_
         );
-
-        auto min_particle_spacing_sum = sclx::algorithm::reduce(
-            interaction_radii_,
-            T(0),
-            sclx::algorithm::plus<>{}
-        );
-
-        T approx_particle_spacing
-            = min_particle_spacing_sum / (interaction_radii_.elements());
 
         quadrature_interpolating_weights_
             = interpolation::radial_point_method<>::compute_weights(
