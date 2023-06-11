@@ -91,6 +91,7 @@ class advection_operator {
     class divergence_field_map {
       public:
         using point_type = point_t<T, Dimensions>;
+        friend class advection_operator;
 
         divergence_field_map(
             const VelocityFieldMap& velocity_field,
@@ -146,16 +147,18 @@ class advection_operator {
         T dt,
         T centering_offset = T(0)
     ) {
-
-        sclx::assign_array(static_cast<sclx::array<const T, 1>>(f0), f);
+        auto fut = sclx::assign_array(static_cast<sclx::array<const T, 1>>(f0), f);
 
         divergence_field_map<FieldMap> div_input_field{
             velocity_field,
-            f,
+            f0,
             centering_offset};
 
         divergence_op_
             ->apply(div_input_field, rk_df_dt_list_[0], centering_offset);
+
+        div_input_field.scalar_field_ = f;
+        fut.get();
 
         for (int i = 0; i < 3; ++i) {
             sclx::algorithm::elementwise_reduce(
