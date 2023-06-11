@@ -464,7 +464,8 @@ class simulation_engine {
                  &f_alpha0,
                  &f_alpha,
                  time_step,
-                 centering_offset]() {
+                 centering_offset,
+                 alpha]() {
                     advection_operator_ptr_->step_forward(
                         velocity_map,
                         f_alpha0,
@@ -472,16 +473,16 @@ class simulation_engine {
                         time_step,
                         centering_offset
                     );
+                    sclx::assign_array(
+                        temporary_distributions_[alpha],
+                        solution_.lattice_distributions[alpha]
+                    );
                 }
             ));
-            sclx::assign_array(
-                temporary_distributions_[alpha],
-                solution_.lattice_distributions[alpha]
-            );
         }
 
-        for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            advection_futures[alpha].get();
+        for (auto& advection_future : advection_futures) {
+            advection_future.get();
         }
     }
 
@@ -489,11 +490,11 @@ class simulation_engine {
         auto source_future = compute_density_source_terms();
         compute_macroscopic_values();
 
-        //        collision_step();
+        collision_step();
         bounce_back_step();
-        //
+
         apply_density_source_terms(std::move(source_future));
-        //
+
         streaming_step();
 
         ++frame_number_;
