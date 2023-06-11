@@ -80,11 +80,12 @@ class divergence_operator {
                 sclx::md_range_t<1>{result.elements()},
                 result,
                 [=,
-                 *this] __device__(const sclx::md_index_t<1>& index, const auto&) {
+                 *this] __device__(const sclx::md_index_t<1>& index, const auto& info) {
                     T divergence = 0;
+                    auto global_thread_id = info.global_thread_linear_id();
                     for (uint s = 0; s < support_indices_.shape()[0]; ++s) {
                         field_type support_point_field_value
-                            = field[support_indices_(s, index[0])];
+                            = field[support_indices_[global_thread_id]];
                         for (uint d = 0; d < Dimensions; ++d) {
                             //                            if (weights_(d, s,
                             //                            index[0]) == T(0) &&
@@ -100,7 +101,7 @@ class divergence_operator {
                             //                                static_cast<uint>(s),
                             //                                static_cast<uint>(index[0]));
                             //                            }
-                            divergence += weights_(d, s, index[0])
+                            divergence += weights_[global_thread_id * Dimensions + d]
                                         * (support_point_field_value[d]
                                            - centering_offset);
                         }
