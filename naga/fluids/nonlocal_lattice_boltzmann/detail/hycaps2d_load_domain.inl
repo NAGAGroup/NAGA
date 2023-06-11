@@ -40,6 +40,7 @@
 #include "../../../detail/nanoflann_utils.h"
 #include "../../../mesh/closed_contour.cuh"
 #include <scalix/algorithm/transform.cuh>
+#include <omp.h>
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
@@ -419,8 +420,8 @@ void advance_front(
                     * std::pow<T>(
                         (outer_boundary_layer.absorption_layer_count - 1
                          - layer_idx)
-                            / ( T
-                            ) (outer_boundary_layer.absorption_layer_count - 1),
+                            / ( T ) (outer_boundary_layer.absorption_layer_count
+                                     - 1),
                         2
                     )
                 );
@@ -612,24 +613,35 @@ simulation_domain<T> hycaps2d_load_domain(
         = (domain_bounds[1][1] - domain_bounds[1][0]) / particle_spacing;
     T x_spacing = (domain_bounds[0][1] - domain_bounds[0][0]) / num_x;
     T y_spacing = (domain_bounds[1][1] - domain_bounds[1][0]) / num_y;
+    bulk_points.reserve(num_x * num_y * 2 + bulk_points.size());
+    std::vector<bool> is_valid(num_x * num_y, false);
+
+#pragma omp parallel for
+    for (size_t n = 0; n < num_x * num_y; n++) {
+        size_t i = n / num_y;
+        size_t j = n % num_y;
+        T query_point[3]
+            = {domain_bounds[0][0] + i * x_spacing,
+               domain_bounds[1][0] + j * y_spacing,
+               0.f};
+        if (is_point_valid(
+                query_point,
+                outer_boundary_layer,
+                outer_boundary_cloud,
+                outer_boundary_tree,
+                min_outer_edge_length,
+                inner_boundary_layers,
+                ( pps_temporary_layer_2d_t<T>* ) nullptr,
+                particle_spacing
+            )) {
+            is_valid[i * num_y + j] = true;
+        }
+    }
     for (size_t i = 0; i < num_x; i++) {
         for (size_t j = 0; j < num_y; j++) {
-            T query_point[3]
-                = {domain_bounds[0][0] + i * x_spacing,
-                   domain_bounds[1][0] + j * y_spacing,
-                   0.f};
-            if (is_point_valid(
-                    query_point,
-                    outer_boundary_layer,
-                    outer_boundary_cloud,
-                    outer_boundary_tree,
-                    min_outer_edge_length,
-                    inner_boundary_layers,
-                    ( pps_temporary_layer_2d_t<T>* ) nullptr,
-                    particle_spacing
-                )) {
-                bulk_points.push_back(query_point[0]);
-                bulk_points.push_back(query_point[1]);
+            if (is_valid[i * num_y + j]) {
+                bulk_points.push_back(domain_bounds[0][0] + i * x_spacing);
+                bulk_points.push_back(domain_bounds[1][0] + j * y_spacing);
             }
         }
     }

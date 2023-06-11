@@ -21,12 +21,15 @@ add_subdirectory(extern/Scalix)
 option(SDF_USE_SYSTEM_EIGEN "" OFF)
 add_subdirectory(extern/sdf)
 
+find_package(OpenMP REQUIRED)
+
 # naga is a header only library
 add_library(naga INTERFACE)
 target_include_directories(
   naga INTERFACE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}
                  ${NANOFLANN_INCLUDE_DIR})
-target_link_libraries(naga INTERFACE scalix cublas sdf)
+target_link_libraries(naga INTERFACE scalix cublas sdf OpenMP::OpenMP_CXX)
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fopenmp")
 
 # naga examples
 add_executable(nd_cubic_segmentation examples/nd_cubic_segmentation.cu)
