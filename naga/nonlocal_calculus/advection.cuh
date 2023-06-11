@@ -99,7 +99,8 @@ class advection_operator {
             T centering_offset = T(0)
         )
             : velocity_field_(velocity_field),
-              scalar_field_(scalar_field) {}
+              scalar_field_(scalar_field),
+              centering_offset_(centering_offset) {}
 
         __host__ __device__ point_type operator[](const sclx::index_t& index
         ) const {
@@ -147,15 +148,15 @@ class advection_operator {
         T dt,
         T centering_offset = T(0)
     ) {
-        auto fut = sclx::assign_array(static_cast<sclx::array<const T, 1>>(f0), f);
+        auto fut
+            = sclx::assign_array(static_cast<sclx::array<const T, 1>>(f0), f);
 
         divergence_field_map<FieldMap> div_input_field{
             velocity_field,
             f0,
             centering_offset};
 
-        divergence_op_
-            ->apply(div_input_field, rk_df_dt_list_[0], centering_offset);
+        divergence_op_->apply(div_input_field, rk_df_dt_list_[0]);
 
         div_input_field.scalar_field_ = f;
         fut.get();
@@ -175,11 +176,7 @@ class advection_operator {
                 sclx::algorithm::multiplies<>{}
             );
 
-            divergence_op_->apply(
-                div_input_field,
-                rk_df_dt_list_[i + 1],
-                centering_offset
-            );
+            divergence_op_->apply(div_input_field, rk_df_dt_list_[i + 1]);
             sclx::assign_array(static_cast<sclx::array<const T, 1>>(f0), f);
         }
 
