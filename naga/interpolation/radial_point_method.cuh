@@ -70,6 +70,21 @@ using default_shape_function
 template<class T = float>
 class radial_point_method {
   public:
+    static size_t get_scratchpad_size(size_t query_size, uint support_size, uint dimensions, uint group_size = 1) {
+        if (query_size % group_size != 0) {
+            sclx::throw_exception<std::invalid_argument>(
+                "query_size must be a multiple of group_size",
+                "naga::interpolation::radial_point_method::"
+            );
+        }
+        size_t mem_per_group = detail::radial_point_method::get_scratchpad_size_per_group<T>(
+            support_size,
+            dimensions,
+            group_size
+        );
+        return query_size / group_size * mem_per_group;
+    }
+
     template<
         class T_,
         class PointMapType,

@@ -33,6 +33,7 @@
 #pragma once
 
 #include "detail/divergence.cuh"
+#include <scalix/assign_array.cuh>
 
 namespace naga::nonlocal_calculus {
 
@@ -46,8 +47,83 @@ class divergence_operator {
     using default_field_map = default_point_map<T, Dimensions>;
 
     static divergence_operator create(const sclx::array<T, 2>& domain) {
-        operator_builder<T, Dimensions> builder(domain);
-        return builder.template create<detail::divergence_operator_type>();
+        // the following code was designed assuming that all
+        // devices have the same amount of memory
+        //
+        // it could work with different amounts of memory, but it's untested
+
+        divergence_operator result;
+
+        result.weights_ = sclx::array<T, 3>{
+            Dimensions,
+            detail::num_interp_support,
+            domain.shape()[1]};
+        result.support_indices_ = sclx::array<size_t, 2>{
+            detail::num_interp_support,
+            domain.shape()[1]};
+
+        size_t total_available_mem = 0;
+        int device_count           = sclx::cuda::traits::device_count();
+        for (int d = 0; d < device_count; ++d) {
+            sclx::cuda::memory_status_info info
+                = sclx::cuda::query_memory_status(d);
+            size_t allocated_mem = info.total - info.free;
+            size_t reduced_total_mem
+                = info.total * 95 / 100;  // reduced to be safe
+            if (reduced_total_mem < allocated_mem){
+                sclx::throw_exception<std::runtime_error>(
+                    "Not enough memory to build divergence operator on device "
+                    + std::to_string(d),
+                    "naga::nonlocal_calculus::divergence_operator::"
+                );
+            }
+            total_available_mem += reduced_total_mem - allocated_mem;
+        }
+
+        size_t builder_scratchpad_size
+            = operator_builder<T, Dimensions>::get_scratchpad_size(domain.shape(
+            )[1]);
+
+        // indices size excluded from self_scratchpad_size because it's
+        // included in the builder_scratchpad_size
+        size_t max_domain_copy_size = domain.elements() * sizeof(T);
+        size_t self_scratchpad_size = sizeof(T) * Dimensions
+                                    * detail::num_interp_support
+                                    * domain.shape()[1] + max_domain_copy_size;
+
+        size_t total_scratchpad_size = builder_scratchpad_size
+                                     + self_scratchpad_size;
+
+        size_t batch_scratch_pad_size = std::min(
+            total_available_mem,
+            total_scratchpad_size);
+        size_t batch_size = domain.shape()[1] * batch_scratch_pad_size
+                          / total_scratchpad_size;
+
+        for (size_t i = 0; i < domain.shape()[1]; i += batch_size) {
+            size_t batch_end = std::min(i + batch_size, domain.shape()[1]);
+            sclx::array<T, 2> batch_domain{
+                domain.shape()[0],
+                batch_end - i};
+            auto domain_slice = domain.get_range({i}, {batch_end});
+            sclx::assign_array(domain_slice, batch_domain);
+
+            operator_builder<T, Dimensions> builder(domain, batch_domain);
+            divergence_operator op_batch = builder.template create<detail::divergence_operator_type>();
+
+            auto weights_slice = result.weights_.get_range(
+                {i},
+                {batch_end});
+            sclx::assign_array(op_batch.weights_, weights_slice);
+
+            auto support_indices_slice = result.support_indices_.get_range(
+                {i},
+                {batch_end});
+            sclx::assign_array(
+                op_batch.support_indices_,
+                support_indices_slice);
+        }
+        return result;
     }
 
     template<class FieldMap = default_field_map>
@@ -79,9 +155,11 @@ class divergence_operator {
             handler.launch<apply_divergence>(
                 sclx::md_range_t<1>{result.elements()},
                 result,
-                [=,
-                 *this] __device__(const sclx::md_index_t<1>& index, const auto& info) {
-                    T divergence = 0;
+                [=, *this] __device__(
+                    const sclx::md_index_t<1>& index,
+                    const auto& info
+                ) {
+                    T divergence          = 0;
                     auto global_thread_id = info.global_thread_linear_id();
                     for (uint s = 0; s < support_indices_.shape()[0]; ++s) {
                         field_type support_point_field_value
@@ -101,9 +179,10 @@ class divergence_operator {
                             //                                static_cast<uint>(s),
                             //                                static_cast<uint>(index[0]));
                             //                            }
-                            divergence += weights_[global_thread_id * Dimensions + d]
-                                        * (support_point_field_value[d]
-                                           - centering_offset);
+                            divergence
+                                += weights_[global_thread_id * Dimensions + d]
+                                 * (support_point_field_value[d]
+                                    - centering_offset);
                         }
                     }
                     result[index] = divergence;

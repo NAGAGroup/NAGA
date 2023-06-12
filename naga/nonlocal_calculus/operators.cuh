@@ -48,22 +48,50 @@ class operator_builder {
     );
 
   public:
-    explicit operator_builder(const sclx::array<T, 2>& domain)
-        : domain_(domain) {
-        naga::segmentation::nd_cubic_segmentation<T, Dimensions>
-            domain_segmentation(domain, detail::num_interp_support);
+    static size_t get_scratchpad_size(size_t domain_size) {
+        constexpr auto num_quad_points = (Dimensions == 2)
+                                           ? detail::num_quad_points_2d
+                                           : detail::num_quad_points_3d;
+
+        size_t interpolating_weights_scratchpad_size
+            = interpolation::radial_point_method<T>::get_scratchpad_size(
+                domain_size * num_quad_points,
+                detail::num_interp_support,
+                Dimensions,
+                num_quad_points
+            );
+        size_t quadrature_weights_size = domain_size * num_quad_points
+                                       * detail::num_interp_support * sizeof(T);
+        size_t interaction_radii_size = domain_size * sizeof(T);
+        size_t indices_size = domain_size * detail::num_interp_support
+                            * sizeof(size_t);
+
+        return interpolating_weights_scratchpad_size + quadrature_weights_size +
+               interaction_radii_size + indices_size;
+    }
+
+    explicit operator_builder(const sclx::array<T, 2>& domain) {
+        *this = operator_builder(domain, domain);
+    }
+
+    operator_builder(const sclx::array<T, 2>& domain, const sclx::array<T, 2>& query_points)
+        : domain_(domain), query_points_(query_points) {
 
         T interaction_scaling_factor = 0.2f;
         T approx_particle_spacing;
         {
+            naga::segmentation::nd_cubic_segmentation<T, Dimensions>
+                domain_segmentation(domain, detail::num_interp_support);
+
+
             auto knn_result = naga::segmentation::batched_nearest_neighbors(
                 detail::num_interp_support,
-                default_point_map<T, Dimensions>{domain},
+                default_point_map<T, Dimensions>{query_points},
                 domain_segmentation
             );
 
-            auto distances_squared = std::get<0>(knn_result);
 
+            auto distances_squared = std::get<0>(knn_result);
             sclx::array<T, 1> min_distances_squared{
                 distances_squared.shape()[1]};
             detail::get_min_distances_squared(
@@ -79,6 +107,7 @@ class operator_builder {
                 /= static_cast<T>(min_distances_squared.elements());
             approx_particle_spacing = math::sqrt(approx_particle_spacing);
 
+
             interaction_radii_ = min_distances_squared;
             sclx::algorithm::transform(
                 interaction_radii_,
@@ -90,8 +119,9 @@ class operator_builder {
             support_indices_ = std::get<1>(knn_result);
         }
 
+
         detail::quadrature_point_map<T, Dimensions> quadrature_points_map(
-            domain_,
+            query_points_,
             interaction_radii_
         );
 
@@ -104,11 +134,13 @@ class operator_builder {
                 (Dimensions == 2) ? detail::num_quad_points_2d
                                   : detail::num_quad_points_3d
             );
+
     }
 
     void invalidate() {
         quadrature_interpolating_weights_ = sclx::array<T, 2>{};
         domain_                           = sclx::array<T, 2>{};
+        query_points_                     = sclx::array<T, 2>{};
         support_indices_                  = sclx::array<sclx::index_t, 2>{};
         interaction_radii_                = sclx::array<T, 2>{};
     }
@@ -120,7 +152,7 @@ class operator_builder {
     template<template<class, uint> class Operator>
     [[nodiscard]] Operator<T, Dimensions> create() const {
         return Operator<T, Dimensions>::create(
-            domain_,
+            query_points_,
             support_indices_,
             quadrature_interpolating_weights_,
             interaction_radii_
@@ -129,6 +161,7 @@ class operator_builder {
 
   private:
     sclx::array<T, 2> domain_;
+    sclx::array<T, 2> query_points_;
     sclx::array<sclx::index_t, 2> support_indices_;
     sclx::array<T, 2> quadrature_interpolating_weights_;
     sclx::array<T, 1> interaction_radii_;

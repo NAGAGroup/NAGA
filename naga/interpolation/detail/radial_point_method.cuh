@@ -34,6 +34,61 @@
 
 namespace naga::interpolation::detail::radial_point_method {
 
+template<class T>
+size_t get_scratchpad_size_per_group(
+    uint support_size,
+    uint dimensions,
+    uint group_size
+) {
+
+    // in order to match the paper, I will be using the same notation
+    //
+    // B0 - is the matrix of shape functions, where each row is the set of
+    // shape functions for one of the support points
+    // psi_vector - vector of known values at each support point
+    // a - vector of interpolating weights
+    //
+    // recall that we assume B0*a = psi_vector, therefore we can solve for
+    // a by inverting B0 and multiplying by psi_vector
+    //
+    // Our method also augments the formulation with a monomial basis for
+    // better conditioning.
+    //
+    // This means the interpolation ends up looking like:
+    // psi(x) = B(x)^T * a + P(x)^T * b
+    //
+    // Therefore, we actually need to solve for b as well
+    //
+    // P0 - matrix of monomials where each row is the set of monomials for
+    // one of the support points
+    //
+    // We also enforce the constraint that P0^T * a = 0
+    //
+    // So we get
+    // G0 := [[B0, P0]; [P0^T, 0]] * [[a]; [b]] = [[psi_vector]; [0]]
+    //
+    // Interpolating to x is then
+    // psi(x) = G(x)^T * G0^-1 * [[psi_vector]; [0]]
+    //        = M * [[psi_vector]; [0]]
+    // We can see that we only need M[:, 1:num_support] since the rest of
+    // the columns are multiplied by 0
+    //
+    // Therefore we can compute our weights as w_i = \sum_{j=1}^{num_support +
+    // dimensions + 1} (G(x)^T)_j * (G0^-1)_j,i
+
+    size_t G0_size = (support_size + dimensions + 1)
+                   * (support_size + dimensions + 1) * sizeof(T);
+    size_t G0_inv_size = G0_size;
+    size_t G_x_size = (support_size + dimensions + 1) * sizeof(T) * group_size;
+    size_t inv_info_size = sizeof(int) * group_size;
+    size_t inv_pivot_size
+        = sizeof(int) * (support_size + dimensions + 1) * group_size;
+    size_t mem_per_group
+        = G0_size + G0_inv_size + G_x_size + inv_info_size + inv_pivot_size;
+
+    return mem_per_group;
+}
+
 template<class T, class PointMapType, class ShapeFunctionType>
 static sclx::array<T, 2> compute_weights(
     sclx::array<T, 2>& source_points,
@@ -125,15 +180,11 @@ static sclx::array<T, 2> compute_weights(
     // Therefore we can compute our weights as w_i = \sum_{j=1}^{num_support +
     // dimensions + 1} (G(x)^T)_j * (G0^-1)_j,i
 
-    size_t G0_size = (support_size + dimensions + 1)
-                   * (support_size + dimensions + 1) * sizeof(T);
-    size_t G0_inv_size = G0_size;
-    size_t G_x_size = (support_size + dimensions + 1) * sizeof(T) * group_size;
-    size_t inv_info_size = sizeof(int) * group_size;
-    size_t inv_pivot_size
-        = sizeof(int) * (support_size + dimensions + 1) * group_size;
-    size_t mem_per_group
-        = G0_size + G0_inv_size + G_x_size + inv_info_size + inv_pivot_size;
+    size_t mem_per_group = get_scratchpad_size_per_group<T>(
+        support_size,
+        dimensions,
+        group_size
+    );
     size_t minimum_required_mem = 1 * mem_per_group;
 
     // algorithm outline
@@ -232,12 +283,10 @@ static sclx::array<T, 2> compute_weights(
             }
 #endif
 
-            // we don't want to overload the device, so we have a buffer
-            // of 25% of the total memory
             size_t allocated_mem
                 = device_memory_status.total - device_memory_status.free;
             size_t device_modified_total
-                = 90 * device_memory_status.total / 100;
+                = 95 * device_memory_status.total / 100;  // reduced to be safe
             size_t device_modified_free
                 = (device_modified_total <= allocated_mem)
                     ? 0
