@@ -177,7 +177,6 @@ class advection_operator {
             );
 
             divergence_op_->apply(div_input_field, rk_df_dt_list_[i + 1]);
-            sclx::assign_array(static_cast<sclx::array<const T, 1>>(f0), f);
         }
 
         sclx::algorithm::transform(

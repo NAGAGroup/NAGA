@@ -70,10 +70,10 @@ class divergence_operator {
             size_t allocated_mem = info.total - info.free;
             size_t reduced_total_mem
                 = info.total * 95 / 100;  // reduced to be safe
-            if (reduced_total_mem < allocated_mem){
+            if (reduced_total_mem < allocated_mem) {
                 sclx::throw_exception<std::runtime_error>(
                     "Not enough memory to build divergence operator on device "
-                    + std::to_string(d),
+                        + std::to_string(d),
                     "naga::nonlocal_calculus::divergence_operator::"
                 );
             }
@@ -88,40 +88,37 @@ class divergence_operator {
         // included in the builder_scratchpad_size
         size_t max_domain_copy_size = domain.elements() * sizeof(T);
         size_t self_scratchpad_size = sizeof(T) * Dimensions
-                                    * detail::num_interp_support
-                                    * domain.shape()[1] + max_domain_copy_size;
+                                        * detail::num_interp_support
+                                        * domain.shape()[1]
+                                    + max_domain_copy_size;
 
-        size_t total_scratchpad_size = builder_scratchpad_size
-                                     + self_scratchpad_size;
+        size_t total_scratchpad_size
+            = builder_scratchpad_size + self_scratchpad_size;
 
-        size_t batch_scratch_pad_size = std::min(
-            total_available_mem,
-            total_scratchpad_size);
+        size_t batch_scratch_pad_size
+            = std::min(total_available_mem, total_scratchpad_size);
         size_t batch_size = domain.shape()[1] * batch_scratch_pad_size
                           / total_scratchpad_size;
 
         for (size_t i = 0; i < domain.shape()[1]; i += batch_size) {
             size_t batch_end = std::min(i + batch_size, domain.shape()[1]);
-            sclx::array<T, 2> batch_domain{
-                domain.shape()[0],
-                batch_end - i};
+            sclx::array<T, 2> batch_domain{domain.shape()[0], batch_end - i};
             auto domain_slice = domain.get_range({i}, {batch_end});
             sclx::assign_array(domain_slice, batch_domain);
 
             operator_builder<T, Dimensions> builder(domain, batch_domain);
-            divergence_operator op_batch = builder.template create<detail::divergence_operator_type>();
+            divergence_operator op_batch
+                = builder.template create<detail::divergence_operator_type>();
 
-            auto weights_slice = result.weights_.get_range(
-                {i},
-                {batch_end});
+            auto weights_slice = result.weights_.get_range({i}, {batch_end});
             sclx::assign_array(op_batch.weights_, weights_slice);
 
-            auto support_indices_slice = result.support_indices_.get_range(
-                {i},
-                {batch_end});
+            auto support_indices_slice
+                = result.support_indices_.get_range({i}, {batch_end});
             sclx::assign_array(
                 op_batch.support_indices_,
-                support_indices_slice);
+                support_indices_slice
+            );
         }
         return result;
     }

@@ -114,8 +114,8 @@ int main() {
             time_step
         );
         time += time_step;
-        std::cout << "Time: " << time << "\n";
         if (time * fps >= static_cast<value_type>(save_frame)) {
+            std::cout << "Time: " << time << "\n";
             file.open(
                 results_path
                 / (std::string("advection_result.csv.")
