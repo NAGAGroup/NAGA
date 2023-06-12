@@ -217,22 +217,11 @@ T get_distance_to_contour(
     const std::vector<T>& p_new,
     const closed_contour_t<T>& boundary_contours
 ) {
-    std::vector<size_t> edge
-        = {boundary_contours.edges(0, 0), boundary_contours.edges(1, 0)};
-    T min_distance = distance_to_edge<T>(
-        p_new,
-        {boundary_contours.vertices(0, edge[0]),
-         boundary_contours.vertices(1, edge[0])},
-        {boundary_contours.vertex_normals(0, edge[0]),
-         boundary_contours.vertex_normals(1, edge[0])},
-        {boundary_contours.vertices(0, edge[1]),
-         boundary_contours.vertices(1, edge[1])},
-        {boundary_contours.vertex_normals(0, edge[1]),
-         boundary_contours.vertex_normals(1, edge[1])}
-    );
+    std::atomic<T> min_distance = std::numeric_limits<T>::max();
 
-    for (size_t e = 1; e < boundary_contours.edges.shape()[1]; e++) {
-        edge = {boundary_contours.edges(0, e), boundary_contours.edges(1, e)};
+#pragma omp parallel for
+    for (size_t e = 0; e < boundary_contours.edges.shape()[1]; e++) {
+        std::vector<size_t> edge{boundary_contours.edges(0, e), boundary_contours.edges(1, e)};
         auto distance = distance_to_edge<T>(
             p_new,
             {boundary_contours.vertices(0, edge[0]),
