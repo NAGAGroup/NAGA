@@ -38,6 +38,7 @@
 #include "../lattices.cuh"
 #include "../simulation_domain.cuh"
 #include "../simulation_variables.cuh"
+#include "naga/fluids/nonlocal_lattice_boltzmann/simulation_variables.cuh"
 #include <scalix/fill.cuh>
 
 namespace naga::fluids::nonlocal_lbm::detail {
@@ -164,11 +165,11 @@ class simulation_engine {
                 );
 
             uint num_interp_points = 32;
-            segmentation::nd_cubic_segmentation<float, 2> source_segmentation(
+            segmentation::nd_cubic_segmentation<value_type, 2> source_segmentation(
                 bulk_points,
                 num_interp_points
             );
-            naga::default_point_map<float, 2> boundary_point_map{
+            naga::default_point_map<value_type, 2> boundary_point_map{
                 boundary_points};
             auto [distances_squared, indices]
                 = naga::segmentation::batched_nearest_neighbors(
@@ -228,7 +229,6 @@ class simulation_engine {
 
     void compute_macroscopic_values() {
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-
             sclx::local_array<value_type, 2> f_shared(
                 handler,
                 {lattice_size,
@@ -294,7 +294,64 @@ class simulation_engine {
         }).get();
     }
 
-    void collision_step() {}
+    void collision_step() {
+        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
+            sclx::array_list<value_type, 1, lattice_size> lattice_distributions(
+                solution_.lattice_distributions
+            );
+
+            handler.launch(
+                sclx::md_range_t<1>{domain_.points.shape()[1]},
+                lattice_distributions,
+                [=, *this] __device__(
+                    const sclx::md_index_t<1>& idx,
+                    const sclx::kernel_info<>& info
+                ) {
+                    value_type k[lattice_size];
+
+                    value_type f[lattice_size];
+                    for (int alpha = 0; alpha < lattice_size; ++alpha) {
+                        f[alpha] = lattice_distributions[alpha][idx[0]];
+                    }
+
+                    value_type rho
+                        = solution_.macroscopic_values.fluid_density(idx[0])
+                        / parameters_.nondim_factors.density_scale;
+                    value_type u[2] = {
+                        solution_.macroscopic_values.fluid_velocity(0, idx[0])
+                            / parameters_.nondim_factors.velocity_scale,
+                        solution_.macroscopic_values.fluid_velocity(1, idx[0])
+                            / parameters_.nondim_factors.velocity_scale};
+                    value_type lat_nu
+                        = parameters_.fluid_viscosity
+                        / parameters_.nondim_factors.viscosity_scale;
+                    value_type lat_dt = parameters_.time_step
+                                      / parameters_.nondim_factors.time_scale;
+
+                    lattice_interface<Lattice>::compute_moment_projection(
+                        k,
+                        f,
+                        rho,
+                        u,
+                        lat_nu,
+                        lat_dt
+                    );
+
+                    auto K
+                        = lattice_interface<Lattice>::collision_matrix().vals;
+
+                    for (int l = 0; l < lattice_size; ++l) {
+                        value_type df_dt = 0;
+                        for (int j = 0; j < lattice_size; ++j) {
+                            df_dt += K[l][j] * k[j];
+                        }
+                        lattice_distributions[l][idx[0]]
+                            = f[l] + df_dt * lat_dt;
+                    }
+                }
+            );
+        }).get();
+    }
 
     void bounce_back_step() {
         std::vector<std::future<void>> interpolation_futures;
@@ -451,7 +508,7 @@ class simulation_engine {
                 = parameters_.time_step / time_scale * length_scale;
 
             auto velocity_map
-                = velocity_map::create(lattice_velocities.vals[alpha]);
+                = velocity_map::create(&(lattice_velocities.vals[alpha][0]));
 
             auto& f_alpha0 = solution_.lattice_distributions[alpha];
             auto& f_alpha  = temporary_distributions_[alpha];
@@ -469,8 +526,8 @@ class simulation_engine {
                         centering_offset
                     );
                     sclx::assign_array(
-                        temporary_distributions_[alpha],
-                        solution_.lattice_distributions[alpha]
+                        f_alpha,
+                        f_alpha0
                     );
                 }));
         }
@@ -481,7 +538,9 @@ class simulation_engine {
     }
 
     void step_forward() {
+        static bool has_run = false;
         auto source_future = compute_density_source_terms();
+        source_future.wait();
         compute_macroscopic_values();
 
         collision_step();
@@ -499,7 +558,7 @@ class simulation_engine {
         init_distribution();
     }
 
-    void add_density_source(density_source<value_type>& source) {
+    void register_density_source(density_source<value_type>& source) {
         density_sources_.push_back(&source);
     }
 
@@ -554,6 +613,6 @@ class simulation_engine {
     std::vector<density_source<value_type>*> density_sources_{};
 };
 
-template class simulation_engine<d2q9_lattice<float>>;
+//template class simulation_engine<d2q9_lattice<float>>;
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

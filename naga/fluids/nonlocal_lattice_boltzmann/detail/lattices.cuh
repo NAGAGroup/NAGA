@@ -33,38 +33,63 @@
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
-template <class T, uint Dimensions, uint LatticeSize>
+template<class T, uint Dimensions, uint LatticeSize>
 struct lattice_velocities_t {
     T vals[LatticeSize][Dimensions];
 };
 
-template <class T, uint LatticeSize>
+template<class T, uint LatticeSize>
 struct lattice_weights_t {
     T vals[LatticeSize];
 };
 
-template <class Lattice>
+template<class T, uint LatticeSize>
+struct collision_matrix_t {
+    T vals[LatticeSize][LatticeSize];
+};
+
+template<class Lattice>
 struct lattice_interface {
     static constexpr uint size       = Lattice::size;
     static constexpr uint dimensions = Lattice::dimensions;
     using value_type                 = typename Lattice::value_type;
+    static_assert(
+        std::is_same_v<Lattice, Lattice>,
+        "lattice_interface not specialized for this lattice"
+    );
 
-    static constexpr lattice_velocities_t<value_type, dimensions, size> lattice_velocities() {
-        static_assert(std::is_same_v<Lattice, Lattice>,
-                      "lattice_interface not specialized for this lattice");
+    static constexpr lattice_velocities_t<value_type, dimensions, size>
+    lattice_velocities() {
         return {};
     }
 
     static constexpr lattice_weights_t<value_type, size> lattice_weights() {
-        static_assert(std::is_same_v<Lattice, Lattice>,
-                      "lattice_interface not specialized for this lattice");
         return {};
     }
 
-    static constexpr int get_bounce_back_idx(const int &alpha) {
-        static_assert(std::is_same_v<Lattice, Lattice>,
-                      "lattice_interface not specialized for this lattice");
-        return -1;
+    static constexpr collision_matrix_t<value_type, size> collision_matrix() {
+        return {};
     }
+
+    __host__ __device__ static void compute_moment_projection(
+        value_type* projection,
+        const value_type* distribution,
+        const value_type& density,
+        const value_type* velocity,
+        const value_type& lattice_viscosity,
+        const value_type& lattice_time_step
+    ) {
+        auto& k        = projection;
+        auto& f        = distribution;
+        auto& rho      = density;
+        auto& u        = velocity;
+        auto& lat_nu   = lattice_viscosity;
+        auto& lat_dt       = lattice_time_step;
+
+        value_type omega_ab = 1.f / (3.f * lat_nu + .5f * lat_dt);
+    }
+
+    static constexpr int get_bounce_back_idx(const int& alpha) { return -1; }
 };
-}
+
+}  // namespace naga::fluids::nonlocal_lbm::detail

@@ -76,8 +76,8 @@ class simulation_engine {
         engine_ptr_->reset();
     }
 
-    void add_density_source(density_source<value_type>& source) {
-        engine_ptr_->add_density_source(source);
+    void register_density_source(density_source<value_type>& source) {
+        engine_ptr_->register_density_source(source);
     }
 
   private:

@@ -47,7 +47,7 @@ class hypersphere {
         }
     }
 
-    __host__ __device__ constexpr hypersphere(const T& radius, const T *center)
+    __host__ __device__ constexpr hypersphere(const T& radius, const T (&center)[Dimensions])
         : radius_(radius) {
         sclx::cexpr_memcpy<Dimensions>(this->center_, center);
     }
@@ -56,6 +56,14 @@ class hypersphere {
     __host__ __device__ bool contains(const VectorT& point) const {
         distance_functions::loopless::euclidean_squared<Dimensions> dist;
         return dist(point, center_) <= radius_ * radius_;
+    }
+
+    __host__ __device__ const T* center() const {
+        return center_;
+    }
+
+    __host__ __device__ const T& radius() const {
+        return radius_;
     }
 
   private:

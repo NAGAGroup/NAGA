@@ -33,9 +33,60 @@
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
 #include <naga/regions/hypersphere.cuh>
 
-using lattice_t = naga::fluids::nonlocal_lbm::d2q9_lattice<float>;
+using value_type = double;
+
+using lattice_t = naga::fluids::nonlocal_lbm::d2q9_lattice<value_type>;
 using sim_engine_t
     = naga::fluids::nonlocal_lbm::detail::simulation_engine<lattice_t>;
+
+using density_source_t = naga::fluids::nonlocal_lbm::density_source<value_type>;
+using simulation_domain_t
+    = naga::fluids::nonlocal_lbm::simulation_domain<const value_type>;
+using problem_parameters_t
+    = naga::fluids::nonlocal_lbm::problem_parameters<value_type>;
+using region_t = naga::regions::hypersphere<value_type, 2>;
+
+class circular_init_peak : public density_source_t {
+  public:
+    std::future<void> add_density_source(
+        const simulation_domain_t& domain,
+        const problem_parameters_t& params,
+        const value_type& time,
+        sclx::array<value_type, 1>& source_terms
+    ) final {
+        region_t source_region{0.06, {-2.4, 0.0}};
+
+        float period = 0.2f;
+        if (time > period) {
+            return std::async(std::launch::deferred, []() {});
+        }
+
+        return sclx::execute_kernel([=](const sclx::kernel_handler& handler) {
+            handler.launch(
+                sclx::md_range_t<1>{source_terms.shape()},
+                source_terms,
+                [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                    if (source_region.contains(&domain.points(0, idx[0]))) {
+                        auto distance
+                            = naga::distance_functions::loopless::euclidean<
+                                2>{}(
+                                &domain.points(0, idx[0]),
+                                source_region.center()
+                            );
+                        // gaussian peak as a function of distance from the
+                        // center w/ width radius
+                        source_terms(idx[0])
+                            += 0.005f * (std::sin(naga::math::pi<value_type> * time / period
+                             ))
+                            * exp(-distance * distance
+                                  / (2.0 * source_region.radius()
+                                     * source_region.radius()));
+                    }
+                }
+            );
+        });
+    }
+};
 
 int main() {
     auto examples_path = get_examples_dir();
@@ -48,14 +99,15 @@ int main() {
         = examples_path
         / "../resources/lbm_example_domains/circles_in_rectangle";
 
-    naga::fluids::nonlocal_lbm::boundary_specification<float> outer_boundary{
-        domain_dir / "domain.obj",
-        8,
-        4,
-        .01f,
-    };
+    naga::fluids::nonlocal_lbm::boundary_specification<value_type>
+        outer_boundary{
+            domain_dir / "domain.obj",
+            8,
+            4,
+            .01f,
+        };
 
-    std::vector<naga::fluids::nonlocal_lbm::boundary_specification<float>>
+    std::vector<naga::fluids::nonlocal_lbm::boundary_specification<value_type>>
         inner_boundaries{
             {
                 domain_dir / "circle1.obj",
@@ -72,7 +124,7 @@ int main() {
         };
 
     auto domain
-        = naga::fluids::nonlocal_lbm::simulation_domain<float>::import <2>(
+        = naga::fluids::nonlocal_lbm::simulation_domain<value_type>::import <2>(
             outer_boundary,
             inner_boundaries,
             .01f
@@ -82,63 +134,78 @@ int main() {
     engine.set_problem_parameters(
         0.0f,
         1.0f,
-        domain.nodal_spacing * domain.nodal_spacing,
+        2 * domain.nodal_spacing * domain.nodal_spacing,
         2.f,
         0.1f,
         0.1f
     );
     engine.init_domain(domain);
-    auto start = std::chrono::high_resolution_clock::now();
-    engine.step_forward();
-    auto end1 = std::chrono::high_resolution_clock::now();
-    engine.step_forward();
-    auto end2 = std::chrono::high_resolution_clock::now();
+    circular_init_peak source{};
+    engine.register_density_source(source);
 
-    std::cout << "First step took "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(end1
-                                                                        - start)
-                     .count()
-              << " milliseconds\n";
-    std::cout << "Second step took "
-                << std::chrono::duration_cast<std::chrono::milliseconds>(end2
-                                                                            - end1)
-                         .count()
-                << " milliseconds\n";
+    int frames = 5000;
+    std::mutex frame_mutex;
+    std::chrono::milliseconds total_time{0};
+    for (int frame = 0; frame < frames; ++frame) {
+        auto start = std::chrono::high_resolution_clock::now();
+        engine.step_forward();
+        auto end = std::chrono::high_resolution_clock::now();
+        total_time += std::chrono::duration_cast<std::chrono::milliseconds>(
+            end - start
+        );
+//        std::thread([&] {
+//            std::lock_guard<std::mutex> lock(frame_mutex);
+//            std::cout << "Time: "
+//                      << engine.frame_number_ * engine.parameters_.time_step
+//                      << "\n";
+//        }).detach();
+//
+//        if (frame % 100 != 0) {
+//            continue;
+//        }
+//
+//        std::ofstream domain_check_file(
+//            results_path / (std::string("result.csv.") + std::to_string(frame / 100))
+//        );
+//        domain_check_file << "x,y,nx,ny,absorption,ux,uy,rho";
+//        for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
+//            domain_check_file << ",f" << alpha;
+//        }
+//        domain_check_file << "\n";
+//        auto& f        = engine.solution_.lattice_distributions;
+//        auto& rho      = engine.solution_.macroscopic_values.fluid_density;
+//        auto& velocity = engine.solution_.macroscopic_values.fluid_velocity;
+//        auto& layer_absorption     = engine.domain_.layer_absorption;
+//        auto& normals              = engine.domain_.boundary_normals;
+//        auto& points               = engine.domain_.points;
+//        size_t num_bulk_points     = engine.domain_.num_bulk_points;
+//        size_t num_layer_points    = engine.domain_.num_layer_points;
+//        size_t num_boundary_points = engine.domain_.num_boundary_points;
+//        for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
+//            value_type absorption = 0;
+//            value_type normal[2]  = {0, 0};
+//            if (i >= num_bulk_points + num_layer_points) {
+//                normal[0] = normals(0, i - num_bulk_points - num_layer_points);
+//                normal[1] = normals(1, i - num_bulk_points - num_layer_points);
+//            } else if (i >= num_bulk_points) {
+//                absorption = layer_absorption(i - num_bulk_points);
+//            }
+//            domain_check_file << points(0, i) << "," << points(1, i) << ","
+//                              << normal[0] << "," << normal[1] << ","
+//                              << absorption << "," << velocity(0, i) << ","
+//                              << velocity(1, i) << "," << rho(i);
+//            for (const auto& f_alpha : f) {
+//                domain_check_file << "," << f_alpha(i);
+//            }
+//            domain_check_file << "\n";
+//        }
+//        domain_check_file.close();
+    }
 
-    std::ofstream domain_check_file(results_path / "domain_check.csv");
-    domain_check_file << "x,y,nx,ny,absorption,ux,uy,rho";
-    for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
-        domain_check_file << ",f" << alpha;
-    }
-    domain_check_file << "\n";
-    auto& f                = engine.solution_.lattice_distributions;
-    auto& rho              = engine.solution_.macroscopic_values.fluid_density;
-    auto& velocity         = engine.solution_.macroscopic_values.fluid_velocity;
-    auto& layer_absorption = engine.domain_.layer_absorption;
-    auto& normals          = engine.domain_.boundary_normals;
-    auto& points           = engine.domain_.points;
-    size_t num_bulk_points = engine.domain_.num_bulk_points;
-    size_t num_layer_points    = engine.domain_.num_layer_points;
-    size_t num_boundary_points = engine.domain_.num_boundary_points;
-    for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
-        float absorption = 0;
-        float normal[2]  = {0, 0};
-        if (i >= num_bulk_points + num_layer_points) {
-            normal[0] = normals(0, i - num_bulk_points - num_layer_points);
-            normal[1] = normals(1, i - num_bulk_points - num_layer_points);
-        } else if (i >= num_bulk_points) {
-            absorption = layer_absorption(i - num_bulk_points);
-        }
-        domain_check_file << points(0, i) << "," << points(1, i) << ","
-                          << normal[0] << "," << normal[1] << "," << absorption
-                          << "," << velocity(0, i) << "," << velocity(1, i)
-                          << "," << rho(i);
-        for (const auto & f_alpha : f) {
-            domain_check_file << "," << f_alpha(i);
-        }
-        domain_check_file << "\n";
-    }
-    domain_check_file.close();
+    std::cout << "Average time per frame: "
+              << total_time.count() / frames
+              << "ms\n";
+    std::cout << "Problem size: " << domain.points.shape()[1] << "\n";
 
     return 0;
 }
