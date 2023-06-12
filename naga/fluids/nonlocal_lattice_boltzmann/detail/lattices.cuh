@@ -32,28 +32,39 @@
 #pragma once
 
 namespace naga::fluids::nonlocal_lbm::detail {
+
+template <class T, uint Dimensions, uint LatticeSize>
+struct lattice_velocities_t {
+    T vals[LatticeSize][Dimensions];
+};
+
+template <class T, uint LatticeSize>
+struct lattice_weights_t {
+    T vals[LatticeSize];
+};
+
 template <class Lattice>
 struct lattice_interface {
     static constexpr uint size       = Lattice::size;
     static constexpr uint dimensions = Lattice::dimensions;
     using value_type                 = typename Lattice::value_type;
 
-    __host__ __device__ static const value_type* lattice_velocities() {
+    static constexpr lattice_velocities_t<value_type, dimensions, size> lattice_velocities() {
         static_assert(std::is_same_v<Lattice, Lattice>,
                       "lattice_interface not specialized for this lattice");
-        return nullptr;
+        return {};
     }
 
-    __host__ __device__ static const value_type* lattice_weights() {
+    static constexpr lattice_weights_t<value_type, size> lattice_weights() {
         static_assert(std::is_same_v<Lattice, Lattice>,
                       "lattice_interface not specialized for this lattice");
-        return nullptr;
+        return {};
     }
 
-    __host__ __device__ static int get_bounce_back_idx(const int &idx) {
+    static constexpr int get_bounce_back_idx(const int &alpha) {
         static_assert(std::is_same_v<Lattice, Lattice>,
                       "lattice_interface not specialized for this lattice");
-        return 0;
+        return -1;
     }
 };
 }

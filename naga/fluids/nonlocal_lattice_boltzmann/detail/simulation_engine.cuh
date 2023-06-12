@@ -228,6 +228,7 @@ class simulation_engine {
 
     void compute_macroscopic_values() {
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+
             sclx::local_array<value_type, 2> f_shared(
                 handler,
                 {lattice_size,
@@ -237,6 +238,7 @@ class simulation_engine {
                 handler,
                 {dimensions, lattice_size}
             );
+
             sclx::array_tuple<
                 sclx::array<value_type, 1>,
                 sclx::array<value_type, 2>>
@@ -259,9 +261,11 @@ class simulation_engine {
                 ) mutable {
                     if (info.local_thread_linear_id() == 0) {
                         for (int i = 0; i < dimensions * lattice_size; ++i) {
-                            lattice_velocities(i % dimensions, i / dimensions)
-                                = lattice_interface<
-                                    Lattice>::lattice_velocities()[i];
+                            lattice_velocities(
+                                i % dimensions,
+                                i / dimensions
+                            ) = lattice_interface<Lattice>::lattice_velocities()
+                                    .vals[i / dimensions][i % dimensions];
                         }
                     }
                     for (int alpha = 0; alpha < lattice_size; ++alpha) {
@@ -309,7 +313,7 @@ class simulation_engine {
                 boundary_interpolator_ptr_->interpolate(
                     bulk_f_alpha,
                     boundary_f_alpha,
-                    lattice_interface<Lattice>::lattice_weights()[alpha]
+                    lattice_interface<Lattice>::lattice_weights().vals[alpha]
                 )
             );
         }
@@ -351,15 +355,17 @@ class simulation_engine {
                 ) mutable {
                     if (info.local_thread_linear_id() == 0) {
                         for (int i = 0; i < dimensions * lattice_size; ++i) {
-                            lattice_velocities(i % dimensions, i / dimensions)
-                                = lattice_interface<
-                                    Lattice>::lattice_velocities()[i];
+                            lattice_velocities(
+                                i % dimensions,
+                                i / dimensions
+                            ) = lattice_interface<Lattice>::lattice_velocities()
+                                    .vals[i / dimensions][i % dimensions];
                             if (i % dimensions == 0) {
                                 continue;
                             }
                             lattice_weights(i / dimensions)
-                                = lattice_interface<Lattice>::lattice_weights(
-                                )[i / dimensions];
+                                = lattice_interface<Lattice>::lattice_weights()
+                                      .vals[i / dimensions];
                         }
                     }
                     handler.syncthreads();
@@ -412,8 +418,10 @@ class simulation_engine {
                 ) mutable {
                     if (info.local_thread_linear_id() == 0) {
                         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                            lattice_weights[alpha] = lattice_interface<
-                                lattice_type>::lattice_weights()[alpha];
+                            lattice_weights[alpha]
+                                = lattice_interface<
+                                      lattice_type>::lattice_weights()
+                                      .vals[alpha];
                         }
                     }
                     handler.syncthreads();
@@ -430,42 +438,29 @@ class simulation_engine {
         std::vector<std::future<void>> advection_futures;
         advection_futures.reserve(lattice_size);
 
-        static value_type lattice_velocities[dimensions * lattice_size];
-        static bool lattice_velocities_initialized = false;
-        if (!lattice_velocities_initialized) {
-            for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                for (int d = 0; d < dimensions; ++d) {
-                    lattice_velocities[alpha * dimensions + d]
-                        = lattice_interface<Lattice>::lattice_velocities(
-                        )[alpha * dimensions + d];
-                }
-            }
-            lattice_velocities_initialized = true;
-        }
-
         using velocity_map = ::naga::nonlocal_calculus::
             constant_velocity_field<value_type, dimensions>;
+
+        auto lattice_velocities
+            = lattice_interface<Lattice>::lattice_velocities();
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& time_scale   = parameters_.nondim_factors.time_scale;
             auto& length_scale = parameters_.nondim_factors.length_scale;
             value_type time_step
                 = parameters_.time_step / time_scale * length_scale;
-            const value_type* lat_vel = &lattice_velocities[alpha * dimensions];
-            auto velocity_map         = velocity_map::create(lat_vel);
-            auto& f_alpha0            = solution_.lattice_distributions[alpha];
-            auto& f_alpha             = temporary_distributions_[alpha];
+
+            auto velocity_map
+                = velocity_map::create(lattice_velocities.vals[alpha]);
+
+            auto& f_alpha0 = solution_.lattice_distributions[alpha];
+            auto& f_alpha  = temporary_distributions_[alpha];
+
             value_type centering_offset
-                = lattice_interface<Lattice>::lattice_weights()[alpha];
-            advection_futures.emplace_back(std::async(
-                std::launch::async,
-                [this,
-                 &velocity_map,
-                 &f_alpha0,
-                 &f_alpha,
-                 time_step,
-                 centering_offset,
-                 alpha]() {
+                = lattice_interface<Lattice>::lattice_weights().vals[alpha];
+
+            advection_futures
+                .emplace_back(std::async(std::launch::async, [=]() mutable {
                     advection_operator_ptr_->step_forward(
                         velocity_map,
                         f_alpha0,
@@ -477,8 +472,7 @@ class simulation_engine {
                         temporary_distributions_[alpha],
                         solution_.lattice_distributions[alpha]
                     );
-                }
-            ));
+                }));
         }
 
         for (auto& advection_future : advection_futures) {
@@ -527,8 +521,10 @@ class simulation_engine {
                 ) mutable {
                     if (info.local_thread_linear_id() == 0) {
                         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                            lattice_weights[alpha] = lattice_interface<
-                                lattice_type>::lattice_weights()[alpha];
+                            lattice_weights[alpha]
+                                = lattice_interface<
+                                      lattice_type>::lattice_weights()
+                                      .vals[alpha];
                         }
                     }
                     handler.syncthreads();
@@ -557,5 +553,7 @@ class simulation_engine {
 
     std::vector<density_source<value_type>*> density_sources_{};
 };
+
+template class simulation_engine<d2q9_lattice<float>>;
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

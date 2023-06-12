@@ -40,32 +40,34 @@ struct d2q9_lattice;
 }
 
 namespace naga::fluids::nonlocal_lbm::detail {
-// clang-format off
-template<class T>
-__managed__ static const T d2q9_lattice_velocities[2 * 9]
-    = {
-     0,  0,
-    -1,  1,
-    -1,  0,
-    -1, -1,
-     0, -1,
-     1, -1,
-     1,  0,
-     1,  1,
-     0,  1};
 
-template<class T>
-__managed__ static const T d2q9_lattice_weights[9]
-    = {4.0 / 9.0,
-       1.0 / 36.0,
-       1.0 / 9.0,
-       1.0 / 36.0,
-       1.0 / 9.0,
-       1.0 / 36.0,
-       1.0 / 9.0,
-       1.0 / 36.0,
-       1.0 / 9.0};
-// clang-format on
+template <class T>
+struct d2q9_lattice_velocities: lattice_velocities_t<T, 2, 9> {
+    T vals[9][2] = {
+        { 0,  0},
+        {-1,  1},
+        {-1,  0},
+        {-1, -1},
+        { 0, -1},
+        { 1, -1},
+        { 1,  0},
+        { 1,  1},
+        { 0,  1}
+    };
+};
+
+template <class T>
+struct d2q9_lattice_weights: lattice_weights_t<T, 9> {
+    T vals[9] = {4.0 / 9.0,
+                 1.0 / 36.0,
+                 1.0 / 9.0,
+                 1.0 / 36.0,
+                 1.0 / 9.0,
+                 1.0 / 36.0,
+                 1.0 / 9.0,
+                 1.0 / 36.0,
+                 1.0 / 9.0};
+};
 
 template<class T>
 struct lattice_interface<d2q9_lattice<T>> {
@@ -73,15 +75,15 @@ struct lattice_interface<d2q9_lattice<T>> {
     static constexpr uint dimensions = d2q9_lattice<T>::dimensions;
     using value_type                 = typename d2q9_lattice<T>::value_type;
 
-    __host__ __device__ static const value_type* lattice_velocities() {
-        return d2q9_lattice_velocities<T>;
+    static constexpr d2q9_lattice_velocities<T> lattice_velocities() {
+        return d2q9_lattice_velocities<T>{};
     }
 
-    __host__ __device__ static const value_type* lattice_weights() {
-        return d2q9_lattice_weights<T>;
+    static constexpr d2q9_lattice_weights<T> lattice_weights() {
+        return d2q9_lattice_weights<T>{};
     }
 
-    __host__ __device__ static int get_bounce_back_idx(const int& idx) {
+    static constexpr int get_bounce_back_idx(const int &alpha) {
         typedef enum {
             r  = 0,
             nw = 1,
@@ -93,7 +95,7 @@ struct lattice_interface<d2q9_lattice<T>> {
             ne = 7,
             n  = 8,
         } lattice_directions;
-        switch (idx) {
+        switch (alpha) {
         case lattice_directions::r: return lattice_directions::r;
         case lattice_directions::n: return lattice_directions::s;
         case lattice_directions::ne: return lattice_directions::sw;
