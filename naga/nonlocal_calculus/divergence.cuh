@@ -152,15 +152,12 @@ class divergence_operator {
             handler.launch<apply_divergence>(
                 sclx::md_range_t<1>{result.elements()},
                 result,
-                [=, *this] __device__(
-                    const sclx::md_index_t<1>& index,
-                    const auto& info
-                ) {
-                    T divergence          = 0;
-                    auto global_thread_id = info.global_thread_linear_id();
+                [=,
+                 *this] __device__(const sclx::md_index_t<1>& index, const auto&) {
+                    T divergence = 0;
                     for (uint s = 0; s < support_indices_.shape()[0]; ++s) {
                         field_type support_point_field_value
-                            = field[support_indices_[global_thread_id]];
+                            = field[support_indices_(s, index[0])];
                         for (uint d = 0; d < Dimensions; ++d) {
                             //                            if (weights_(d, s,
                             //                            index[0]) == T(0) &&
@@ -176,10 +173,9 @@ class divergence_operator {
                             //                                static_cast<uint>(s),
                             //                                static_cast<uint>(index[0]));
                             //                            }
-                            divergence
-                                += weights_[global_thread_id * Dimensions + d]
-                                 * (support_point_field_value[d]
-                                    - centering_offset);
+                            divergence += weights_(d, s, index[0])
+                                        * (support_point_field_value[d]
+                                           - centering_offset);
                         }
                     }
                     result[index] = divergence;
