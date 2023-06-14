@@ -161,6 +161,8 @@ class advection_operator {
         div_input_field.scalar_field_ = f;
         fut.get();
 
+        std::vector<std::future<void>> transform_futures;
+
         for (int i = 0; i < 3; ++i) {
             sclx::algorithm::elementwise_reduce(
                 forward_euler<T>{dt * runge_kutta_4::df_dt_weights[i]},
@@ -169,12 +171,13 @@ class advection_operator {
                 rk_df_dt_list_[i]
             );
 
-            sclx::algorithm::transform(
+            auto t_fut = sclx::algorithm::transform(
                 rk_df_dt_list_[i],
                 rk_df_dt_list_[i],
                 runge_kutta_4::summation_weights[i],
                 sclx::algorithm::multiplies<>{}
             );
+            transform_futures.push_back(std::move(t_fut));
 
             divergence_op_->apply(div_input_field, rk_df_dt_list_[i + 1]);
         }
@@ -184,7 +187,11 @@ class advection_operator {
             rk_df_dt_list_[3],
             runge_kutta_4::summation_weights[3],
             sclx::algorithm::multiplies<>{}
-        );
+        ).get();
+
+        for (auto& t_fut : transform_futures) {
+            t_fut.get();
+        }
 
         sclx::algorithm::elementwise_reduce(
             sclx::algorithm::plus<>{},
