@@ -148,40 +148,81 @@ class divergence_operator {
             );
         }
 
-        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
+        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            auto max_total_threads_per_dev = std::numeric_limits<size_t>::min();
+            int device_count = sclx::cuda::traits::device_count();
+            int current_device = sclx::cuda::traits::current_device();
+            for (int d = 0; d < device_count; ++d) {
+                sclx::cuda::set_device(d);
+                cudaDeviceProp props{};
+                cudaGetDeviceProperties(
+                    &props,
+                    d
+                );
+                size_t total_threads_per_dev
+                    = props.maxThreadsPerMultiProcessor
+                    * props.multiProcessorCount;
+                max_total_threads_per_dev = std::max(
+                    max_total_threads_per_dev,
+                    total_threads_per_dev
+                );
+            }
+            sclx::cuda::set_device(current_device);
+
+            sclx::shape_t<2> block_shape{
+                support_indices_.shape()[0],
+                512 / support_indices_.shape()[0]};
+            size_t grid_size = max_total_threads_per_dev
+                             / (block_shape.elements());
+
+            sclx::local_array<T, 2> divergence_tmp{handler, block_shape};
             handler.launch<apply_divergence>(
-                sclx::md_range_t<1>{result.elements()},
+                sclx::md_range_t<2>{
+                    support_indices_.shape()[0],
+                    result.elements()},
                 result,
-                [=,
-                 *this] __device__(const sclx::md_index_t<1>& index, const auto&) {
-                    T divergence = 0;
-                    for (uint s = 0; s < support_indices_.shape()[0]; ++s) {
-                        field_type support_point_field_value
-                            = field[support_indices_(s, index[0])];
-                        for (uint d = 0; d < Dimensions; ++d) {
-                            //                            if (weights_(d, s,
-                            //                            index[0]) == T(0) &&
-                            //                            index[0] ==
-                            //                            result.shape()[0] / 2
-                            //                            + result.shape()[0] /
-                            //                            4) {
-                            //                                printf("Oh NO!
-                            //                                Weight is exactly
-                            //                                zero at idx %u,
-                            //                                %u, %u\n",
-                            //                                static_cast<uint>(d),
-                            //                                static_cast<uint>(s),
-                            //                                static_cast<uint>(index[0]));
-                            //                            }
-                            divergence += weights_(d, s, index[0])
-                                        * (support_point_field_value[d]
-                                           - centering_offset);
-                        }
+                [=, *this] __device__(
+                    const sclx::md_index_t<2>& index,
+                    const sclx::kernel_info<2, 2>& info
+                ) mutable {
+                    field_type support_point_field_value
+                        = field[support_indices_[index]];
+                    auto local_thread_id = info.local_thread_id();
+                    T& local_div = divergence_tmp[local_thread_id] = T(0);
+                    T* local_weights = &weights_(0, index[0], index[1]);
+                    for (uint d = 0; d < Dimensions; ++d) {
+                        //                            if (weights_(d, s,
+                        //                            index[0]) == T(0) &&
+                        //                            index[0] ==
+                        //                            result.shape()[0] / 2
+                        //                            + result.shape()[0] /
+                        //                            4) {
+                        //                                printf("Oh NO!
+                        //                                Weight is exactly
+                        //                                zero at idx %u,
+                        //                                %u, %u\n",
+                        //                                static_cast<uint>(d),
+                        //                                static_cast<uint>(s),
+                        //                                static_cast<uint>(index[0]));
+                        //                            }
+                        local_div += local_weights[d]
+                                   * (support_point_field_value[d]
+                                      - centering_offset);
                     }
-                    result[index] = divergence;
-                }
+                    handler.syncthreads();
+
+                    if (local_thread_id[0] == 0) {
+                        T divergence = T(0);
+                        for (uint i = 0; i < block_shape[0]; ++i) {
+                            divergence += (&local_div)[i];
+                        }
+                        result[index[1]] = divergence;
+                    }
+                },
+                block_shape,
+                grid_size
             );
-        });
+        }).get();
     }
 
     void apply(
