@@ -29,9 +29,10 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include <naga/nonlocal_calculus/advection.cuh>
-#include <scalix/filesystem.hpp>
 #include "utils.hpp"
+#include <naga/nonlocal_calculus/advection.cuh>
+#include <numeric>
+#include <scalix/filesystem.hpp>
 
 using value_type = double;
 
@@ -47,7 +48,7 @@ __host__ __device__ value_type field_function(const PointType& x) {
 }
 
 int main() {
-    size_t grid_size       = 100;
+    size_t grid_size       = 120;
     value_type grid_length = 1.f;
     value_type grid_spacing
         = grid_length / (static_cast<value_type>(grid_size) - 1.0f);
@@ -81,8 +82,8 @@ int main() {
         );
     });
 
-    auto results_path = get_examples_results_dir()
-                      / "nonlocal_advection_results";
+    auto results_path
+        = get_examples_results_dir() / "nonlocal_advection_results";
     sclx::filesystem::create_directories(results_path);
     std::ofstream file(results_path / "initial_condition.csv");
     file << "x,y,value\n";

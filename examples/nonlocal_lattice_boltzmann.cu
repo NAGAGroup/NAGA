@@ -33,7 +33,7 @@
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
 #include <naga/regions/hypersphere.cuh>
 
-using value_type = double;
+using value_type = float;
 
 using lattice_t = naga::fluids::nonlocal_lbm::d2q9_lattice<value_type>;
 using sim_engine_t
@@ -76,11 +76,13 @@ class circular_init_peak : public density_source_t {
                         // gaussian peak as a function of distance from the
                         // center w/ width radius
                         source_terms(idx[0])
-                            += 0.005f * (std::sin(naga::math::pi<value_type> * time / period
+                            += 0.005f
+                             * (std::sin(
+                                 naga::math::pi<value_type> * time / period
                              ))
-                            * exp(-distance * distance
-                                  / (2.0 * source_region.radius()
-                                     * source_region.radius()));
+                             * exp(-distance * distance
+                                   / (2.0 * source_region.radius()
+                                      * source_region.radius()));
                     }
                 }
             );
@@ -127,7 +129,7 @@ int main() {
         = naga::fluids::nonlocal_lbm::simulation_domain<value_type>::import <2>(
             outer_boundary,
             inner_boundaries,
-            .01f
+            .005f
         );
 
     sim_engine_t engine;
@@ -143,7 +145,7 @@ int main() {
     circular_init_peak source{};
     engine.register_density_source(source);
 
-    int frames = 5000;
+    int frames = 100;
     std::mutex frame_mutex;
     std::chrono::milliseconds total_time{0};
     for (int frame = 0; frame < frames; ++frame) {
@@ -153,57 +155,57 @@ int main() {
         total_time += std::chrono::duration_cast<std::chrono::milliseconds>(
             end - start
         );
-//        std::thread([&] {
-//            std::lock_guard<std::mutex> lock(frame_mutex);
-//            std::cout << "Time: "
-//                      << engine.frame_number_ * engine.parameters_.time_step
-//                      << "\n";
-//        }).detach();
-//
-//        if (frame % 100 != 0) {
-//            continue;
-//        }
-//
-//        std::ofstream domain_check_file(
-//            results_path / (std::string("result.csv.") + std::to_string(frame / 100))
-//        );
-//        domain_check_file << "x,y,nx,ny,absorption,ux,uy,rho";
-//        for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
-//            domain_check_file << ",f" << alpha;
-//        }
-//        domain_check_file << "\n";
-//        auto& f        = engine.solution_.lattice_distributions;
-//        auto& rho      = engine.solution_.macroscopic_values.fluid_density;
-//        auto& velocity = engine.solution_.macroscopic_values.fluid_velocity;
-//        auto& layer_absorption     = engine.domain_.layer_absorption;
-//        auto& normals              = engine.domain_.boundary_normals;
-//        auto& points               = engine.domain_.points;
-//        size_t num_bulk_points     = engine.domain_.num_bulk_points;
-//        size_t num_layer_points    = engine.domain_.num_layer_points;
-//        size_t num_boundary_points = engine.domain_.num_boundary_points;
-//        for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
-//            value_type absorption = 0;
-//            value_type normal[2]  = {0, 0};
-//            if (i >= num_bulk_points + num_layer_points) {
-//                normal[0] = normals(0, i - num_bulk_points - num_layer_points);
-//                normal[1] = normals(1, i - num_bulk_points - num_layer_points);
-//            } else if (i >= num_bulk_points) {
-//                absorption = layer_absorption(i - num_bulk_points);
-//            }
-//            domain_check_file << points(0, i) << "," << points(1, i) << ","
-//                              << normal[0] << "," << normal[1] << ","
-//                              << absorption << "," << velocity(0, i) << ","
-//                              << velocity(1, i) << "," << rho(i);
-//            for (const auto& f_alpha : f) {
-//                domain_check_file << "," << f_alpha(i);
-//            }
-//            domain_check_file << "\n";
-//        }
-//        domain_check_file.close();
+        std::thread([&] {
+            std::lock_guard<std::mutex> lock(frame_mutex);
+            std::cout << "Time: "
+                      << engine.frame_number_ * engine.parameters_.time_step
+                      << "\n";
+        }).detach();
+
+        if (frame % 100 != 0) {
+            continue;
+        }
+
+        std::ofstream domain_check_file(
+            results_path
+            / (std::string("result.csv.") + std::to_string(frame / 100))
+        );
+        domain_check_file << "x,y,nx,ny,absorption,ux,uy,rho";
+        for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
+            domain_check_file << ",f" << alpha;
+        }
+        domain_check_file << "\n";
+        auto& f        = engine.solution_.lattice_distributions;
+        auto& rho      = engine.solution_.macroscopic_values.fluid_density;
+        auto& velocity = engine.solution_.macroscopic_values.fluid_velocity;
+        auto& layer_absorption     = engine.domain_.layer_absorption;
+        auto& normals              = engine.domain_.boundary_normals;
+        auto& points               = engine.domain_.points;
+        size_t num_bulk_points     = engine.domain_.num_bulk_points;
+        size_t num_layer_points    = engine.domain_.num_layer_points;
+        size_t num_boundary_points = engine.domain_.num_boundary_points;
+        for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
+            value_type absorption = 0;
+            value_type normal[2]  = {0, 0};
+            if (i >= num_bulk_points + num_layer_points) {
+                normal[0] = normals(0, i - num_bulk_points - num_layer_points);
+                normal[1] = normals(1, i - num_bulk_points - num_layer_points);
+            } else if (i >= num_bulk_points) {
+                absorption = layer_absorption(i - num_bulk_points);
+            }
+            domain_check_file << points(0, i) << "," << points(1, i) << ","
+                              << normal[0] << "," << normal[1] << ","
+                              << absorption << "," << velocity(0, i) << ","
+                              << velocity(1, i) << "," << rho(i);
+            for (const auto& f_alpha : f) {
+                domain_check_file << "," << f_alpha(i);
+            }
+            domain_check_file << "\n";
+        }
+        domain_check_file.close();
     }
 
-    std::cout << "Average time per frame: "
-              << total_time.count() / frames
+    std::cout << "Average time per frame: " << total_time.count() / frames
               << "ms\n";
     std::cout << "Problem size: " << domain.points.shape()[1] << "\n";
 
