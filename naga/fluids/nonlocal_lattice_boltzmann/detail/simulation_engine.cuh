@@ -538,7 +538,6 @@ class simulation_engine {
     }
 
     void step_forward() {
-        static bool has_run = false;
         auto source_future = compute_density_source_terms();
         source_future.wait();
         compute_macroscopic_values();
