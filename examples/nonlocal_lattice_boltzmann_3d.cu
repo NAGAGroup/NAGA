@@ -98,8 +98,7 @@ int main() {
     sclx::filesystem::create_directories(results_path);
 
     sclx::filesystem::path domain_dir
-        = examples_path
-        / "../resources/lbm_example_domains/ball_in_cube";
+        = examples_path / "../resources/lbm_example_domains/ball_in_cube";
 
     naga::fluids::nonlocal_lbm::boundary_specification<value_type>
         outer_boundary{
@@ -172,15 +171,15 @@ int main() {
         auto& f        = engine.solution_.lattice_distributions;
         auto& rho      = engine.solution_.macroscopic_values.fluid_density;
         auto& velocity = engine.solution_.macroscopic_values.fluid_velocity;
-        auto& layer_absorption     = engine.domain_.layer_absorption;
-        auto& normals              = engine.domain_.boundary_normals;
-        auto& points               = engine.domain_.points;
-        size_t num_bulk_points     = engine.domain_.num_bulk_points;
-        size_t num_layer_points    = engine.domain_.num_layer_points;
+        auto& layer_absorption  = engine.domain_.layer_absorption;
+        auto& normals           = engine.domain_.boundary_normals;
+        auto& points            = engine.domain_.points;
+        size_t num_bulk_points  = engine.domain_.num_bulk_points;
+        size_t num_layer_points = engine.domain_.num_layer_points;
         for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
             value_type absorption = 0;
             value_type normal[3]  = {0, 0, 0};
-            uint type = 0;
+            uint type             = 0;
             if (i >= num_bulk_points + num_layer_points) {
                 normal[0] = normals(0, i - num_bulk_points - num_layer_points);
                 normal[1] = normals(1, i - num_bulk_points - num_layer_points);
@@ -190,10 +189,12 @@ int main() {
                 absorption = layer_absorption(i - num_bulk_points);
                 type       = 1;
             }
-            domain_check_file << points(0, i) << "," << points(1, i) << "," << points(2, i) << ","
-                              << normal[0] << "," << normal[1] << "," << normal[2] << ","
-                              << absorption << "," << velocity(0, i) << ","
-                              << velocity(1, i) << "," << velocity(2, i) << "," << rho(i) << "," << type;
+            domain_check_file
+                << points(0, i) << "," << points(1, i) << "," << points(2, i)
+                << "," << normal[0] << "," << normal[1] << "," << normal[2]
+                << "," << absorption << "," << velocity(0, i) << ","
+                << velocity(1, i) << "," << velocity(2, i) << "," << rho(i)
+                << "," << type;
             for (const auto& f_alpha : f) {
                 domain_check_file << "," << f_alpha(i);
             }

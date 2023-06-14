@@ -413,7 +413,8 @@ __host__ void advance_front(
     for (size_t i = 0; i < sdf_values.size(); i++) {
         if (sdf_values[i] < .76f * layer_thickness) {
             potential_points_valid[i] = false;
-            outer_boundary_layer.active_points[potential_points_layer_indices[i]]
+            outer_boundary_layer
+                .active_points[potential_points_layer_indices[i]]
                 = false;
         }
     }
@@ -422,7 +423,8 @@ __host__ void advance_front(
         for (size_t i = 0; i < sdf_values.size(); i++) {
             if (-sdf_values[i] < .76f * layer_thickness) {
                 potential_points_valid[i] = false;
-                outer_boundary_layer.active_points[potential_points_layer_indices[i]]
+                outer_boundary_layer
+                    .active_points[potential_points_layer_indices[i]]
                     = false;
             }
         }
@@ -466,8 +468,8 @@ __host__ void advance_front(
                     * std::pow<T>(
                         (outer_boundary_layer.absorption_layer_count - 1
                          - layer_idx)
-                            / ( T ) (outer_boundary_layer.absorption_layer_count
-                                     - 1),
+                            / ( T
+                            ) (outer_boundary_layer.absorption_layer_count - 1),
                         2
                     )
                 );
@@ -513,7 +515,7 @@ __host__ void advance_front(
             = get_sdf_to_points(potential_points, outer_sdf.sdf.get()[0]);
         for (size_t i = 0; i < sdf_values.size(); i++) {
             if (sdf_values[i] < .76f * layer_thickness) {
-                potential_points_valid[i] = false;
+                potential_points_valid[i]                              = false;
                 layer.active_points[potential_points_layer_indices[i]] = false;
             }
         }

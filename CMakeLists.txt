@@ -62,10 +62,10 @@ target_link_libraries(nonlocal_advection PRIVATE naga)
 add_executable(nonlocal_advection_3d examples/nonlocal_advection_3d.cu)
 target_link_libraries(nonlocal_advection_3d PRIVATE naga)
 
-add_executable(
-  nonlocal_lattice_boltzmann examples/nonlocal_lattice_boltzmann.cu)
+add_executable(nonlocal_lattice_boltzmann
+               examples/nonlocal_lattice_boltzmann.cu)
 target_link_libraries(nonlocal_lattice_boltzmann PRIVATE naga)
 
-add_executable(
-  nonlocal_lattice_boltzmann_3d examples/nonlocal_lattice_boltzmann_3d.cu)
+add_executable(nonlocal_lattice_boltzmann_3d
+               examples/nonlocal_lattice_boltzmann_3d.cu)
 target_link_libraries(nonlocal_lattice_boltzmann_3d PRIVATE naga)

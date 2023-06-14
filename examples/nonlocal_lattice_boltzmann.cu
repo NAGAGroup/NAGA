@@ -178,11 +178,11 @@ int main() {
         auto& f        = engine.solution_.lattice_distributions;
         auto& rho      = engine.solution_.macroscopic_values.fluid_density;
         auto& velocity = engine.solution_.macroscopic_values.fluid_velocity;
-        auto& layer_absorption     = engine.domain_.layer_absorption;
-        auto& normals              = engine.domain_.boundary_normals;
-        auto& points               = engine.domain_.points;
-        size_t num_bulk_points     = engine.domain_.num_bulk_points;
-        size_t num_layer_points    = engine.domain_.num_layer_points;
+        auto& layer_absorption  = engine.domain_.layer_absorption;
+        auto& normals           = engine.domain_.boundary_normals;
+        auto& points            = engine.domain_.points;
+        size_t num_bulk_points  = engine.domain_.num_bulk_points;
+        size_t num_layer_points = engine.domain_.num_layer_points;
         for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
             value_type absorption = 0;
             value_type normal[2]  = {0, 0};
