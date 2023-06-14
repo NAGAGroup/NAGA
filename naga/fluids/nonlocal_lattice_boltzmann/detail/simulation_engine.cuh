@@ -82,7 +82,7 @@ class simulation_engine {
     static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
     using lattice_type                 = Lattice;
 
-    simulation_engine() = default;
+    __host__ simulation_engine() = default;
 
     void set_problem_parameters(
         value_type fluid_viscosity,
