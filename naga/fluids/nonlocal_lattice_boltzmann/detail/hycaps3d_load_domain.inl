@@ -50,6 +50,7 @@ struct pps_temporary_layer_3d_t {
     std::vector<T> points;
     std::vector<T> field_lines;
     mesh::closed_surface_t<T> source_surface;
+    std::vector<bool> active_points;
     uint node_layer_count;
     uint absorption_layer_count;
     T absorption_coefficient;
@@ -107,8 +108,11 @@ pps_temporary_layer_3d_t<T> init_pps_layer(
         layer.points.push_back(new_point[0]);
         layer.points.push_back(new_point[1]);
         layer.points.push_back(new_point[2]);
+        layer.field_lines.push_back(source_surface.vertex_normals(0, i));
+        layer.field_lines.push_back(source_surface.vertex_normals(1, i));
+        layer.field_lines.push_back(source_surface.vertex_normals(2, i));
+        layer.active_points.push_back(true);
     }
-    populate_layer_field_lines(layer);
     return layer;
 }
 
@@ -145,6 +149,71 @@ T get_smallest_edge_length(const mesh::closed_surface_t<T>& surface) {
         }
     }
     return min_len;
+}
+
+template<class T>
+T get_largest_edge_length(const mesh::closed_surface_t<T>& surface) {
+    T max_len = std::numeric_limits<T>::lowest();
+    for (size_t f = 0; f < surface.faces.shape()[1]; f++) {
+        for (uint e = 0; e < 3; e++) {
+            T* v0 = &surface.vertices(0, surface.faces(e, f));
+            T* v1 = &surface.vertices(0, surface.faces((e + 1) % 3, f));
+            T len = distance_functions::loopless::euclidean<3>{}(v0, v1);
+            if (len > max_len) {
+                max_len = len;
+            }
+        }
+    }
+    return max_len;
+}
+
+template<class T>
+T get_max_edge_length_of_all(
+    const pps_temporary_layer_3d_t<T>& outer_boundary_layer,
+    const std::vector<pps_temporary_layer_3d_t<T>>& inner_boundary_layers
+) {
+    T max_edge_length = std::numeric_limits<T>::lowest();
+
+    // outer boundary
+    for (size_t f = 0; f < outer_boundary_layer.source_surface.faces.shape()[1];
+         f++) {
+        for (size_t v = 0; v < 3; v++) {
+            size_t v1 = outer_boundary_layer.source_surface.faces(v, f);
+            size_t v2
+                = outer_boundary_layer.source_surface.faces((v + 1) % 3, f);
+            T v12[3]
+                = {outer_boundary_layer.points[v1 * 3 + 0]
+                       - outer_boundary_layer.points[v2 * 3 + 0],
+                   outer_boundary_layer.points[v1 * 3 + 1]
+                       - outer_boundary_layer.points[v2 * 3 + 1],
+                   outer_boundary_layer.points[v1 * 3 + 2]
+                       - outer_boundary_layer.points[v2 * 3 + 2]};
+            auto edge_len = math::loopless::norm<3>(v12);
+            if (edge_len > max_edge_length) {
+                max_edge_length = edge_len;
+            }
+        }
+    }
+
+    // inner boundaries
+    for (const pps_temporary_layer_3d_t<T>& layer : inner_boundary_layers) {
+        for (size_t f = 0; f < layer.source_surface.faces.shape()[1]; f++) {
+            for (size_t v = 0; v < 3; v++) {
+                size_t v1 = layer.source_surface.faces(v, f);
+                size_t v2 = layer.source_surface.faces((v + 1) % 3, f);
+                T v12[3]
+                    = {layer.points[v1 * 3 + 0] - layer.points[v2 * 3 + 0],
+                       layer.points[v1 * 3 + 1] - layer.points[v2 * 3 + 1],
+                       layer.points[v1 * 3 + 2] - layer.points[v2 * 3 + 2]};
+                auto edge_len = math::loopless::norm<3>(v12);
+                if (edge_len > max_edge_length) {
+                    max_edge_length = edge_len;
+                }
+            }
+        }
+    }
+
+    return max_edge_length;
 }
 
 template<class T>
@@ -274,9 +343,11 @@ __host__ void advance_front(
     std::vector<T>& layer_boundary_absorption,
     pps_temporary_layer_3d_t<T>& outer_boundary_layer,
     std::vector<pps_temporary_layer_3d_t<T>>& inner_boundary_layers,
-    T layer_thickness
+    T layer_thickness,
+    std::vector<std::vector<T>>& domain_last_layer_bounds
 ) {
     std::vector<T> potential_points;
+    std::vector<size_t> potential_points_layer_indices;
     std::vector<bool> potential_points_valid;
     auto outer_sdf = build_sdf(
         std::vector<T>(
@@ -324,11 +395,13 @@ __host__ void advance_front(
             layer_thickness
         );
 
-        if (!is_too_close_to_outer_layer) {
+        if (!is_too_close_to_outer_layer
+            && outer_boundary_layer.active_points[i]) {
             potential_points.push_back(query_pt[0]);
             potential_points.push_back(query_pt[1]);
             potential_points.push_back(query_pt[2]);
             potential_points_valid.push_back(true);
+            potential_points_layer_indices.push_back(i);
         }
 
         outer_boundary_layer.points[3 * i + 0] = query_pt[0];
@@ -340,6 +413,8 @@ __host__ void advance_front(
     for (size_t i = 0; i < sdf_values.size(); i++) {
         if (sdf_values[i] < .76f * layer_thickness) {
             potential_points_valid[i] = false;
+            outer_boundary_layer.active_points[potential_points_layer_indices[i]]
+                = false;
         }
     }
     for (const auto& sdf : inner_sdfs) {
@@ -347,7 +422,16 @@ __host__ void advance_front(
         for (size_t i = 0; i < sdf_values.size(); i++) {
             if (-sdf_values[i] < .76f * layer_thickness) {
                 potential_points_valid[i] = false;
+                outer_boundary_layer.active_points[potential_points_layer_indices[i]]
+                    = false;
             }
+        }
+    }
+
+    if (layer_idx < outer_boundary_layer.node_layer_count) {
+        for (int d = 0; d < 3; ++d) {
+            domain_last_layer_bounds[0][d] = std::numeric_limits<T>::max();
+            domain_last_layer_bounds[1][d] = std::numeric_limits<T>::lowest();
         }
     }
     for (size_t i = 0; i < potential_points.size() / 3; i++) {
@@ -357,6 +441,18 @@ __host__ void advance_front(
                  potential_points[3 * i + 1],
                  potential_points[3 * i + 2]}
             );
+
+            for (int d = 0; d < 3; ++d) {
+                domain_last_layer_bounds[0][d] = std::min<T>(
+                    domain_last_layer_bounds[0][d],
+                    potential_points[3 * i + d]
+                );
+                domain_last_layer_bounds[1][d] = std::max<T>(
+                    domain_last_layer_bounds[1][d],
+                    potential_points[3 * i + d]
+                );
+            }
+
             outer_boundary_kd_tree.addPoints(
                 outer_boundary_vertices.pts.size() - 1,
                 outer_boundary_vertices.pts.size()
@@ -370,8 +466,8 @@ __host__ void advance_front(
                     * std::pow<T>(
                         (outer_boundary_layer.absorption_layer_count - 1
                          - layer_idx)
-                            / ( T
-                            ) (outer_boundary_layer.absorption_layer_count - 1),
+                            / ( T ) (outer_boundary_layer.absorption_layer_count
+                                     - 1),
                         2
                     )
                 );
@@ -388,6 +484,7 @@ __host__ void advance_front(
         add_layer(layer, layer_thickness);
         potential_points.clear();
         potential_points_valid.clear();
+        potential_points_layer_indices.clear();
         for (size_t i = 0; i < layer.source_surface.vertices.shape()[1]; i++) {
             if (layer_idx >= layer.node_layer_count) {
                 break;
@@ -404,11 +501,12 @@ __host__ void advance_front(
                 layer_thickness
             );
 
-            if (!is_too_close_to_outer_layer) {
+            if (!is_too_close_to_outer_layer && layer.active_points[i]) {
                 potential_points.push_back(query_pt[0]);
                 potential_points.push_back(query_pt[1]);
                 potential_points.push_back(query_pt[2]);
                 potential_points_valid.push_back(true);
+                potential_points_layer_indices.push_back(i);
             }
         }
         sdf_values
@@ -416,6 +514,7 @@ __host__ void advance_front(
         for (size_t i = 0; i < sdf_values.size(); i++) {
             if (sdf_values[i] < .76f * layer_thickness) {
                 potential_points_valid[i] = false;
+                layer.active_points[potential_points_layer_indices[i]] = false;
             }
         }
         for (size_t l = 0; l < inner_boundary_layers.size(); l++) {
@@ -429,6 +528,8 @@ __host__ void advance_front(
             for (size_t i = 0; i < sdf_values.size(); i++) {
                 if (-sdf_values[i] < .76f * layer_thickness) {
                     potential_points_valid[i] = false;
+                    layer.active_points[potential_points_layer_indices[i]]
+                        = false;
                 }
             }
         }
@@ -545,6 +646,8 @@ simulation_domain<T> hycaps3d_load_domain(
         nanoflann::KDTreeSingleIndexAdaptorParams(10)
     );
 
+    std::vector<std::vector<T>> domain_last_layer_bounds
+        = get_surface_bounds(domain_surface);
     uint max_layer_count = outer_boundary.node_layer_count;
     for (const auto& layer : inner_boundary_layers) {
         max_layer_count = std::max(max_layer_count, layer.node_layer_count);
@@ -559,25 +662,31 @@ simulation_domain<T> hycaps3d_load_domain(
             layer_absorption,
             outer_boundary_layer,
             inner_boundary_layers,
-            nodal_spacing
+            nodal_spacing,
+            domain_last_layer_bounds
         );
     }
 
-    auto domain_bounds = get_surface_bounds(domain_surface);
     std::vector<size_t> num_nodes_per_dim{
         static_cast<size_t>(std::floor(
-            (domain_bounds[1][0] - domain_bounds[0][0]) / min_outer_edge_len
+            (domain_last_layer_bounds[1][0] - domain_last_layer_bounds[0][0])
+            / nodal_spacing
         )),
         static_cast<size_t>(std::floor(
-            (domain_bounds[1][1] - domain_bounds[0][1]) / min_outer_edge_len
+            (domain_last_layer_bounds[1][1] - domain_last_layer_bounds[0][1])
+            / nodal_spacing
         )),
         static_cast<size_t>(std::floor(
-            (domain_bounds[1][2] - domain_bounds[0][2]) / min_outer_edge_len
+            (domain_last_layer_bounds[1][2] - domain_last_layer_bounds[0][2])
+            / nodal_spacing
         ))};
     std::vector<T> spacing_per_dim{
-        (domain_bounds[1][0] - domain_bounds[0][0]) / num_nodes_per_dim[0],
-        (domain_bounds[1][1] - domain_bounds[0][1]) / num_nodes_per_dim[1],
-        (domain_bounds[1][2] - domain_bounds[0][2]) / num_nodes_per_dim[2]};
+        (domain_last_layer_bounds[1][0] - domain_last_layer_bounds[0][0])
+            / num_nodes_per_dim[0],
+        (domain_last_layer_bounds[1][1] - domain_last_layer_bounds[0][1])
+            / num_nodes_per_dim[1],
+        (domain_last_layer_bounds[1][2] - domain_last_layer_bounds[0][2])
+            / num_nodes_per_dim[2]};
     size_t total_num_nodes
         = num_nodes_per_dim[0] * num_nodes_per_dim[1] * num_nodes_per_dim[2];
     bulk_points.reserve(bulk_points.size() + total_num_nodes * 3);
@@ -610,9 +719,9 @@ simulation_domain<T> hycaps3d_load_domain(
         for (size_t j = 0; j < num_nodes_per_dim[1]; j++) {
             for (size_t k = 0; k < num_nodes_per_dim[2]; k++) {
                 T query_point[3]
-                    = {domain_bounds[0][0] + i * spacing_per_dim[0],
-                       domain_bounds[0][1] + j * spacing_per_dim[1],
-                       domain_bounds[0][2] + k * spacing_per_dim[2]};
+                    = {domain_last_layer_bounds[0][0] + i * spacing_per_dim[0],
+                       domain_last_layer_bounds[0][1] + j * spacing_per_dim[1],
+                       domain_last_layer_bounds[0][2] + k * spacing_per_dim[2]};
 
                 bool is_too_close_to_outer_layer = !test_point_with_outer_layer(
                     query_point,
@@ -655,7 +764,7 @@ simulation_domain<T> hycaps3d_load_domain(
 
     simulation_domain<T> domain;
 
-    uint dims            = 2;
+    uint dims            = 3;
     size_t bulk_size     = bulk_points.size() / dims;
     size_t layer_size    = layer_points.size() / dims;
     size_t boundary_size = boundary_points.size() / dims;
@@ -701,8 +810,6 @@ simulation_domain<T> hycaps3d_load_domain(
     domain.num_layer_points    = layer_size;
     domain.num_boundary_points = boundary_size;
     domain.nodal_spacing       = nodal_spacing;
-
-    return domain;
 
     return domain;
 }
