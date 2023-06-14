@@ -172,20 +172,24 @@ class divergence_operator {
                 = max_total_threads_per_dev / (block_shape.elements());
 
             sclx::local_array<T, 2> divergence_tmp{handler, block_shape};
+
+            auto& support_indices = support_indices_;
+            auto& weights         = weights_;
+
             handler.launch<apply_divergence>(
                 sclx::md_range_t<2>{
                     support_indices_.shape()[0],
                     result.elements()},
                 result,
-                [=, *this] __device__(
+                [=] __device__(
                     const sclx::md_index_t<2>& index,
                     const sclx::kernel_info<2, 2>& info
                 ) mutable {
                     field_type support_point_field_value
-                        = field[support_indices_[index]];
+                        = field[support_indices[index]];
                     auto local_thread_id = info.local_thread_id();
                     T& local_div = divergence_tmp[local_thread_id] = T(0);
-                    T* local_weights = &weights_(0, index[0], index[1]);
+                    T* local_weights = &weights(0, index[0], index[1]);
                     for (uint d = 0; d < Dimensions; ++d) {
                         //                            if (weights_(d, s,
                         //                            index[0]) == T(0) &&
