@@ -32,17 +32,15 @@
 
 #pragma once
 
-#include "d2q9_lattice.cuh"
-#include "d3q27_lattice.cuh"
-#include "detail/lattices.cuh"
+#include "detail/d3q27_lattice.cuh"
 
 namespace naga::fluids::nonlocal_lbm {
 
-template<class Lattice>
-struct lattice_traits {
-    static constexpr uint size       = Lattice::size;
-    static constexpr uint dimensions = Lattice::dimensions;
-    using value_type                 = typename Lattice::value_type;
+template<class T>
+struct d3q27_lattice {
+    static constexpr uint size       = 27;
+    static constexpr uint dimensions = 3;
+    using value_type                 = T;
 };
 
 }  // namespace naga::fluids::nonlocal_lbm
