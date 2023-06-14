@@ -165,9 +165,9 @@ class simulation_engine {
                 );
 
             uint num_interp_points = 32;
-            segmentation::nd_cubic_segmentation<value_type, 2>
+            segmentation::nd_cubic_segmentation<value_type, dimensions>
                 source_segmentation(bulk_points, num_interp_points);
-            naga::default_point_map<value_type, 2> boundary_point_map{
+            naga::default_point_map<value_type, dimensions> boundary_point_map{
                 boundary_points};
             auto [distances_squared, indices]
                 = naga::segmentation::batched_nearest_neighbors(
@@ -298,10 +298,13 @@ class simulation_engine {
                 solution_.lattice_distributions
             );
 
+            auto& parameters = parameters_;
+            auto& solution   = solution_;
+
             handler.launch(
                 sclx::md_range_t<1>{domain_.points.shape()[1]},
                 lattice_distributions,
-                [=, *this] __device__(
+                [=] __device__(
                     const sclx::md_index_t<1>& idx,
                     const sclx::kernel_info<>& info
                 ) {
@@ -313,18 +316,18 @@ class simulation_engine {
                     }
 
                     value_type rho
-                        = solution_.macroscopic_values.fluid_density(idx[0])
-                        / parameters_.nondim_factors.density_scale;
-                    value_type u[2] = {
-                        solution_.macroscopic_values.fluid_velocity(0, idx[0])
-                            / parameters_.nondim_factors.velocity_scale,
-                        solution_.macroscopic_values.fluid_velocity(1, idx[0])
-                            / parameters_.nondim_factors.velocity_scale};
+                        = solution.macroscopic_values.fluid_density(idx[0])
+                        / parameters.nondim_factors.density_scale;
+                    value_type u[dimensions];
+                    sclx::cexpr_memcpy<dimensions>(
+                        u,
+                        &solution.macroscopic_values.fluid_velocity(0, idx[0])
+                    );
                     value_type lat_nu
-                        = parameters_.fluid_viscosity
-                        / parameters_.nondim_factors.viscosity_scale;
-                    value_type lat_dt = parameters_.time_step
-                                      / parameters_.nondim_factors.time_scale;
+                        = parameters.fluid_viscosity
+                        / parameters.nondim_factors.viscosity_scale;
+                    value_type lat_dt = parameters.time_step
+                                      / parameters.nondim_factors.time_scale;
 
                     lattice_interface<Lattice>::compute_moment_projection(
                         k,
@@ -437,7 +440,7 @@ class simulation_engine {
                             )
                             < 0) {
                             continue;
-                        } else if (math::loopless::dot<dimensions>(normal, &lattice_velocities(0, alpha)) == 0) {
+                        } else if (math::abs(math::loopless::dot<dimensions>(normal, &lattice_velocities(0, alpha))) < 1e-4) {
                             result_arrays[alpha][idx[0]]
                                 = lattice_weights(alpha);
                             continue;
@@ -498,6 +501,7 @@ class simulation_engine {
 
         auto lattice_velocities
             = lattice_interface<Lattice>::lattice_velocities();
+        auto lattice_weights = lattice_interface<Lattice>::lattice_weights();
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& time_scale   = parameters_.nondim_factors.time_scale;
@@ -511,8 +515,7 @@ class simulation_engine {
             auto& f_alpha0 = solution_.lattice_distributions[alpha];
             auto& f_alpha  = temporary_distributions_[alpha];
 
-            value_type centering_offset
-                = lattice_interface<Lattice>::lattice_weights().vals[alpha];
+            value_type centering_offset = lattice_weights.vals[alpha];
 
             advection_futures
                 .emplace_back(std::async(std::launch::async, [=]() mutable {
