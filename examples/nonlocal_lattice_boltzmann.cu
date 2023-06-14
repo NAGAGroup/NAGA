@@ -183,7 +183,6 @@ int main() {
         auto& points               = engine.domain_.points;
         size_t num_bulk_points     = engine.domain_.num_bulk_points;
         size_t num_layer_points    = engine.domain_.num_layer_points;
-        size_t num_boundary_points = engine.domain_.num_boundary_points;
         for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
             value_type absorption = 0;
             value_type normal[2]  = {0, 0};
