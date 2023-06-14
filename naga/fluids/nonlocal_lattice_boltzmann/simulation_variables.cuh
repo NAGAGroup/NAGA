@@ -61,4 +61,4 @@ struct state_variables {
         sclx::array<value_type, 1> fluid_density;
     } macroscopic_values;
 };
-}
+}  // namespace naga::fluids::nonlocal_lbm

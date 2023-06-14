@@ -29,9 +29,9 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include "utils.hpp"
 #include <naga/nonlocal_calculus/advection.cuh>
 #include <scalix/filesystem.hpp>
-#include "utils.hpp"
 
 using value_type = double;
 
@@ -86,8 +86,8 @@ int main() {
         );
     });
 
-    auto results_path = get_examples_results_dir()
-                      / "nonlocal_advection_results_3d";
+    auto results_path
+        = get_examples_results_dir() / "nonlocal_advection_results_3d";
     sclx::filesystem::create_directories(results_path);
     std::ofstream file(results_path / "initial_condition.csv");
     file << "x,y,z,value\n";

@@ -187,7 +187,8 @@ class advection_operator {
             rk_df_dt_list_[3],
             runge_kutta_4::summation_weights[3],
             sclx::algorithm::multiplies<>{}
-        ).get();
+        )
+            .get();
 
         for (auto& t_fut : transform_futures) {
             t_fut.get();

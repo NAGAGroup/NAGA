@@ -79,12 +79,12 @@ struct lattice_interface {
         const value_type& lattice_viscosity,
         const value_type& lattice_time_step
     ) {
-        auto& k        = projection;
-        auto& f        = distribution;
-        auto& rho      = density;
-        auto& u        = velocity;
-        auto& lat_nu   = lattice_viscosity;
-        auto& lat_dt       = lattice_time_step;
+        auto& k      = projection;
+        auto& f      = distribution;
+        auto& rho    = density;
+        auto& u      = velocity;
+        auto& lat_nu = lattice_viscosity;
+        auto& lat_dt = lattice_time_step;
 
         value_type omega_ab = 1.f / (3.f * lat_nu + .5f * lat_dt);
     }

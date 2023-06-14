@@ -45,7 +45,7 @@ class density_source {
         const problem_parameters<T>& params,
         const T& time,
         sclx::array<T, 1>& source_terms
-    )                         = 0;
+    ) = 0;
 
     virtual ~density_source() = default;
 };

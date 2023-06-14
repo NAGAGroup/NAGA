@@ -37,13 +37,13 @@
  * to and verified against the known function.
  */
 
+#include "utils.hpp"
 #include <chrono>
 #include <fstream>
 #include <naga/interpolation/radial_point_method.cuh>
 #include <naga/segmentation/nearest_neighbors.cuh>
 #include <scalix/algorithm/reduce.cuh>
 #include <scalix/filesystem.hpp>
-#include "utils.hpp"
 
 __device__ float field_function(const float* x) {
     return naga::math::sin(x[0]) * naga::math::cos(x[1]);
@@ -202,8 +202,7 @@ int main() {
               << " ms" << std::endl;
 
     // save the results to view in paraview
-    auto save_dir = get_examples_results_dir()
-                  / "radial_point_method_results";
+    auto save_dir = get_examples_results_dir() / "radial_point_method_results";
     sclx::filesystem::create_directories(save_dir);
     auto save_path = save_dir / "radial_point_method_results.csv";
     interp_values.prefetch_async({sclx::cuda::traits::cpu_device_id});

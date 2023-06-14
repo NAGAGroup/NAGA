@@ -29,11 +29,11 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include "utils.hpp"
 #include <chrono>
 #include <naga/interpolation/radial_point_method.cuh>
 #include <naga/nonlocal_calculus/divergence.cuh>
 #include <scalix/filesystem.hpp>
-#include "utils.hpp"
 
 using value_type = double;
 
@@ -130,8 +130,8 @@ int main() {
     std::cout << "First run: " << elapsed_ms1.count() << " ms\n";
     std::cout << "Second run: " << elapsed_ms2.count() << " ms\n";
 
-    auto results_path = get_examples_results_dir()
-                      / "nonlocal_divergence_results_3d";
+    auto results_path
+        = get_examples_results_dir() / "nonlocal_divergence_results_3d";
     sclx::filesystem::create_directories(results_path);
     std::ofstream file(results_path / "nonlocal_divergence_results.csv");
     file << "x,y,z,divergence\n";

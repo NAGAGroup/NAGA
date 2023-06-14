@@ -29,10 +29,10 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include "utils.hpp"
 #include <chrono>
 #include <fstream>
 #include <naga/segmentation/nd_cubic_segmentation.cuh>
-#include "utils.hpp"
 #include <string>
 
 int main() {
@@ -68,8 +68,8 @@ int main() {
 
     const auto& segmentation_shape = segmentation2d.shape();
     auto partition_count           = segmentation2d.partition_count();
-    auto results_path = get_examples_results_dir()
-                      / "nd_cubic_segmentation_results";
+    auto results_path
+        = get_examples_results_dir() / "nd_cubic_segmentation_results";
     sclx::filesystem::create_directories(results_path);
     std::ofstream file(results_path / "nd_cubic_segmentation2d.csv");
     file << "x,y,p" << std::endl;

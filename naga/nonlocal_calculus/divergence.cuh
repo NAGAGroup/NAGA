@@ -150,18 +150,14 @@ class divergence_operator {
 
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             auto max_total_threads_per_dev = std::numeric_limits<size_t>::min();
-            int device_count = sclx::cuda::traits::device_count();
+            int device_count               = sclx::cuda::traits::device_count();
             int current_device = sclx::cuda::traits::current_device();
             for (int d = 0; d < device_count; ++d) {
                 sclx::cuda::set_device(d);
                 cudaDeviceProp props{};
-                cudaGetDeviceProperties(
-                    &props,
-                    d
-                );
-                size_t total_threads_per_dev
-                    = props.maxThreadsPerMultiProcessor
-                    * props.multiProcessorCount;
+                cudaGetDeviceProperties(&props, d);
+                size_t total_threads_per_dev = props.maxThreadsPerMultiProcessor
+                                             * props.multiProcessorCount;
                 max_total_threads_per_dev = std::max(
                     max_total_threads_per_dev,
                     total_threads_per_dev
@@ -172,8 +168,8 @@ class divergence_operator {
             sclx::shape_t<2> block_shape{
                 support_indices_.shape()[0],
                 512 / support_indices_.shape()[0]};
-            size_t grid_size = max_total_threads_per_dev
-                             / (block_shape.elements());
+            size_t grid_size
+                = max_total_threads_per_dev / (block_shape.elements());
 
             sclx::local_array<T, 2> divergence_tmp{handler, block_shape};
             handler.launch<apply_divergence>(

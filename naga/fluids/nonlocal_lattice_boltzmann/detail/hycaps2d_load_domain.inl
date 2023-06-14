@@ -39,8 +39,8 @@
 
 #include "../../../detail/nanoflann_utils.h"
 #include "../../../mesh/closed_contour.cuh"
-#include <scalix/algorithm/transform.cuh>
 #include <omp.h>
+#include <scalix/algorithm/transform.cuh>
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
@@ -221,7 +221,9 @@ T get_distance_to_contour(
 
 #pragma omp parallel for
     for (size_t e = 0; e < boundary_contours.edges.shape()[1]; e++) {
-        std::vector<size_t> edge{boundary_contours.edges(0, e), boundary_contours.edges(1, e)};
+        std::vector<size_t> edge{
+            boundary_contours.edges(0, e),
+            boundary_contours.edges(1, e)};
         auto distance = distance_to_edge<T>(
             p_new,
             {boundary_contours.vertices(0, edge[0]),
@@ -409,8 +411,8 @@ void advance_front(
                     * std::pow<T>(
                         (outer_boundary_layer.absorption_layer_count - 1
                          - layer_idx)
-                            / ( T ) (outer_boundary_layer.absorption_layer_count
-                                     - 1),
+                            / ( T
+                            ) (outer_boundary_layer.absorption_layer_count - 1),
                         2
                     )
                 );

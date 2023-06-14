@@ -125,12 +125,12 @@ struct lattice_interface<d2q9_lattice<T>> {
         const value_type& lattice_viscosity,
         const value_type& lattice_time_step
     ) {
-        auto& k        = projection;
-        auto& f        = distribution;
-        auto& rho      = density;
-        auto& u        = velocity;
-        auto& lat_nu   = lattice_viscosity;
-        auto& lat_dt       = lattice_time_step;
+        auto& k      = projection;
+        auto& f      = distribution;
+        auto& rho    = density;
+        auto& u      = velocity;
+        auto& lat_nu = lattice_viscosity;
+        auto& lat_dt = lattice_time_step;
 
         value_type omega_ab = 1.f / (3.f * lat_nu + .5f * lat_dt);
 
@@ -138,12 +138,13 @@ struct lattice_interface<d2q9_lattice<T>> {
         k[1] = value_type{0};
         k[2] = value_type{0};
 
-        k[3]          = compute_k3(1.f / lat_dt, rho, u, f);
-        k[4]          = compute_k4(omega_ab, rho, u, f);
-        k[5]          = compute_k5(omega_ab, rho, u, f);
-        k[6]          = compute_k6(1.f / lat_dt, rho, u, f, k[3], k[4], k[5]);
-        k[7]          = compute_k7(1.f / lat_dt, rho, u, f, k[3], k[4], k[5]);
-        k[8]          = compute_k8(1.f / lat_dt, rho, u, f, k[3], k[4], k[5], k[6], k[7]);
+        k[3] = compute_k3(1.f / lat_dt, rho, u, f);
+        k[4] = compute_k4(omega_ab, rho, u, f);
+        k[5] = compute_k5(omega_ab, rho, u, f);
+        k[6] = compute_k6(1.f / lat_dt, rho, u, f, k[3], k[4], k[5]);
+        k[7] = compute_k7(1.f / lat_dt, rho, u, f, k[3], k[4], k[5]);
+        k[8]
+            = compute_k8(1.f / lat_dt, rho, u, f, k[3], k[4], k[5], k[6], k[7]);
     }
 
     static constexpr int get_bounce_back_idx(const int& alpha) {

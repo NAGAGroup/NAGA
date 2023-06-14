@@ -165,10 +165,8 @@ class simulation_engine {
                 );
 
             uint num_interp_points = 32;
-            segmentation::nd_cubic_segmentation<value_type, 2> source_segmentation(
-                bulk_points,
-                num_interp_points
-            );
+            segmentation::nd_cubic_segmentation<value_type, 2>
+                source_segmentation(bulk_points, num_interp_points);
             naga::default_point_map<value_type, 2> boundary_point_map{
                 boundary_points};
             auto [distances_squared, indices]
@@ -525,10 +523,7 @@ class simulation_engine {
                         time_step,
                         centering_offset
                     );
-                    sclx::assign_array(
-                        f_alpha,
-                        f_alpha0
-                    );
+                    sclx::assign_array(f_alpha, f_alpha0);
                 }));
         }
 
@@ -612,6 +607,6 @@ class simulation_engine {
     std::vector<density_source<value_type>*> density_sources_{};
 };
 
-//template class simulation_engine<d2q9_lattice<float>>;
+// template class simulation_engine<d2q9_lattice<float>>;
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

@@ -36,11 +36,11 @@
 
 namespace naga::fluids::nonlocal_lbm {
 
-template <class T>
+template<class T>
 struct d2q9_lattice {
     static constexpr uint size       = 9;
     static constexpr uint dimensions = 2;
     using value_type                 = T;
 };
 
-}
+}  // namespace naga::fluids::nonlocal_lbm

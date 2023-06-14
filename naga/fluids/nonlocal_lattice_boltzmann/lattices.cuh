@@ -44,4 +44,4 @@ struct lattice_traits {
     using value_type                 = typename Lattice::value_type;
 };
 
-}
+}  // namespace naga::fluids::nonlocal_lbm

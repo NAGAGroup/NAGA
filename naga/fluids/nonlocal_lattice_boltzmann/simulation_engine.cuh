@@ -65,24 +65,20 @@ class simulation_engine {
     }
 
     void init_domain(simulation_domain<value_type> domain) {
-        engine_ptr_ -> init_domain(domain);
+        engine_ptr_->init_domain(domain);
     }
 
-    void step_forward(){
-        engine_ptr_->step_forward();
-    }
+    void step_forward() { engine_ptr_->step_forward(); }
 
-    void reset() {
-        engine_ptr_->reset();
-    }
+    void reset() { engine_ptr_->reset(); }
 
     void register_density_source(density_source<value_type>& source) {
         engine_ptr_->register_density_source(source);
     }
 
   private:
-    std::shared_ptr<detail::simulation_engine<Lattice>> engine_ptr_ =
-        std::make_shared<detail::simulation_engine<Lattice>>();
+    std::shared_ptr<detail::simulation_engine<Lattice>> engine_ptr_
+        = std::make_shared<detail::simulation_engine<Lattice>>();
 };
 
 }  // namespace naga::fluids::nonlocal_lbm

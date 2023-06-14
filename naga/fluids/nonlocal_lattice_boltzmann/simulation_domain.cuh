@@ -110,8 +110,9 @@ struct simulation_domain {
         }
     }
 
-    template <class T_ = const T>
-    operator simulation_domain<T_>() const { // NOLINT(google-explicit-constructor)
+    template<class T_ = const T>
+    operator simulation_domain<T_>(
+    ) const {  // NOLINT(google-explicit-constructor)
         return simulation_domain<T_>{
             points,
             boundary_normals,
@@ -119,8 +120,7 @@ struct simulation_domain {
             num_bulk_points,
             num_layer_points,
             num_boundary_points,
-            nodal_spacing
-        };
+            nodal_spacing};
     }
 };
 

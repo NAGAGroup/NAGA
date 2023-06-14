@@ -31,44 +31,43 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
-#include <scalix/cexpr_memcpy.cuh>
 #include "../distance_functions.cuh"
+#include <scalix/cexpr_memcpy.cuh>
 
 namespace naga::regions {
 
-template <class T, uint Dimensions>
+template<class T, uint Dimensions>
 class hypersphere {
   public:
-    template <class VectorT>
-    __host__ __device__ hypersphere(const T &radius, const VectorT& center)
+    template<class VectorT>
+    __host__ __device__ hypersphere(const T& radius, const VectorT& center)
         : radius_(radius) {
         for (uint i = 0; i < Dimensions; ++i) {
             this->center_[i] = center[i];
         }
     }
 
-    __host__ __device__ constexpr hypersphere(const T& radius, const T (&center)[Dimensions])
+    __host__ __device__ constexpr hypersphere(
+        const T& radius,
+        const T (&center)[Dimensions]
+    )
         : radius_(radius) {
         sclx::cexpr_memcpy<Dimensions>(this->center_, center);
     }
 
-    template <class VectorT>
+    template<class VectorT>
     __host__ __device__ bool contains(const VectorT& point) const {
         distance_functions::loopless::euclidean_squared<Dimensions> dist;
         return dist(point, center_) <= radius_ * radius_;
     }
 
-    __host__ __device__ const T* center() const {
-        return center_;
-    }
+    __host__ __device__ const T* center() const { return center_; }
 
-    __host__ __device__ const T& radius() const {
-        return radius_;
-    }
+    __host__ __device__ const T& radius() const { return radius_; }
 
   private:
     T radius_;
     T center_[Dimensions];
 };
 
-}
+}  // namespace naga::regions
