@@ -504,6 +504,10 @@ class simulation_engine {
         auto lattice_weights = lattice_interface<Lattice>::lattice_weights();
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
+
+//            advection_futures
+//                .push_back(std::async(std::launch::async, [&, this, alpha]() {
+//                }));
             auto& time_scale   = parameters_.nondim_factors.time_scale;
             auto& length_scale = parameters_.nondim_factors.length_scale;
             value_type time_step
@@ -517,17 +521,14 @@ class simulation_engine {
 
             value_type centering_offset = lattice_weights.vals[alpha];
 
-            advection_futures
-                .emplace_back(std::async(std::launch::async, [=]() mutable {
-                    advection_operator_ptr_->step_forward(
-                        velocity_map,
-                        f_alpha0,
-                        f_alpha,
-                        time_step,
-                        centering_offset
-                    );
-                    sclx::assign_array(f_alpha, f_alpha0);
-                }));
+            advection_operator_ptr_->step_forward(
+                velocity_map,
+                f_alpha0,
+                f_alpha,
+                time_step,
+                centering_offset
+            );
+            sclx::assign_array(f_alpha, f_alpha0);
         }
 
         for (auto& advection_future : advection_futures) {
