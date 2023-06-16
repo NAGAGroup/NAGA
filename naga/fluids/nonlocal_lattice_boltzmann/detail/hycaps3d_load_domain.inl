@@ -372,6 +372,12 @@ __host__ void advance_front(
     }
 
     // advance outer boundary
+    nanoflann_cloud_t<T> new_layer_vertices;
+    kd_tree_t<T> new_layer_tree(
+        3,
+        new_layer_vertices,
+        nanoflann::KDTreeSingleIndexAdaptorParams(10)
+    );
     for (size_t i = 0;
          i < outer_boundary_layer.source_surface.vertices.shape()[1];
          i++) {
@@ -395,6 +401,21 @@ __host__ void advance_front(
             layer_thickness
         );
 
+        if (new_layer_vertices.pts.size() != 0) {
+            int num_results = 1;
+            std::vector<size_t> ret_index(num_results);
+            std::vector<T> out_dist_sqr(num_results);
+            nanoflann::KNNResultSet<T> resultSet(num_results);
+            resultSet.init(&ret_index[0], &out_dist_sqr[0]);
+            new_layer_tree.findNeighbors(
+                resultSet, query_pt, nanoflann::SearchParams(10));
+
+            if (std::sqrt(out_dist_sqr[0]) < .9f * layer_thickness
+                && ret_index[0] != new_layer_vertices.pts.size()) {
+                continue;
+            }
+        }
+
         if (!is_too_close_to_outer_layer
             && outer_boundary_layer.active_points[i]) {
             potential_points.push_back(query_pt[0]);
@@ -402,6 +423,12 @@ __host__ void advance_front(
             potential_points.push_back(query_pt[2]);
             potential_points_valid.push_back(true);
             potential_points_layer_indices.push_back(i);
+
+            new_layer_vertices.pts.push_back(
+                {query_pt[0], query_pt[1], query_pt[2]});
+            new_layer_tree.addPoints(
+                new_layer_vertices.pts.size() - 1,
+                new_layer_vertices.pts.size());
         }
 
         outer_boundary_layer.points[3 * i + 0] = query_pt[0];
