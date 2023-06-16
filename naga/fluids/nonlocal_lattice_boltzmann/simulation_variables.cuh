@@ -41,7 +41,6 @@ struct problem_parameters {
     static_assert(!std::is_const_v<T>, "T must be non-const");
     T fluid_viscosity;
     T time_step;
-    T nodal_spacing;
     struct {
         T density_scale;
         T velocity_scale;
