@@ -29,9 +29,20 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include "naga/fluids/nonlocal_lattice_boltzmann/simulation_variables.cuh"
 #include "utils.hpp"
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
 #include <naga/regions/hypersphere.cuh>
+
+#include <vtkPoints.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkPolyData.h>
+#include <vtkXMLPolyDataWriter.h>
+#include <vtkFloatArray.h>
+#include <vtkDoubleArray.h>
+#include <vtkNew.h>
+#include <vtkPointData.h>
+
 
 using value_type = float;
 
@@ -45,6 +56,22 @@ using simulation_domain_t
 using problem_parameters_t
     = naga::fluids::nonlocal_lbm::problem_parameters<value_type>;
 using region_t = naga::regions::hypersphere<value_type, 3>;
+using solution_t = naga::fluids::nonlocal_lbm::state_variables<lattice_t>;
+
+template <class T>
+struct get_vtk_array_type {
+    using type = void;
+};
+
+template <>
+struct get_vtk_array_type<float> {
+    using type = vtkFloatArray;
+};
+
+template <>
+struct get_vtk_array_type<double> {
+    using type = vtkDoubleArray;
+};
 
 class spherical_init_peak : public density_source_t {
   public:
@@ -54,7 +81,7 @@ class spherical_init_peak : public density_source_t {
         const value_type& time,
         sclx::array<value_type, 1>& source_terms
     ) final {
-        region_t source_region{0.06, {0.0, 0.0, 0.0}};
+        region_t source_region{0.1, {0.005, 0.005, 0.005}};
 
         float period = 0.2f;
         if (time > period) {
@@ -76,11 +103,11 @@ class spherical_init_peak : public density_source_t {
                         // gaussian peak as a function of distance from the
                         // center w/ width radius
                         source_terms(idx[0])
-                            += 0.005f
+                            += 0.001f
                              * (std::sin(
-                                 naga::math::pi<value_type> * time / period
+                                 2.f * naga::math::pi<value_type> * time / period
                              ))
-                             * exp(-distance * distance
+                             * naga::math::exp(-distance * distance
                                    / (2.0 * source_region.radius()
                                       * source_region.radius()));
                     }
@@ -90,12 +117,10 @@ class spherical_init_peak : public density_source_t {
     }
 };
 
+void save_solution(const simulation_domain_t& domain, const solution_t &solution, int save_frame);
+
 int main() {
     auto examples_path = get_examples_dir();
-    auto results_path
-        = get_examples_results_dir() / "nonlocal_lattice_boltzmann_3d_results";
-
-    sclx::filesystem::create_directories(results_path);
 
     sclx::filesystem::path domain_dir
         = examples_path / "../resources/lbm_example_domains/ball_in_cube";
@@ -103,19 +128,19 @@ int main() {
     naga::fluids::nonlocal_lbm::boundary_specification<value_type>
         outer_boundary{
             domain_dir / "cube.obj",
-            8,
-            4,
+            0,
+            0,
             .01f,
         };
 
     std::vector<naga::fluids::nonlocal_lbm::boundary_specification<value_type>>
         inner_boundaries{
-            {
-                domain_dir / "ball.obj",
-                4,
-                2,
-                .01f,
-            },
+//            {
+//                domain_dir / "ball.obj",
+//                4,
+//                2,
+//                .01f,
+//            },
         };
 
     auto domain
@@ -128,17 +153,21 @@ int main() {
     engine.set_problem_parameters(
         0.0f,
         1.0f,
-        2 * domain.nodal_spacing * domain.nodal_spacing,
+        0.5f * domain.nodal_spacing * domain.nodal_spacing,
         2.f,
-        0.1f,
-        0.1f
+        0.4f,
+        0.2f
     );
     engine.init_domain(domain);
+    save_solution(engine, 0);
+
+    std::cout << "Lattice time step: " << engine.parameters_.time_step / engine.parameters_.nondim_factors.time_scale << "\n";
+    std::cout << "Lattice approx nodal spacing: " << engine.domain_.nodal_spacing / engine.parameters_.nondim_factors.length_scale << "\n";
 
     spherical_init_peak source{};
     engine.register_density_source(source);
 
-    int frames = 100;
+    int frames = 1000;
     std::mutex frame_mutex;
     std::chrono::milliseconds total_time{0};
     for (int frame = 0; frame < frames; ++frame) {
@@ -155,52 +184,11 @@ int main() {
                       << "\n";
         }).detach();
 
-        if (frame % 100 != 0) {
+        if (frame % 1 != 0) {
             continue;
         }
 
-        std::ofstream domain_check_file(
-            results_path
-            / (std::string("result.csv.") + std::to_string(frame / 100))
-        );
-        domain_check_file << "x,y,z,nx,ny,nz,absorption,ux,uy,uz,rho,type";
-        for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
-            domain_check_file << ",f" << alpha;
-        }
-        domain_check_file << "\n";
-        auto& f        = engine.solution_.lattice_distributions;
-        auto& rho      = engine.solution_.macroscopic_values.fluid_density;
-        auto& velocity = engine.solution_.macroscopic_values.fluid_velocity;
-        auto& layer_absorption  = engine.domain_.layer_absorption;
-        auto& normals           = engine.domain_.boundary_normals;
-        auto& points            = engine.domain_.points;
-        size_t num_bulk_points  = engine.domain_.num_bulk_points;
-        size_t num_layer_points = engine.domain_.num_layer_points;
-        for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
-            value_type absorption = 0;
-            value_type normal[3]  = {0, 0, 0};
-            uint type             = 0;
-            if (i >= num_bulk_points + num_layer_points) {
-                normal[0] = normals(0, i - num_bulk_points - num_layer_points);
-                normal[1] = normals(1, i - num_bulk_points - num_layer_points);
-                normal[2] = normals(2, i - num_bulk_points - num_layer_points);
-                type      = 2;
-            } else if (i >= num_bulk_points) {
-                absorption = layer_absorption(i - num_bulk_points);
-                type       = 1;
-            }
-            domain_check_file
-                << points(0, i) << "," << points(1, i) << "," << points(2, i)
-                << "," << normal[0] << "," << normal[1] << "," << normal[2]
-                << "," << absorption << "," << velocity(0, i) << ","
-                << velocity(1, i) << "," << velocity(2, i) << "," << rho(i)
-                << "," << type;
-            for (const auto& f_alpha : f) {
-                domain_check_file << "," << f_alpha(i);
-            }
-            domain_check_file << "\n";
-        }
-        domain_check_file.close();
+        save_solution(engine.domain_, engine.solution_, frame / 1);
     }
 
     std::cout << "Average time per frame: " << total_time.count() / frames
@@ -208,4 +196,100 @@ int main() {
     std::cout << "Problem size: " << domain.points.shape()[1] << "\n";
 
     return 0;
+}
+
+void save_solution(const simulation_domain_t& domain, const solution_t &solution, int save_frame) {
+    static auto results_path
+        = get_examples_results_dir() / "nonlocal_lattice_boltzmann_3d_results";
+
+    static bool first = true;
+
+    if (first) {
+        first = false;
+        sclx::filesystem::remove_all(results_path);
+        sclx::filesystem::create_directories(results_path);
+    }
+
+    vtkNew<vtkPoints> points;
+    points->SetNumberOfPoints(static_cast<vtkIdType> (domain.points.shape()[1]));
+
+    vtkNew<get_vtk_array_type<value_type>::type> f;
+    f->SetNumberOfComponents(lattice_t::size);
+    f->SetNumberOfTuples(static_cast<vtkIdType> (domain.points.shape()[1]));
+    f->SetName("f");
+
+    vtkNew<get_vtk_array_type<value_type>::type> density;
+    density->SetNumberOfComponents(1);
+    density->SetNumberOfTuples(static_cast<vtkIdType> (domain.points.shape()[1]));
+    density->SetName("density");
+
+    vtkNew<get_vtk_array_type<value_type>::type> velocity;
+    velocity->SetNumberOfComponents(3);
+    velocity->SetNumberOfTuples(static_cast<vtkIdType> (domain.points.shape()[1]));
+    velocity->SetName("velocity");
+
+    vtkNew<get_vtk_array_type<value_type>::type> absorption;
+    absorption->SetNumberOfComponents(1);
+    absorption->SetNumberOfTuples(static_cast<vtkIdType> (domain.points.shape()[1]));
+    absorption->SetName("absorption");
+
+    vtkNew<get_vtk_array_type<value_type>::type> normals;
+    normals->SetNumberOfComponents(3);
+    normals->SetNumberOfTuples(static_cast<vtkIdType> (domain.points.shape()[1]));
+    normals->SetName("normals");
+
+    vtkNew<vtkIntArray> type;
+    type->SetNumberOfComponents(1);
+    type->SetNumberOfTuples(static_cast<vtkIdType> (domain.points.shape()[1]));
+    type->SetName("type");
+
+    for (vtkIdType i = 0; i < domain.points.shape()[1]; ++i) {
+        points->SetPoint(i, domain.points(0, i), domain.points(1, i), domain.points(2, i));
+
+        value_type f_i[lattice_t::size];
+        for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
+            f_i[alpha] = solution.lattice_distributions[alpha][i];
+        }
+        f->SetTuple(i, f_i);
+
+        density->SetTuple1(i, solution.macroscopic_values.fluid_density(i));
+
+        velocity->SetTuple3(i,
+            solution.macroscopic_values.fluid_velocity(0, i),
+            solution.macroscopic_values.fluid_velocity(1, i),
+            solution.macroscopic_values.fluid_velocity(2, i)
+        );
+
+        int type_i = 0;
+        value_type normal_i[3]{0, 0, 0};
+        value_type absorption_i = 0;
+        if (i >= domain.num_bulk_points + domain.num_layer_points) {
+            type_i = 2;
+            normal_i[0] = domain.boundary_normals(0, i - domain.num_bulk_points - domain.num_layer_points);
+            normal_i[1] = domain.boundary_normals(1, i - domain.num_bulk_points - domain.num_layer_points);
+            normal_i[2] = domain.boundary_normals(2, i - domain.num_bulk_points - domain.num_layer_points);
+        } else if (i >= domain.num_bulk_points) {
+            type_i = 1;
+            absorption_i = domain.layer_absorption(i - domain.num_bulk_points);
+        }
+        normals->SetTuple3(i, normal_i[0], normal_i[1], normal_i[2]);
+        type->SetTuple1(i, type_i);
+        absorption->SetTuple1(i, absorption_i);
+    }
+
+    std::string filename = results_path
+                      / (std::string("result.") + std::to_string(save_frame) + ".vtp");
+    vtkNew<vtkPolyData> polydata;
+    polydata->SetPoints(points);
+    polydata->GetPointData()->AddArray(f);
+    polydata->GetPointData()->AddArray(density);
+    polydata->GetPointData()->AddArray(velocity);
+    polydata->GetPointData()->AddArray(absorption);
+    polydata->GetPointData()->AddArray(normals);
+    polydata->GetPointData()->AddArray(type);
+
+    vtkNew<vtkXMLPolyDataWriter> writer;
+    writer->SetFileName(filename.c_str());
+    writer->SetInputData(polydata);
+    writer->Write();
 }
