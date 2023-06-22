@@ -139,8 +139,4 @@ void compute_divergence_weights(
     }).get();
 }
 
-template<class T, uint Dimensions>
-using weight_func_type = decltype(compute_divergence_weights<T, Dimensions>);
-
-template weight_func_type<float, 2> compute_divergence_weights<float, 2>;
 }  // namespace naga::nonlocal_calculus::detail
