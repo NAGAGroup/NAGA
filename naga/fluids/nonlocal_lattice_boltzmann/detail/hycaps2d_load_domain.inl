@@ -411,8 +411,8 @@ void advance_front(
                     * std::pow<T>(
                         (outer_boundary_layer.absorption_layer_count - 1
                          - layer_idx)
-                            / ( T
-                            ) (outer_boundary_layer.absorption_layer_count - 1),
+                            / ( T ) (outer_boundary_layer.absorption_layer_count
+                                     - 1),
                         2
                     )
                 );

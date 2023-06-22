@@ -408,7 +408,10 @@ __host__ void advance_front(
             nanoflann::KNNResultSet<T> resultSet(num_results);
             resultSet.init(&ret_index[0], &out_dist_sqr[0]);
             new_layer_tree.findNeighbors(
-                resultSet, query_pt, nanoflann::SearchParams(10));
+                resultSet,
+                query_pt,
+                nanoflann::SearchParams(10)
+            );
 
             if (std::sqrt(out_dist_sqr[0]) < .9f * layer_thickness
                 && ret_index[0] != new_layer_vertices.pts.size()) {
@@ -425,10 +428,12 @@ __host__ void advance_front(
             potential_points_layer_indices.push_back(i);
 
             new_layer_vertices.pts.push_back(
-                {query_pt[0], query_pt[1], query_pt[2]});
+                {query_pt[0], query_pt[1], query_pt[2]}
+            );
             new_layer_tree.addPoints(
                 new_layer_vertices.pts.size() - 1,
-                new_layer_vertices.pts.size());
+                new_layer_vertices.pts.size()
+            );
         }
 
         outer_boundary_layer.points[3 * i + 0] = query_pt[0];
@@ -495,8 +500,8 @@ __host__ void advance_front(
                     * std::pow<T>(
                         (outer_boundary_layer.absorption_layer_count - 1
                          - layer_idx)
-                            / ( T
-                            ) (outer_boundary_layer.absorption_layer_count - 1),
+                            / ( T ) (outer_boundary_layer.absorption_layer_count
+                                     - 1),
                         2
                     )
                 );

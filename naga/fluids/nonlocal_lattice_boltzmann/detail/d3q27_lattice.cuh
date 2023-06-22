@@ -32,8 +32,8 @@
 
 #pragma once
 
-#include "lattices.cuh"
 #include "../../../math.cuh"
+#include "lattices.cuh"
 
 namespace naga::fluids::nonlocal_lbm {
 template<class T>

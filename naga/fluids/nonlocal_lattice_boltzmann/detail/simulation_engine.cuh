@@ -505,9 +505,10 @@ class simulation_engine {
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
 
-//            advection_futures
-//                .push_back(std::async(std::launch::async, [&, this, alpha]() {
-//                }));
+            //            advection_futures
+            //                .push_back(std::async(std::launch::async, [&,
+            //                this, alpha]() {
+            //                }));
             auto& time_scale   = parameters_.nondim_factors.time_scale;
             auto& length_scale = parameters_.nondim_factors.length_scale;
             value_type time_step
