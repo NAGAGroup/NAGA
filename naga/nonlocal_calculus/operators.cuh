@@ -81,7 +81,7 @@ class operator_builder {
         : domain_(domain),
           query_points_(query_points) {
 
-        T interaction_scaling_factor = 0.2f;
+        T interaction_scaling_factor = 0.3f;
         T approx_particle_spacing;
         {
             naga::segmentation::nd_cubic_segmentation<T, Dimensions>
@@ -94,22 +94,21 @@ class operator_builder {
             );
 
             auto distances_squared = std::get<0>(knn_result);
-            sclx::array<T, 1> min_distances_squared{
+            sclx::array<T, 1> closest_neighbor_distances{
                 distances_squared.shape()[1]};
-            detail::get_min_distances_squared(
+            detail::get_closest_neighbor_distances(
                 distances_squared,
-                min_distances_squared
+                closest_neighbor_distances
             );
             approx_particle_spacing = sclx::algorithm::reduce(
-                min_distances_squared,
+                closest_neighbor_distances,
                 T(0),
                 sclx::algorithm::plus<>{}
             );
             approx_particle_spacing
-                /= static_cast<T>(min_distances_squared.elements());
-            approx_particle_spacing = math::sqrt(approx_particle_spacing);
+                /= static_cast<T>(closest_neighbor_distances.elements());
 
-            interaction_radii_ = min_distances_squared;
+            interaction_radii_ = closest_neighbor_distances;
             sclx::algorithm::transform(
                 interaction_radii_,
                 interaction_radii_,

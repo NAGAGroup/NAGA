@@ -274,16 +274,17 @@ bool quadrature_point_map<T, Dimensions>::is_host_unscaled_quad_points_init_
     = false;
 
 template<class T>
-void get_min_distances_squared(
+void get_closest_neighbor_distances(
     const sclx::array<T, 2>& knn_distances_squared,
-    const sclx::array<T, 1>& min_distances_squared
+    const sclx::array<T, 1>& closest_neighbor_distances
 ) {
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         handler.launch(
-            sclx::md_range_t<1>(min_distances_squared.shape()),
-            min_distances_squared,
+            sclx::md_range_t<1>(closest_neighbor_distances.shape()),
+            closest_neighbor_distances,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                min_distances_squared[idx] = knn_distances_squared(1, idx[0]);
+                closest_neighbor_distances[idx]
+                    = math::sqrt(knn_distances_squared(1, idx[0]));
             }
         );
     });
