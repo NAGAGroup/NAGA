@@ -144,7 +144,7 @@ int main() {
     engine.set_problem_parameters(
         0.0f,
         1.0f,
-        0.1f * domain.nodal_spacing * domain.nodal_spacing,
+        2.f * domain.nodal_spacing * domain.nodal_spacing,
         2.f,
         0.4f,
         0.2f

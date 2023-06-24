@@ -44,7 +44,7 @@ namespace naga::nonlocal_calculus::detail {
         template<class D, class PointTypeT, class PointTypeU>
         __host__ __device__ auto
         operator()(D &&delta, PointTypeT &&x, PointTypeU &&y)
-        -> naga::point_t<decltype(x[0]), Dimensions> {}
+        -> naga::point_t<std::decay_t<decltype(x[0])>, Dimensions> {}
     };
 
 
@@ -56,9 +56,9 @@ namespace naga::nonlocal_calculus::detail {
         template<class D, class PointTypeT, class PointTypeU>
         __host__ __device__ static auto
         compute(D &&delta, PointTypeT &&x, PointTypeU &&y)
-        -> naga::point_t<decltype(x[0]), 2> {
-            using T = decltype(x[0]);
-            naga::point_t<T, 2> xy{y[0] - x[0], y[1] - x[1]};
+        -> naga::point_t<std::decay_t<decltype(x[0])>, 2> {
+            using T = std::decay_t<decltype(x[0])>;
+            naga::point_t<T, 2> xy({y[0] - x[0], y[1] - x[1]});
             T r = math::loopless::norm<2>(xy);
             T cos_theta = xy[0] / r;
             T sin_theta = xy[1] / r;
@@ -90,15 +90,15 @@ namespace naga::nonlocal_calculus::detail {
         template<class D, class PointTypeT, class PointTypeU>
         __host__ __device__ static auto
         compute(D &&delta, PointTypeT &&x, PointTypeU &&y)
-        -> naga::point_t<decltype(x[0]), 3> {
-            using T = decltype(x[0]);
-            naga::point_t<T, 3> xy{y[0] - x[0], y[1] - x[1], y[2] - x[2]};
+        -> naga::point_t<std::decay_t<decltype(x[0])>, 3> {
+            using T = std::decay_t<decltype(x[0])>;
+            naga::point_t<T, 3> xy({y[0] - x[0], y[1] - x[1], y[2] - x[2]});
             T r = math::loopless::norm<3>(xy);
             T r_x1x2 = math::loopless::norm<2>(xy);
             T sin_phi = r_x1x2 / r;
             T cos_phi = xy[2] / r;
-            T cos_theta = xy[0] / r_x1x2;
-            T sin_theta = xy[1] / r_x1x2;
+            T cos_theta = (r_x1x2 != 0) ? xy[0] / r_x1x2 : 0;
+            T sin_theta = (r_x1x2 != 0) ? xy[1] / r_x1x2 : 0;
 
             auto &alpha = xy;
 
@@ -163,42 +163,43 @@ namespace naga::nonlocal_calculus::detail {
                                                          : num_quad_points_3d;
 
                         T *x_i = &domain(0, idx[0]);
-                        distance_functions::loopless::euclidean<Dimensions>
-                                distance_func;
                         for (uint q = 0; q < num_quad_points; ++q) {
                             auto x_k
                                     = quadrature_points_map[num_quad_points * idx[0] + q];
-                            T alpha[Dimensions];
-                            T r = 2.f * distance_func(x_i, x_k) / delta;
-                            T _int = (3.f * (3.f * r - 4.f)) / 4.f;
-                            _int = (r < 1.f)
-                                   ? _int
-                                   : ((3.f * (r - 2.f) * (r - 2.f)) / (4.f * r));
+                            auto alpha = antisymmetric_divergence_kernel<w4_bspline, Dimensions>::compute(
+                                    delta,
+                                    x_i,
+                                    x_k
+                            );
 
-                            for (uint d = 0; d < Dimensions; ++d) {
-                                alpha[d] = (x_k[d] - x_i[d]) * 2.f / delta * _int;
-                                if constexpr (Dimensions == 2) {
-                                    alpha[d] *= 10.f / (14.f);
-                                } else {
-                                    alpha[d]
-                                            *= 2.f
-                                               * distance_functions::loopless::euclidean<2>{}(
-                                            x_i,
-                                            x_k
-                                    )
-                                               / delta;
-                                    alpha[d] *= 16.f / (30.f * math::pi<T>);
+                            const uint &r_idx = q % num_radial_quad_points;
+                            const uint &theta_idx = (q / num_radial_quad_points)
+                                                    % num_theta_quad_points;
+                            T quad_weight = const_radial_quad_weights<T>[r_idx] * delta / 2.f;
+                            quad_weight *= 2.f * math::pi<T>
+                                           / static_cast<T>(num_theta_quad_points - 1) / 2.f;
+                            if (theta_idx != 0 && theta_idx != num_theta_quad_points - 1) {
+                                quad_weight *= 2.f;
+                            }
+                            if (Dimensions == 3) {
+                                const uint &phi_idx = q / (num_radial_quad_points * num_theta_quad_points);
+                                quad_weight *= math::pi<T>
+                                               / static_cast<T>(num_phi_quad_points - 1) / 2.f;
+                                if (phi_idx != 0 && phi_idx != num_phi_quad_points - 1) {
+                                    quad_weight *= 2.f;
                                 }
-                                alpha[d] *= r * 4.f * 2.f / delta;
                             }
 
-                            T quad_weight = const_radial_quad_weights<
-                                    T>[q % num_radial_quad_points];
-                            quad_weight *= 2.f * math::pi<T>
-                                           / static_cast<T>(num_theta_quad_points);
-                            if (Dimensions == 3) {
-                                quad_weight *= math::pi<T>
-                                               / static_cast<T>(num_phi_quad_points);
+                            if (Dimensions == 2) {
+                                point_t<T, 2> xy({x_k[0] - x_i[0], x_k[1] - x_i[1]});
+                                T r = math::loopless::norm<2>(xy);
+                                quad_weight *= r;
+                            } else {
+                                point_t<T, 3> xy({x_k[0] - x_i[0], x_k[1] - x_i[1], x_k[2] - x_i[2]});
+                                T r = math::loopless::norm<3>(xy);
+                                T r_x1x2 = math::loopless::norm<2>(xy);
+                                T sin_phi = r_x1x2 / r;
+                                quad_weight *= math::loopless::pow<2>(r) * sin_phi;
                             }
 
                             for (uint index = 0;

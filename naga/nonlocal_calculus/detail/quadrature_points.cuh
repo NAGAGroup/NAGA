@@ -78,8 +78,8 @@ __host__ void calc_unscaled_quad_point_2d(size_t q_idx, T* x_k) {
     uint t_idx = q_idx / num_radial_quad_points;
 
     T r                     = (const_radial_quad_points<T>[r_idx] + 1.f) / 2.f;
-    constexpr T theta_scale = 2 * math::pi<T> / num_theta_quad_points;
-    T theta = t_idx * theta_scale + math::pi<T> / num_theta_quad_points;
+    constexpr T theta_scale = 2 * math::pi<T> / (num_theta_quad_points - 1);
+    T theta = t_idx * theta_scale;
 
     x_k[0] = r * math::cos(theta);
     x_k[1] = r * math::sin(theta);
@@ -128,11 +128,11 @@ __host__ void calc_unscaled_quad_point_3d(size_t q_idx, T x_k[3]) {
 
     T r = (const_radial_quad_points<T>[r_idx] + 1.f) / 2.f;
 
-    constexpr T theta_scale = 2 * math::pi<T> / num_theta_quad_points;
-    T theta = t_idx * theta_scale + math::pi<T> / num_theta_quad_points;
+    constexpr T theta_scale = 2 * math::pi<T> / (num_theta_quad_points - 1);
+    T theta = t_idx * theta_scale;
 
-    constexpr T phi_scale = math::pi<T> / num_phi_quad_points;
-    T phi = phi_idx * phi_scale + math::pi<T> / num_phi_quad_points / 2.f;
+    constexpr T phi_scale = math::pi<T> / (num_phi_quad_points - 1);
+    T phi = phi_idx * phi_scale;
 
     x_k[0] = r * math::sin(phi) * math::cos(theta);
     x_k[1] = r * math::sin(phi) * math::sin(theta);

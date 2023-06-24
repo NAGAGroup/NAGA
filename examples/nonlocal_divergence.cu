@@ -51,7 +51,7 @@ __host__ __device__ value_type expected_divergence_function(const PointType& x
 }
 
 int main() {
-    size_t grid_size       = 400;
+    size_t grid_size       = 80;
     value_type grid_length = 2 * naga::math::pi<value_type>;
     value_type grid_spacing
         = grid_length / (static_cast<value_type>(grid_size) - 1.0f);

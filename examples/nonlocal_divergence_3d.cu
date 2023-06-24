@@ -41,17 +41,17 @@ template<class PointType>
 __host__ __device__ naga::point_t<value_type, 3>
 field_function(const PointType& x) {
     return naga::point_t<value_type, 3>{
-        {naga::math::sin(x[0]) * naga::math::cos(x[1]), 0, x[2] * x[2]}};
+        {naga::math::sin(x[0]), naga::math::cos(x[1]), 0}};
 }
 
 template<class PointType>
 __host__ __device__ value_type expected_divergence_function(const PointType& x
 ) {
-    return naga::math::cos(x[0]) * naga::math::cos(x[1]) + 2 * x[2];
+    return naga::math::cos(x[0]) - naga::math::sin(x[1]);
 }
 
 int main() {
-    size_t grid_size       = 60;
+    size_t grid_size       = 52;
     value_type grid_length = 2 * naga::math::pi<value_type>;
     value_type grid_spacing
         = grid_length / (static_cast<value_type>(grid_size) - 1.0f);
