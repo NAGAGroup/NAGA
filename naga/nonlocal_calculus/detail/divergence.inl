@@ -176,7 +176,11 @@ namespace naga::nonlocal_calculus::detail {
                             const uint &theta_idx = (q / num_radial_quad_points)
                                                     % num_theta_quad_points;
                             T quad_weight = const_radial_quad_weights<T>[r_idx] * delta / 2.f;
-                            quad_weight *= const_radial_quad_weights<T>[theta_idx] * 2.f * math::pi<T> / 2.f;
+                            quad_weight *= 2.f * math::pi<T>
+                                           / static_cast<T>(num_theta_quad_points - 1) / 2.f;
+                            if (theta_idx != 0 && theta_idx != num_theta_quad_points - 1) {
+                                quad_weight *= 2.f;
+                            }
                             if (Dimensions == 3) {
                                 const uint &phi_idx = q / (num_radial_quad_points * num_theta_quad_points);
                                 quad_weight *= const_radial_quad_weights<T>[phi_idx] * math::pi<T> / 2.f;

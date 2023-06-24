@@ -41,13 +41,13 @@ template<class PointType>
 __host__ __device__ naga::point_t<value_type, 3>
 field_function(const PointType& x) {
     return naga::point_t<value_type, 3>{
-        {naga::math::sin(x[0]), naga::math::cos(x[1]), 0}};
+        {naga::math::sin(x[0]), 0, naga::math::cos(x[2])}};
 }
 
 template<class PointType>
 __host__ __device__ value_type expected_divergence_function(const PointType& x
 ) {
-    return naga::math::cos(x[0]) - naga::math::sin(x[1]);
+    return naga::math::cos(x[0]) - naga::math::sin(x[2]);
 }
 
 int main() {
