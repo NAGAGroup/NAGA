@@ -183,11 +183,7 @@ namespace naga::nonlocal_calculus::detail {
                             }
                             if (Dimensions == 3) {
                                 const uint &phi_idx = q / (num_radial_quad_points * num_theta_quad_points);
-                                quad_weight *= math::pi<T>
-                                               / static_cast<T>(num_phi_quad_points - 1) / 2.f;
-                                if (phi_idx != 0 && phi_idx != num_phi_quad_points - 1) {
-                                    quad_weight *= 2.f;
-                                }
+                                quad_weight *= const_radial_quad_weights<T>[phi_idx] * math::pi<T> / 2.f;
                             }
 
                             if (Dimensions == 2) {

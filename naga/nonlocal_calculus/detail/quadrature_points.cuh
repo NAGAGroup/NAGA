@@ -131,8 +131,8 @@ __host__ void calc_unscaled_quad_point_3d(size_t q_idx, T x_k[3]) {
     constexpr T theta_scale = 2 * math::pi<T> / (num_theta_quad_points - 1);
     T theta = t_idx * theta_scale;
 
-    constexpr T phi_scale = math::pi<T> / (num_phi_quad_points - 1);
-    T phi = phi_idx * phi_scale;
+//    constexpr T phi_scale = math::pi<T> / (num_phi_quad_points - 1);
+    T phi = (const_radial_quad_points<T>[phi_idx] + 1.f) * math::pi<T> / 2.f;
 
     x_k[0] = r * math::sin(phi) * math::cos(theta);
     x_k[1] = r * math::sin(phi) * math::sin(theta);
