@@ -43,7 +43,7 @@
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLPolyDataWriter.h>
 
-using value_type = float;
+using value_type = double;
 
 using lattice_t = naga::fluids::nonlocal_lbm::d3q27_lattice<value_type>;
 using sim_engine_t
@@ -99,15 +99,19 @@ class spherical_init_peak : public density_source_t {
                                 &domain.points(0, idx[0]),
                                 source_region.center()
                             );
-                        // gaussian peak as a function of distance from the
-                        // center w/ width radius
-                        source_terms(idx[0])
-                            += 0.001f
-                             * naga::math::exp(
-                                   -distance * distance
-                                   / (2.0 * source_region.radius()
-                                      * source_region.radius())
-                             );
+
+                        auto perturbation
+                            = 0.01f
+                            * (1
+                               - naga::math::loopless::pow<2>(
+                                     2 * distance / source_region.radius()
+                                 ) / 4)
+                            * naga::math::exp(-naga::math::loopless::pow<2>(
+                                2 * distance / source_region.radius()
+                            ));
+
+                        source_terms(idx[0]
+                        ) += perturbation * params.nondim_factors.density_scale;
                     }
                 }
             );
@@ -144,7 +148,7 @@ int main() {
     engine.set_problem_parameters(
         0.0f,
         1.0f,
-        2.f * domain.nodal_spacing * domain.nodal_spacing,
+        0.1f * domain.nodal_spacing * domain.nodal_spacing,
         2.f,
         0.4f,
         0.2f

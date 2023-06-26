@@ -70,13 +70,16 @@ field_function(const PointType& x, const int& alpha) {
         source_region.center()
     );
 
-    return (1.f
-            + 0.001f
-                  * naga::math::exp(
-                      -distance * distance
-                      / (2.0 * source_region.radius() * source_region.radius())
-                  ))
-         * lattice_weights.vals[alpha];
+    auto perturbation
+        = 0.01f
+        * (1
+           - naga::math::loopless::pow<2>(2 * distance / source_region.radius())
+                 / 4)
+        * naga::math::exp(-naga::math::loopless::pow<2>(
+            2 * distance / source_region.radius()
+        ));
+
+    return (1.f + perturbation) * lattice_weights.vals[alpha];
 }
 
 int main() {
