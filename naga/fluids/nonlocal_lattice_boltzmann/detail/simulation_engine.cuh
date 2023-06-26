@@ -466,6 +466,7 @@ class simulation_engine {
                 solution_.lattice_distributions
             );
             auto& density_source_term = density_source_term_;
+            auto& density_scale = parameters_.nondim_factors.density_scale;
 
             handler.launch(
                 sclx::md_range_t<2>{lattice_size, domain_.points.shape()[1]},
@@ -486,7 +487,8 @@ class simulation_engine {
 
                     auto& f_alpha = result_arrays[idx[0]];
                     f_alpha[idx[1]] += lattice_weights[idx[0]]
-                                     * density_source_term[idx[1]];
+                                     * density_source_term[idx[1]]
+                                     / density_scale;
                 }
             );
         });
