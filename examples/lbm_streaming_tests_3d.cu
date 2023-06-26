@@ -88,6 +88,7 @@ int main() {
     value_type grid_spacing  = value_type{0.03125} * spacing_scale;
     value_type time_step     = value_type{9.76563e-05} * spacing_scale;
     size_t grid_size         = std::floor(grid_length / grid_spacing + 1);
+    grid_size                = (grid_size % 2 == 0) ? grid_size - 1 : grid_size;
 
     size_t point_count = grid_size * grid_size * grid_size;
     sclx::array<value_type, 2> source_grid{3, point_count};
@@ -146,7 +147,7 @@ int main() {
     value_type time = 0.0f;
     uint save_frame = 0;
     value_type fps  = 60.0f;
-    while (time < 0.4f) {
+    while (time < 1.f) {
         std::cout << "Time: " << time << "\n";
         for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
             value_type velocity[3];
