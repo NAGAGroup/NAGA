@@ -82,7 +82,7 @@ __host__ __device__ void calc_unscaled_quad_point_2d(size_t q_idx, PointType &&x
     value_type r                     = (const_radial_quad_points<value_type>[r_idx] + 1.f) / 2.f;
     constexpr value_type theta_scale = 3.f * math::pi<value_type> / 2.f
                             / static_cast<float>(num_theta_quad_points - 1);
-    value_type theta = t_idx * theta_scale + math::pi<value_type> / 4.f;
+    value_type theta = t_idx * theta_scale;
 
     x_k[0] = r * math::cos(theta);
     x_k[1] = r * math::sin(theta);
@@ -135,7 +135,7 @@ __host__ __device__ void calc_unscaled_quad_point_3d(size_t q_idx, PointType &&x
 
     constexpr value_type theta_scale = 3.f * math::pi<value_type> / 2.f
                             / static_cast<float>(num_theta_quad_points - 1);
-    value_type theta = t_idx * theta_scale + math::pi<value_type> / 4.f;
+    value_type theta = t_idx * theta_scale;
 
     constexpr value_type phi_scale = 3.f * math::pi<value_type> / 2.f
                           / static_cast<float>(num_theta_quad_points - 1) / 2.f;
