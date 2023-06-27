@@ -209,23 +209,66 @@ __host__ void batched_nearest_neighbors(
                 bool new_points_found = true;
                 int search_index_list[dimensions]{};
 
-                constexpr size_t prime_numbers[]{
-                    2305843009213693951,
-                    82589933,
-                    77232917,
-                    2147483647,
-                    305175781,
-                    2521008887,
-                    63018038201,
-                    489133282872437279,
-                    15285151248481,
-                    228204732751,
-                    65610001};
+                constexpr size_t small_prime_numbers[]
+                    = {5, 7, 11, 13, 17, 19, 23, 29};
+                constexpr size_t medium_prime_numbers[]
+                    = {103, 409, 953, 1201, 1297, 1373, 1423, 4603};
+                constexpr size_t large_prime_numbers[]
+                    = {5011969,
+                       10003001,
+                       10024939,
+                       67044343,
+                       89043133,
+                       98044279,
+                       100010203,
+                       150009593};
+
+                constexpr size_t very_large_prime_numbers[]
+                    = {100000012901,
+                       500000013497,
+                       500000015443,
+                       589000027487,
+                       589000031327,
+                       789000023843,
+                       789000030839,
+                       789000032603};
+                //                constexpr size_t prime_numbers[]
+                //                    = {5,
+                //                       7,
+                //                       11,
+                //                       13,
+                //                       17,
+                //                       19,
+                //                       23,
+                //                       29,
+                //                       103,
+                //                       409,
+                //                       953,
+                //                       1201,
+                //                       1297,
+                //                       1373,
+                //                       1423,
+                //                       4603,
+                //                       5011969,
+                //                       10003001,
+                //                       10024939,
+                //                       67044343,
+                //                       89043133,
+                //                       98044279,
+                //                       100010203,
+                //                       150009593,
+                //                       100000012901,
+                //                       500000013497,
+                //                       500000015443,
+                //                       589000027487,
+                //                       589000031327,
+                //                       789000023843,
+                //                       789000030839,
+                //                       789000032603};
+                int num_primes
+                    = sizeof(small_prime_numbers) / sizeof(size_t) - 1;
                 thrust::default_random_engine rng(idx[0]);
-                thrust::uniform_int_distribution<int> dist(
-                    0,
-                    sizeof(prime_numbers) / sizeof(size_t) - 1
-                );
+                thrust::uniform_int_distribution<int> dist(0, num_primes);
                 while ((new_points_found || n_found < k)
                        && search_radius <= max_search_radius) {
 
@@ -238,8 +281,25 @@ __host__ void batched_nearest_neighbors(
                         * math::loopless::pow<dimensions - 1>(search_length);
                     max_linear_search_idx
                         = search_length == 1 ? 1 : max_linear_search_idx;
+
+                    const size_t* prime_numbers;
+                    if (max_linear_search_idx < small_prime_numbers[0]) {
+                        prime_numbers = small_prime_numbers;
+                    } else if (max_linear_search_idx
+                               < medium_prime_numbers[0]) {
+                        prime_numbers = medium_prime_numbers;
+                    } else if (max_linear_search_idx
+                               < large_prime_numbers[0]) {
+                        prime_numbers = large_prime_numbers;
+                    } else {
+                        prime_numbers = very_large_prime_numbers;
+                    }
+
                     size_t prime_number = prime_numbers[dist(rng)];
-                    size_t state        = 0;
+                    while (prime_number < max_linear_search_idx) {
+                        prime_number = prime_numbers[dist(rng)];
+                    }
+                    size_t state = 0;
 
                     for (size_t linear_search_idx = 0;
                          linear_search_idx < max_linear_search_idx;
