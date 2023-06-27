@@ -189,9 +189,7 @@ class simulation_engine {
         for (auto& f_alpha : solution_.lattice_distributions) {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
-        for (auto& f_alpha_tmp : temporary_distributions_) {
-            f_alpha_tmp = sclx::array<value_type, 1>{domain_.points.shape()[1]};
-        }
+        temporary_distributions_ = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         init_distribution();
 
         solution_.macroscopic_values.fluid_velocity
@@ -495,9 +493,6 @@ class simulation_engine {
     }
 
     void streaming_step() {
-        std::vector<std::future<void>> advection_futures;
-        advection_futures.reserve(lattice_size);
-
         using velocity_map = ::naga::nonlocal_calculus::
             constant_velocity_field<value_type, dimensions>;
 
@@ -506,11 +501,6 @@ class simulation_engine {
         auto lattice_weights = lattice_interface<Lattice>::lattice_weights();
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-
-            //            advection_futures
-            //                .push_back(std::async(std::launch::async, [&,
-            //                this, alpha]() {
-            //                }));
             auto& time_scale   = parameters_.nondim_factors.time_scale;
             auto& length_scale = parameters_.nondim_factors.length_scale;
             value_type time_step
@@ -520,7 +510,7 @@ class simulation_engine {
                 = velocity_map::create(&(lattice_velocities.vals[alpha][0]));
 
             auto& f_alpha0 = solution_.lattice_distributions[alpha];
-            auto& f_alpha  = temporary_distributions_[alpha];
+            auto& f_alpha  = temporary_distributions_;
 
             value_type centering_offset = lattice_weights.vals[alpha];
 
@@ -533,10 +523,6 @@ class simulation_engine {
             );
             sclx::assign_array(f_alpha, f_alpha0);
         }
-
-        for (auto& advection_future : advection_futures) {
-            advection_future.get();
-        }
     }
 
     void step_forward() {
@@ -544,7 +530,7 @@ class simulation_engine {
         source_future.wait();
         compute_macroscopic_values();
 
-        collision_step();
+//        collision_step();
         bounce_back_step();
 
         apply_density_source_terms(std::move(source_future));
@@ -608,7 +594,7 @@ class simulation_engine {
     std::shared_ptr<interpolater_t> boundary_interpolator_ptr_{};
 
     sclx::array<value_type, 1> density_source_term_{};
-    sclx::array<value_type, 1> temporary_distributions_[lattice_size]{};
+    sclx::array<value_type, 1> temporary_distributions_{};
     uint frame_number_ = 0;
 
     std::vector<density_source<value_type>*> density_sources_{};
