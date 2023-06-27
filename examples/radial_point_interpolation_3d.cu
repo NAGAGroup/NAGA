@@ -218,7 +218,7 @@ int main() {
     auto save_dir
         = get_examples_results_dir() / "radial_point_method_results_3d";
     sclx::filesystem::create_directories(save_dir);
-    auto save_path = save_dir / "radial_point_method_results_3d.csv";
+    auto save_path = save_dir / "interpolated_values.csv";
     interp_values.prefetch_async({sclx::cuda::traits::cpu_device_id});
     std::ofstream save_file(save_path);
     save_file << "x,y,z,f" << std::endl;
@@ -227,6 +227,14 @@ int main() {
                   << interp_grid(2, i) << "," << interp_values(i) << std::endl;
     }
     save_file.close();
-
+    save_path = save_dir / "source_values.csv";
+    source_values.prefetch_async({sclx::cuda::traits::cpu_device_id});
+    save_file.open(save_path);
+    save_file << "x,y,z,f" << std::endl;
+    for (size_t i = 0; i < source_grid.shape()[1]; ++i) {
+        save_file << source_grid(0, i) << "," << source_grid(1, i) << ","
+                  << source_grid(2, i) << "," << source_values(i) << std::endl;
+    }
+    save_file.close();
     return 0;
 }
