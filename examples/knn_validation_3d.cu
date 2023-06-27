@@ -127,7 +127,7 @@ int main() {
                     std::cout << ret_index[l] << " ";
                 }
                 std::cout << std::endl;
-                std::cout << "Actual indices: ";
+                std::cout << "Actual indices:   ";
                 for (size_t l = 0; l < k; ++l) {
                     std::cout << indices(l, i) << " ";
                 }
