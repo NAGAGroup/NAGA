@@ -77,3 +77,6 @@ target_link_libraries(nonlocal_lattice_boltzmann_3d PRIVATE naga)
 
 add_executable(lbm_streaming_tests_3d examples/lbm_streaming_tests_3d.cu)
 target_link_libraries(lbm_streaming_tests_3d PRIVATE naga)
+
+add_executable(knn_validation_3d examples/knn_validation_3d.cu)
+target_link_libraries(knn_validation_3d PRIVATE naga)
