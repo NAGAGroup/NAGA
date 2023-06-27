@@ -288,15 +288,6 @@ __host__ void batched_nearest_neighbors(
 
                         sclx::md_index_t<dimensions> part_search_idx = part_idx;
 
-                        if (idx[0] == query_points.size() / 2) {
-                            printf(
-                                "search_index_list: %d %d %d\n",
-                                search_index_list[0],
-                                search_index_list[1],
-                                search_index_list[2]
-                            );
-                        }
-
                         for (int i = 0; i < dimensions; i++) {
                             search_index_list[i] = search_index_list[i]
                                                  - search_radius + part_idx[i];
