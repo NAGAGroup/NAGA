@@ -119,7 +119,7 @@ class spherical_init_peak : public density_source_t {
     }
 };
 
-void save_solution(const sim_engine_t& engine, uint save_frame);
+std::future<void> save_solution(const sim_engine_t& engine, uint save_frame);
 
 int main() {
     auto examples_path = get_examples_dir();
@@ -154,7 +154,7 @@ int main() {
         0.2f
     );
     engine.init_domain(domain);
-    save_solution(engine, 0);
+    std::future<void> save_future = save_solution(engine, 0);
 
     std::cout << "Lattice time step: "
               << engine.parameters_.time_step
@@ -168,12 +168,12 @@ int main() {
     spherical_init_peak source{};
     engine.register_density_source(source);
 
-    int frames = 1000;
+    int sim_frame = 0;
     std::mutex frame_mutex;
     std::chrono::milliseconds total_time{0};
     uint save_frame = 0;
     value_type fps  = 60.0f;
-    while (engine.frame_number_ * engine.parameters_.time_step < 1.f) {
+    while (engine.frame_number_ * engine.parameters_.time_step < 2.f) {
         auto start = std::chrono::high_resolution_clock::now();
         engine.step_forward();
         auto end = std::chrono::high_resolution_clock::now();
@@ -187,23 +187,26 @@ int main() {
                       << "\n";
         }).detach();
 
+        ++sim_frame;
+
         if (engine.frame_number_ * engine.parameters_.time_step * fps
             < save_frame) {
             continue;
         }
 
-        save_solution(engine, save_frame);
+        save_future.get();
+        save_future = std::move(save_solution(engine, save_frame));
         ++save_frame;
     }
 
-    std::cout << "Average time per frame: " << total_time.count() / frames
+    std::cout << "Average time per frame: " << total_time.count() / sim_frame
               << "ms\n";
     std::cout << "Problem size: " << domain.points.shape()[1] << "\n";
 
     return 0;
 }
 
-void save_solution(const sim_engine_t& engine, uint save_frame) {
+std::future<void> save_solution(const sim_engine_t& engine, uint save_frame) {
     const auto& domain   = engine.domain_;
     const auto& solution = engine.solution_;
     static auto results_path
@@ -217,44 +220,49 @@ void save_solution(const sim_engine_t& engine, uint save_frame) {
         sclx::filesystem::create_directories(results_path);
     }
 
-    vtkNew<vtkPoints> points;
+    vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
     points->SetNumberOfPoints(static_cast<vtkIdType>(domain.points.shape()[1]));
 
-    vtkNew<get_vtk_array_type<value_type>::type> f;
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> f
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
     f->SetNumberOfComponents(lattice_t::size);
     f->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1]));
     f->SetName("f");
 
-    vtkNew<get_vtk_array_type<value_type>::type> density;
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> density
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
     density->SetNumberOfComponents(1);
     density->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1])
     );
     density->SetName("density");
 
-    vtkNew<get_vtk_array_type<value_type>::type> velocity;
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> velocity
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
     velocity->SetNumberOfComponents(3);
     velocity->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1])
     );
     velocity->SetName("velocity");
 
-    vtkNew<get_vtk_array_type<value_type>::type> absorption;
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> absorption
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
     absorption->SetNumberOfComponents(1);
     absorption->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape(
     )[1]));
     absorption->SetName("absorption");
 
-    vtkNew<get_vtk_array_type<value_type>::type> normals;
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> normals
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
     normals->SetNumberOfComponents(3);
     normals->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1])
     );
     normals->SetName("normals");
 
-    vtkNew<vtkIntArray> type;
+    vtkSmartPointer<vtkIntArray> type = vtkSmartPointer<vtkIntArray>::New();
     type->SetNumberOfComponents(1);
     type->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1]));
     type->SetName("type");
 
-    vtkNew<vtkCellArray> cells;
+    vtkSmartPointer<vtkCellArray> cells = vtkSmartPointer<vtkCellArray>::New();
     cells->Allocate(domain.points.shape()[1]);
 
     for (vtkIdType i = 0; i < domain.points.shape()[1]; ++i) {
@@ -312,22 +320,26 @@ void save_solution(const sim_engine_t& engine, uint save_frame) {
         cells->InsertNextCell(1, &i);
     }
 
-    std::string filename
-        = results_path
-        / (std::string("result.") + std::to_string(save_frame) + ".vtp");
-    vtkNew<vtkPolyData> polydata;
-    polydata->SetPoints(points);
-    polydata->GetPointData()->AddArray(f);
-    polydata->GetPointData()->AddArray(density);
-    polydata->GetPointData()->AddArray(velocity);
-    polydata->GetPointData()->AddArray(absorption);
-    polydata->GetPointData()->AddArray(normals);
-    polydata->GetPointData()->AddArray(type);
-    polydata->SetVerts(cells);
+    return std::async(std::launch::async, [=]() {
+        std::string filename
+            = results_path
+            / (std::string("result.") + std::to_string(save_frame) + ".vtp");
+        vtkSmartPointer<vtkPolyData> polydata
+            = vtkSmartPointer<vtkPolyData>::New();
+        polydata->SetPoints(points);
+        polydata->GetPointData()->AddArray(f);
+        polydata->GetPointData()->AddArray(density);
+        polydata->GetPointData()->AddArray(velocity);
+        polydata->GetPointData()->AddArray(absorption);
+        polydata->GetPointData()->AddArray(normals);
+        polydata->GetPointData()->AddArray(type);
+        polydata->SetVerts(cells);
 
-    vtkNew<vtkXMLPolyDataWriter> writer;
-    writer->SetFileName(filename.c_str());
-    writer->SetInputData(polydata);
-    writer->SetCompressorTypeToNone();
-    writer->Write();
+        vtkSmartPointer<vtkXMLPolyDataWriter> writer
+            = vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+        writer->SetFileName(filename.c_str());
+        writer->SetInputData(polydata);
+        writer->SetCompressorTypeToNone();
+        writer->Write();
+    });
 }
