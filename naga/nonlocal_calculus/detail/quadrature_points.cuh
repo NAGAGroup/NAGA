@@ -71,15 +71,18 @@ __constant__ static T unscaled_quad_points_3d[3 * num_quad_points_3d]{};
 template<class T>
 static bool is_quad_points_3d_init = false;
 
-template<class T>
-__host__ void calc_unscaled_quad_point_2d(size_t q_idx, T* x_k) {
+template<class PointType>
+__host__ __device__ void calc_unscaled_quad_point_2d(size_t q_idx, PointType &&x_k) {
 
     uint r_idx = q_idx % num_radial_quad_points;
     uint t_idx = q_idx / num_radial_quad_points;
 
-    T r                     = (const_radial_quad_points<T>[r_idx] + 1.f) / 2.f;
-    constexpr T theta_scale = 2 * math::pi<T> / (num_theta_quad_points - 1);
-    T theta                 = t_idx * theta_scale + math::pi<T> / 4.f;
+    using value_type = std::decay_t<decltype(x_k[0])>;
+
+    value_type r                     = (const_radial_quad_points<value_type>[r_idx] + 1.f) / 2.f;
+    constexpr value_type theta_scale = 3.f * math::pi<value_type> / 2.f
+                            / static_cast<float>(num_theta_quad_points - 1);
+    value_type theta = t_idx * theta_scale + math::pi<value_type> / 4.f;
 
     x_k[0] = r * math::cos(theta);
     x_k[1] = r * math::sin(theta);
@@ -119,20 +122,24 @@ __host__ void init_quad_points_2d() {
     is_quad_points_2d_init<T> = true;
 }
 
-template<class T>
-__host__ void calc_unscaled_quad_point_3d(size_t q_idx, T x_k[3]) {
+template<class PointType>
+__host__ __device__ void calc_unscaled_quad_point_3d(size_t q_idx, PointType &&x_k) {
 
     uint r_idx   = q_idx % num_radial_quad_points;
     uint t_idx   = (q_idx / num_radial_quad_points) % num_theta_quad_points;
-    uint phi_idx = q_idx / num_quad_points_2d;
+    uint phi_idx = q_idx / num_radial_quad_points / num_theta_quad_points;
 
-    T r = (const_radial_quad_points<T>[r_idx] + 1.f) / 2.f;
+    using value_type = std::decay_t<decltype(x_k[0])>;
 
-    constexpr T theta_scale = 2 * math::pi<T> / (num_theta_quad_points - 1);
-    T theta                 = t_idx * theta_scale + math::pi<T> / 4.f;
+    value_type r = (const_radial_quad_points<value_type>[r_idx] + 1.f) / 2.f;
 
-    //    constexpr T phi_scale = math::pi<T> / (num_phi_quad_points - 1);
-    T phi = (const_radial_quad_points<T>[phi_idx] + 1.f) * math::pi<T> / 2.f;
+    constexpr value_type theta_scale = 3.f * math::pi<value_type> / 2.f
+                            / static_cast<float>(num_theta_quad_points - 1);
+    value_type theta = t_idx * theta_scale + math::pi<value_type> / 4.f;
+
+    constexpr value_type phi_scale = 3.f * math::pi<value_type> / 2.f
+                          / static_cast<float>(num_theta_quad_points - 1) / 2.f;
+    value_type phi = phi_idx * phi_scale + math::pi<value_type> / 4.f / 2.f;
 
     x_k[0] = r * math::sin(phi) * math::cos(theta);
     x_k[1] = r * math::sin(phi) * math::sin(theta);

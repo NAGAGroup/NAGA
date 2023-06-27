@@ -178,23 +178,13 @@ void compute_divergence_weights(
                         Dimensions>::compute(delta, x_i, x_k);
 
                     const uint& r_idx = q % num_radial_quad_points;
-                    const uint& theta_idx
-                        = (q / num_radial_quad_points) % num_theta_quad_points;
                     T quad_weight
                         = const_radial_quad_weights<T>[r_idx] * delta / 2.f;
                     quad_weight *= 2.f * math::pi<T>
-                                 / static_cast<T>(num_theta_quad_points - 1)
-                                 / 2.f;
-                    if (theta_idx != 0
-                        && theta_idx != num_theta_quad_points - 1) {
-                        quad_weight *= 2.f;
-                    }
+                                 / static_cast<T>(num_theta_quad_points);
                     if (Dimensions == 3) {
-                        const uint& phi_idx
-                            = q
-                            / (num_radial_quad_points * num_theta_quad_points);
-                        quad_weight *= const_radial_quad_weights<T>[phi_idx]
-                                     * math::pi<T> / 2.f;
+                        quad_weight *= math::pi<T>
+                                     / static_cast<T>(num_phi_quad_points);
                     }
 
                     if (Dimensions == 2) {
@@ -207,8 +197,7 @@ void compute_divergence_weights(
                         );
                         T r       = math::loopless::norm<3>(xy);
                         T r_x1x2  = math::loopless::norm<2>(xy);
-                        T sin_phi = r_x1x2 / r;
-                        quad_weight *= math::loopless::pow<2>(r) * sin_phi;
+                        quad_weight *= r * r_x1x2;
                     }
 
                     for (uint index = 0;
