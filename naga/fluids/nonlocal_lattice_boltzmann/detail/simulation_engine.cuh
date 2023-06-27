@@ -530,7 +530,7 @@ class simulation_engine {
         source_future.wait();
         compute_macroscopic_values();
 
-//        collision_step();
+        collision_step();
         bounce_back_step();
 
         apply_density_source_terms(std::move(source_future));
