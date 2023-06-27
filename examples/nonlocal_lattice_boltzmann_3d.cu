@@ -328,5 +328,6 @@ void save_solution(const sim_engine_t& engine, uint save_frame) {
     vtkNew<vtkXMLPolyDataWriter> writer;
     writer->SetFileName(filename.c_str());
     writer->SetInputData(polydata);
+    writer->SetCompressorTypeToNone();
     writer->Write();
 }
