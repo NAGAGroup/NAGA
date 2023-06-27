@@ -43,7 +43,7 @@
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLPolyDataWriter.h>
 
-using value_type = double;
+using value_type = float;
 
 using lattice_t = naga::fluids::nonlocal_lbm::d3q27_lattice<value_type>;
 using sim_engine_t
@@ -148,7 +148,7 @@ int main() {
     engine.set_problem_parameters(
         0.0f,
         1.0f,
-        0.1f * domain.nodal_spacing * domain.nodal_spacing,
+        domain.nodal_spacing * domain.nodal_spacing,
         2.f,
         0.4f,
         0.2f
@@ -254,6 +254,9 @@ void save_solution(const sim_engine_t& engine, uint save_frame) {
     type->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1]));
     type->SetName("type");
 
+    vtkNew<vtkCellArray> cells;
+    cells->Allocate(domain.points.shape()[1]);
+
     for (vtkIdType i = 0; i < domain.points.shape()[1]; ++i) {
         points->SetPoint(
             i,
@@ -267,8 +270,7 @@ void save_solution(const sim_engine_t& engine, uint save_frame) {
             = naga::fluids::nonlocal_lbm::detail::lattice_interface<
                 lattice_t>::lattice_weights();
         for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
-            f_i[alpha] = (solution.lattice_distributions[alpha][i]
-                          - lat_weights.vals[alpha])
+            f_i[alpha] = (solution.lattice_distributions[alpha][i])
                        / lat_weights.vals[alpha];
         }
         f->SetTuple(i, f_i);
@@ -306,6 +308,8 @@ void save_solution(const sim_engine_t& engine, uint save_frame) {
         normals->SetTuple3(i, normal_i[0], normal_i[1], normal_i[2]);
         type->SetTuple1(i, type_i);
         absorption->SetTuple1(i, absorption_i);
+
+        cells->InsertNextCell(1, &i);
     }
 
     std::string filename
@@ -319,6 +323,7 @@ void save_solution(const sim_engine_t& engine, uint save_frame) {
     polydata->GetPointData()->AddArray(absorption);
     polydata->GetPointData()->AddArray(normals);
     polydata->GetPointData()->AddArray(type);
+    polydata->SetVerts(cells);
 
     vtkNew<vtkXMLPolyDataWriter> writer;
     writer->SetFileName(filename.c_str());
