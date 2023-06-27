@@ -71,7 +71,7 @@ field_function(const PointType& x, const int& alpha) {
     );
 
     auto perturbation
-        = 0.01f
+        = 0.1f
         * (1
            - naga::math::loopless::pow<2>(2 * distance / source_region.radius())
                  / 4)
@@ -83,11 +83,12 @@ field_function(const PointType& x, const int& alpha) {
 }
 
 int main() {
-    value_type grid_length   = 2.f;
-    value_type grid_spacing  = 0.015625;
-    value_type time_step     = 0.000976562;
-    size_t grid_size         = std::floor(grid_length / grid_spacing + 1);
-    grid_size                = (grid_size % 2 == 0) ? grid_size - 1 : grid_size;
+    value_type grid_length  = 2.f;
+    value_type grid_spacing = 0.03125;
+    value_type time_step    = 0.000976562;
+    size_t grid_size        = std::floor(grid_length / grid_spacing + 1);
+    grid_size               = (grid_size % 2 == 0) ? grid_size - 1 : grid_size;
+    grid_spacing            = grid_length / (grid_size - 1);
 
     size_t point_count = grid_size * grid_size * grid_size;
     sclx::array<value_type, 2> source_grid{3, point_count};
@@ -138,14 +139,27 @@ int main() {
     for (auto& f_alpha : advection_result) {
         f_alpha = sclx::array<value_type, 1>{point_count};
     }
+    sclx::array<value_type, 1> divergence_result[lattice_t::size];
+    for (auto& div_f_alpha : divergence_result) {
+        div_f_alpha = sclx::array<value_type, 1>{point_count};
+    }
+
     auto advection_op
         = naga::nonlocal_calculus::advection_operator<value_type, 3>::create(
+            source_grid
+        );
+    auto divergence_op
+        = naga::nonlocal_calculus::divergence_operator<value_type, 3>::create(
             source_grid
         );
 
     value_type time = 0.0f;
     uint save_frame = 0;
     value_type fps  = 60.0f;
+
+    size_t idx1 = 133087;
+    size_t idx2 = 141537;
+
     while (time < 1.f) {
         std::cout << "Time: " << time << "\n";
         for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
@@ -158,6 +172,17 @@ int main() {
 
             auto& f_alpha        = source_values[alpha];
             auto& f_alpha_result = advection_result[alpha];
+            auto& div_f_alpha    = divergence_result[alpha];
+
+            auto velocity_field_map
+                = naga::nonlocal_calculus::advection_operator<value_type, 3>::
+                    divergence_field_map<decltype(velocity_field)>(
+                        velocity_field,
+                        f_alpha,
+                        lattice_weights.vals[alpha]
+                    );
+
+            divergence_op.apply(velocity_field_map, div_f_alpha);
             advection_op.step_forward(
                 velocity_field,
                 f_alpha,
@@ -171,19 +196,27 @@ int main() {
             points->SetNumberOfPoints(point_count);
 
             vtkNew<vtkFloatArray> values;
-            values->SetName("values");
+            values->SetName("field_values");
             values->SetNumberOfComponents(lattice_t::size);
             values->SetNumberOfTuples(point_count);
+
+            vtkNew<vtkFloatArray> divergence;
+            divergence->SetName("divergence_values");
+            divergence->SetNumberOfComponents(lattice_t::size);
+            divergence->SetNumberOfTuples(point_count);
 
             vtkNew<vtkCellArray> cells;
             cells->Allocate(point_count);
 
             for (vtkIdType i = 0; i < point_count; ++i) {
                 value_type normalized_result[lattice_t::size];
+                value_type normalized_divergence[lattice_t::size];
+
                 for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
-                    normalized_result[alpha] = (advection_result[alpha][i]
-                                                - lattice_weights.vals[alpha])
+                    normalized_result[alpha] = (advection_result[alpha][i])
                                              / lattice_weights.vals[alpha];
+                    normalized_divergence[alpha] = divergence_result[alpha][i]
+                                                 / lattice_weights.vals[alpha];
                 }
                 points->SetPoint(
                     i,
@@ -192,12 +225,14 @@ int main() {
                     source_grid(2, i)
                 );
                 values->SetTuple(i, normalized_result);
+                divergence->SetTuple(i, normalized_divergence);
                 cells->InsertNextCell(1, &i);
             }
 
             vtkNew<vtkPolyData> polydata;
             polydata->SetPoints(points);
             polydata->GetPointData()->AddArray(values);
+            polydata->GetPointData()->AddArray(divergence);
             polydata->SetVerts(cells);
 
             vtkNew<vtkXMLPolyDataWriter> writer;
