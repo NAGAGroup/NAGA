@@ -84,9 +84,8 @@ field_function(const PointType& x, const int& alpha) {
 
 int main() {
     value_type grid_length   = 2.f;
-    value_type spacing_scale = 1.f;
-    value_type grid_spacing  = value_type{0.03125} * spacing_scale;
-    value_type time_step     = value_type{9.76563e-05} * spacing_scale;
+    value_type grid_spacing  = 0.015625;
+    value_type time_step     = 0.000976562;
     size_t grid_size         = std::floor(grid_length / grid_spacing + 1);
     grid_size                = (grid_size % 2 == 0) ? grid_size - 1 : grid_size;
 
