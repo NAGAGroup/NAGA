@@ -88,39 +88,39 @@ __host__ __device__ void calc_unscaled_quad_point_2d(size_t q_idx, PointType &&x
     x_k[1] = r * math::sin(theta);
 }
 
-template<class T>
-__host__ void init_quad_points_2d() {
-    if (is_quad_points_2d_init<T>) {
-        return;
-    }
-
-    T quad_points[2 * num_quad_points_2d];
-
-    for (uint q_idx = 0; q_idx < num_quad_points_2d; ++q_idx) {
-        calc_unscaled_quad_point_2d(q_idx, quad_points + 2 * q_idx);
-    }
-
-    int num_devices       = sclx::cuda::traits::device_count();
-    int current_device    = sclx::cuda::traits::current_device();
-    auto current_location = std::experimental::source_location::current();
-    for (int dev_idx = 0; dev_idx < num_devices; ++dev_idx) {
-        sclx::cuda::set_device(dev_idx);
-        auto err = cudaMemcpyToSymbol(
-            unscaled_quad_points_2d<T>,
-            quad_points,
-            2 * num_quad_points_2d * sizeof(T),
-            0,
-            cudaMemcpyHostToDevice
-        );
-        sclx::cuda::cuda_exception::raise_if_not_success(
-            err,
-            current_location,
-            "naga::nonlocal_calculus::detail::"
-        );
-    }
-    sclx::cuda::set_device(current_device);
-    is_quad_points_2d_init<T> = true;
-}
+//template<class T>
+//__host__ void init_quad_points_2d() {
+//    if (is_quad_points_2d_init<T>) {
+//        return;
+//    }
+//
+//    T quad_points[2 * num_quad_points_2d];
+//
+//    for (uint q_idx = 0; q_idx < num_quad_points_2d; ++q_idx) {
+//        calc_unscaled_quad_point_2d(q_idx, quad_points + 2 * q_idx);
+//    }
+//
+//    int num_devices       = sclx::cuda::traits::device_count();
+//    int current_device    = sclx::cuda::traits::current_device();
+//    auto current_location = std::experimental::source_location::current();
+//    for (int dev_idx = 0; dev_idx < num_devices; ++dev_idx) {
+//        sclx::cuda::set_device(dev_idx);
+//        auto err = cudaMemcpyToSymbol(
+//            unscaled_quad_points_2d<T>,
+//            quad_points,
+//            2 * num_quad_points_2d * sizeof(T),
+//            0,
+//            cudaMemcpyHostToDevice
+//        );
+//        sclx::cuda::cuda_exception::raise_if_not_success(
+//            err,
+//            current_location,
+//            "naga::nonlocal_calculus::detail::"
+//        );
+//    }
+//    sclx::cuda::set_device(current_device);
+//    is_quad_points_2d_init<T> = true;
+//}
 
 template<class PointType>
 __host__ __device__ void calc_unscaled_quad_point_3d(size_t q_idx, PointType &&x_k) {
@@ -146,39 +146,39 @@ __host__ __device__ void calc_unscaled_quad_point_3d(size_t q_idx, PointType &&x
     x_k[2] = r * math::cos(phi);
 }
 
-template<class T>
-__host__ void init_quad_points_3d() {
-    if (is_quad_points_3d_init<T>) {
-        return;
-    }
-
-    T quad_points[3 * num_quad_points_3d];
-
-    for (uint q_idx = 0; q_idx < num_quad_points_3d; ++q_idx) {
-        calc_unscaled_quad_point_3d(q_idx, quad_points + 3 * q_idx);
-    }
-
-    int num_devices       = sclx::cuda::traits::device_count();
-    int current_device    = sclx::cuda::traits::current_device();
-    auto current_location = std::experimental::source_location::current();
-    for (int dev_idx = 0; dev_idx < num_devices; ++dev_idx) {
-        sclx::cuda::set_device(dev_idx);
-        auto err = cudaMemcpyToSymbol(
-            unscaled_quad_points_3d<T>,
-            quad_points,
-            3 * num_quad_points_3d * sizeof(T),
-            0,
-            cudaMemcpyHostToDevice
-        );
-        sclx::cuda::cuda_exception::raise_if_not_success(
-            err,
-            current_location,
-            "naga::nonlocal_calculus::detail::"
-        );
-    }
-    sclx::cuda::set_device(current_device);
-    is_quad_points_3d_init<T> = true;
-}
+//template<class T>
+//__host__ void init_quad_points_3d() {
+//    if (is_quad_points_3d_init<T>) {
+//        return;
+//    }
+//
+//    T quad_points[3 * num_quad_points_3d];
+//
+//    for (uint q_idx = 0; q_idx < num_quad_points_3d; ++q_idx) {
+//        calc_unscaled_quad_point_3d(q_idx, quad_points + 3 * q_idx);
+//    }
+//
+//    int num_devices       = sclx::cuda::traits::device_count();
+//    int current_device    = sclx::cuda::traits::current_device();
+//    auto current_location = std::experimental::source_location::current();
+//    for (int dev_idx = 0; dev_idx < num_devices; ++dev_idx) {
+//        sclx::cuda::set_device(dev_idx);
+//        auto err = cudaMemcpyToSymbol(
+//            unscaled_quad_points_3d<T>,
+//            quad_points,
+//            3 * num_quad_points_3d * sizeof(T),
+//            0,
+//            cudaMemcpyHostToDevice
+//        );
+//        sclx::cuda::cuda_exception::raise_if_not_success(
+//            err,
+//            current_location,
+//            "naga::nonlocal_calculus::detail::"
+//        );
+//    }
+//    sclx::cuda::set_device(current_device);
+//    is_quad_points_3d_init<T> = true;
+//}
 
 template<class T, uint Dimensions>
 class quadrature_point_map {
@@ -203,52 +203,55 @@ class quadrature_point_map {
             );
         }
 
-        if constexpr (Dimensions == 2) {
-            init_quad_points_2d<T>();
-            if (!is_host_unscaled_quad_points_init_) {
-                cudaMemcpyFromSymbol(
-                    host_unscaled_quad_points_,
-                    unscaled_quad_points_2d<T>,
-                    2 * num_quad_points_2d * sizeof(T),
-                    0,
-                    cudaMemcpyDeviceToHost
-                );
-                is_host_unscaled_quad_points_init_ = true;
-            }
-        } else {
-            init_quad_points_3d<T>();
-            if (!is_host_unscaled_quad_points_init_) {
-                cudaMemcpyFromSymbol(
-                    host_unscaled_quad_points_,
-                    unscaled_quad_points_3d<T>,
-                    3 * num_quad_points_3d * sizeof(T),
-                    0,
-                    cudaMemcpyDeviceToHost
-                );
-                is_host_unscaled_quad_points_init_ = true;
-            }
-        }
+//        if constexpr (Dimensions == 2) {
+//            init_quad_points_2d<T>();
+//            if (!is_host_unscaled_quad_points_init_) {
+//                cudaMemcpyFromSymbol(
+//                    host_unscaled_quad_points_,
+//                    unscaled_quad_points_2d<T>,
+//                    2 * num_quad_points_2d * sizeof(T),
+//                    0,
+//                    cudaMemcpyDeviceToHost
+//                );
+//                is_host_unscaled_quad_points_init_ = true;
+//            }
+//        } else {
+//            init_quad_points_3d<T>();
+//            if (!is_host_unscaled_quad_points_init_) {
+//                cudaMemcpyFromSymbol(
+//                    host_unscaled_quad_points_,
+//                    unscaled_quad_points_3d<T>,
+//                    3 * num_quad_points_3d * sizeof(T),
+//                    0,
+//                    cudaMemcpyDeviceToHost
+//                );
+//                is_host_unscaled_quad_points_init_ = true;
+//            }
+//        }
     }
 
     __host__ __device__ point_type operator[](const sclx::index_t& index
     ) const {
-        const T* unscaled_quad_points;
-#ifdef __CUDA_ARCH__
-        if constexpr (Dimensions == 2) {
-            unscaled_quad_points = unscaled_quad_points_2d<T>;
-        } else {
-            unscaled_quad_points = unscaled_quad_points_3d<T>;
-        }
-#else
-        unscaled_quad_points = host_unscaled_quad_points_;
-#endif
+//        const T* unscaled_quad_points;
+//#ifdef __CUDA_ARCH__
+//        if constexpr (Dimensions == 2) {
+//            unscaled_quad_points = unscaled_quad_points_2d<T>;
+//        } else {
+//            unscaled_quad_points = unscaled_quad_points_3d<T>;
+//        }
+//#else
+//        unscaled_quad_points = host_unscaled_quad_points_;
+//#endif
         point_t<T, Dimensions> point;
         T interaction_radius = interaction_radii_[index / num_quad_points_];
+        if constexpr (Dimensions == 2) {
+            calc_unscaled_quad_point_2d(index % num_quad_points_, point);
+        } else {
+            calc_unscaled_quad_point_3d(index % num_quad_points_, point);
+        }
         for (uint d = 0; d < Dimensions; ++d) {
-            point[d] = query_points_(d, index / num_quad_points_);
-            point[d] += interaction_radius
-                      * unscaled_quad_points
-                            [Dimensions * (index % num_quad_points_) + d];
+            point[d] *= interaction_radius;
+            point[d] += query_points_(d, index / num_quad_points_);
         }
 
         return point;
@@ -269,16 +272,16 @@ class quadrature_point_map {
 
     static constexpr int num_quad_points_
         = Dimensions == 2 ? num_quad_points_2d : num_quad_points_3d;
-    static T host_unscaled_quad_points_[Dimensions * num_quad_points_];
-    static bool is_host_unscaled_quad_points_init_;
+//    static T host_unscaled_quad_points_[Dimensions * num_quad_points_];
+//    static bool is_host_unscaled_quad_points_init_;
 };
 
-template<class T, uint Dimensions>
-T quadrature_point_map<T, Dimensions>::host_unscaled_quad_points_
-    [Dimensions * num_quad_points_];
-template<class T, uint Dimensions>
-bool quadrature_point_map<T, Dimensions>::is_host_unscaled_quad_points_init_
-    = false;
+//template<class T, uint Dimensions>
+//T quadrature_point_map<T, Dimensions>::host_unscaled_quad_points_
+//    [Dimensions * num_quad_points_];
+//template<class T, uint Dimensions>
+//bool quadrature_point_map<T, Dimensions>::is_host_unscaled_quad_points_init_
+//    = false;
 
 template<class T>
 void get_closest_neighbor_distances(
