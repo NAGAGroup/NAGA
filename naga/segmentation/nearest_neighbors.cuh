@@ -35,6 +35,7 @@
 #include "../distance_functions.cuh"
 #include "../point_map.cuh"
 #include "nd_cubic_segmentation.cuh"
+#include <thrust/random.h>
 #include <tuple>
 
 namespace naga::segmentation {
@@ -208,6 +209,23 @@ __host__ void batched_nearest_neighbors(
                 bool new_points_found = true;
                 int search_index_list[dimensions]{};
 
+                constexpr size_t prime_numbers[]{
+                    2305843009213693951,
+                    82589933,
+                    77232917,
+                    2147483647,
+                    305175781,
+                    2521008887,
+                    63018038201,
+                    489133282872437279,
+                    15285151248481,
+                    228204732751,
+                    65610001};
+                thrust::default_random_engine rng(idx[0]);
+                thrust::uniform_int_distribution<int> dist(
+                    0,
+                    sizeof(prime_numbers) / sizeof(size_t) - 1
+                );
                 while ((new_points_found || n_found < k)
                        && search_radius <= max_search_radius) {
 
@@ -217,11 +235,14 @@ __host__ void batched_nearest_neighbors(
 
                     size_t max_linear_search_idx
                         = math::loopless::pow<dimensions>(search_length);
+                    size_t prime_number = prime_numbers[dist(rng)];
+                    size_t state        = 0;
                     for (size_t linear_search_idx = 0;
                          linear_search_idx < max_linear_search_idx;
                          ++linear_search_idx) {
 
-                        size_t linear_search_idx_tmp = linear_search_idx;
+                        state = (state + prime_number) % max_linear_search_idx;
+                        size_t linear_search_idx_tmp = state;
                         for (int i = 0; i < dimensions; i++) {
                             search_index_list[i]
                                 = linear_search_idx_tmp % search_length;
