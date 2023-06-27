@@ -234,34 +234,68 @@ __host__ void batched_nearest_neighbors(
                     int search_length = 2 * search_radius + 1;
 
                     size_t max_linear_search_idx
-                        = math::loopless::pow<dimensions>(search_length);
+                        = 2 * dimensions
+                        * math::loopless::pow<dimensions - 1>(search_length);
+                    max_linear_search_idx
+                        = search_length == 1 ? 1 : max_linear_search_idx;
                     size_t prime_number = prime_numbers[dist(rng)];
                     size_t state        = 0;
+
                     for (size_t linear_search_idx = 0;
                          linear_search_idx < max_linear_search_idx;
                          ++linear_search_idx) {
 
+                        bool is_valid_linear_index = true;
+
                         state = (state + prime_number) % max_linear_search_idx;
                         size_t linear_search_idx_tmp = state;
-                        for (int i = 0; i < dimensions; i++) {
-                            search_index_list[i]
+
+                        int locked_dim = (linear_search_idx_tmp / 2
+                                          / math::loopless::pow<dimensions - 1>(
+                                              search_length
+                                          ))
+                                       % dimensions;
+
+                        search_index_list[locked_dim]
+                            = (linear_search_idx
+                               / math::loopless::pow<dimensions - 1>(
+                                   search_length
+                               )) % 2
+                                   == 0
+                                ? 0
+                                : search_length - 1;
+
+                        linear_search_idx_tmp
+                            -= (linear_search_idx_tmp
+                                / math::loopless::pow<dimensions - 1>(
+                                    search_length
+                                ))
+                             * math::loopless::pow<dimensions - 1>(search_length
+                             );
+
+                        for (int i = 0; i < dimensions - 1; i++) {
+                            search_index_list[(locked_dim + i + 1) % dimensions]
                                 = linear_search_idx_tmp % search_length;
                             linear_search_idx_tmp /= search_length;
                         }
-
-                        bool is_valid_linear_index = false;
-                        for (int i = 0; i < dimensions; i++) {
-                            if (search_index_list[i] == 0
-                                || search_index_list[i] == search_length - 1) {
-                                is_valid_linear_index = true;
-                                break;
-                            }
-                        }
-                        if (!is_valid_linear_index) {
-                            continue;
+                        for (int i = 0; i < locked_dim; ++i) {
+                            is_valid_linear_index
+                                = is_valid_linear_index
+                               && !(search_index_list[i] == 0
+                                    || search_index_list[i] == search_length - 1
+                               );
                         }
 
                         sclx::md_index_t<dimensions> part_search_idx = part_idx;
+
+                        if (idx[0] == query_points.size() / 2) {
+                            printf(
+                                "search_index_list: %d %d %d\n",
+                                search_index_list[0],
+                                search_index_list[1],
+                                search_index_list[2]
+                            );
+                        }
 
                         for (int i = 0; i < dimensions; i++) {
                             search_index_list[i] = search_index_list[i]
