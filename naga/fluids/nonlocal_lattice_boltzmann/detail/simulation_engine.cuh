@@ -209,7 +209,7 @@ class simulation_engine {
         sclx::fill(density_source_term_, value_type{0});
         std::future<void> fut = std::async(std::launch::async, []() {});
 
-        for (density_source<value_type>* source : density_sources_) {
+        for (density_source<Lattice>* source : density_sources_) {
             fut.get();
             auto fut_new = source->add_density_source(
                 domain_,
@@ -545,8 +545,9 @@ class simulation_engine {
         init_distribution();
     }
 
-    void register_density_source(density_source<value_type>& source) {
+    void register_density_source(density_source<Lattice>& source) {
         density_sources_.push_back(&source);
+        source.notify_registered(this);
     }
 
     void init_distribution() {
@@ -582,6 +583,12 @@ class simulation_engine {
         });
     }
 
+    ~simulation_engine() {
+        for (auto& source : density_sources_) {
+            source->registered_engine_ = nullptr;
+        }
+    }
+
     problem_parameters<value_type> parameters_{};
     state_variables<lattice_type> solution_{};
     simulation_domain<value_type> domain_{};
@@ -597,8 +604,21 @@ class simulation_engine {
     sclx::array<value_type, 1> temporary_distributions_{};
     uint frame_number_ = 0;
 
-    std::vector<density_source<value_type>*> density_sources_{};
+    std::vector<density_source<Lattice>*> density_sources_{};
 };
+
+template<class Lattice>
+void unregister_density_source(
+    simulation_engine<Lattice>& engine,
+    density_source<Lattice>* source
+) {
+    auto& sources = engine.density_sources_;
+    auto it       = std::find(sources.begin(), sources.end(), source);
+    if (it != sources.end()) {
+        sources.erase(it);
+    }
+    source->registered_engine_ = nullptr;
+}
 
 // template class simulation_engine<d2q9_lattice<float>>;
 

@@ -39,7 +39,7 @@ using lattice_t = naga::fluids::nonlocal_lbm::d2q9_lattice<value_type>;
 using sim_engine_t
     = naga::fluids::nonlocal_lbm::detail::simulation_engine<lattice_t>;
 
-using density_source_t = naga::fluids::nonlocal_lbm::density_source<value_type>;
+using density_source_t = naga::fluids::nonlocal_lbm::density_source<lattice_t>;
 using simulation_domain_t
     = naga::fluids::nonlocal_lbm::simulation_domain<const value_type>;
 using problem_parameters_t

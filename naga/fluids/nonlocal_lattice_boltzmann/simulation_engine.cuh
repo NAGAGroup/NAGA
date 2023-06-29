@@ -72,7 +72,7 @@ class simulation_engine {
 
     void reset() { engine_ptr_->reset(); }
 
-    void register_density_source(density_source<value_type>& source) {
+    void register_density_source(density_source<Lattice>& source) {
         engine_ptr_->register_density_source(source);
     }
 

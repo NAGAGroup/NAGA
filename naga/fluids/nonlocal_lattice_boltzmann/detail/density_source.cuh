@@ -1,7 +1,7 @@
 
 // BSD 3-Clause License
 //
-// Copyright (c) 2023 Jack Myers
+// Copyright (c) 2023
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -32,54 +32,20 @@
 
 #pragma once
 
-#include "detail/density_source.cuh"
-#include "simulation_domain.cuh"
-#include "simulation_variables.cuh"
-
 namespace naga::fluids::nonlocal_lbm {
+// forward declarations
+template<class T>
+class density_source;
+}  // namespace naga::fluids::nonlocal_lbm
+
+namespace naga::fluids::nonlocal_lbm::detail {
+// forward declarations
+template<class Lattice>
+class simulation_engine;
 
 template<class Lattice>
-class density_source {
-  public:
-    using value_type = typename Lattice::value_type;
-
-    virtual std::future<void> add_density_source(
-        const simulation_domain<const value_type>& domain,
-        const problem_parameters<value_type>& params,
-        const value_type& time,
-        sclx::array<value_type, 1>& source_terms
-    ) = 0;
-
-    void unregister() {
-        if (!registered_engine_) {
-            return;
-        }
-        detail::unregister_density_source(*registered_engine_, this);
-    }
-
-    virtual ~density_source() {
-        unregister();
-    }
-
-  protected:
-    friend class detail::simulation_engine<Lattice>;
-
-    template <class Lattice_>
-    friend void detail::unregister_density_source(
-        detail::simulation_engine<Lattice_>& engine,
-        density_source<Lattice_>* source
-    );
-
-    void notify_registered(detail::simulation_engine<Lattice> *engine) {
-        if (registered_engine_) {
-            sclx::throw_exception<std::runtime_error>(
-                "Density source already registered with an engine.",
-                "naga::fluids::nonlocal_lbm::density_source::"
-            );
-        }
-        registered_engine_ = engine;
-    }
-    detail::simulation_engine<Lattice>* registered_engine_ = nullptr;
-};
-
-}  // namespace naga::fluids::nonlocal_lbm
+void unregister_density_source(
+    simulation_engine<Lattice>& engine,
+    density_source<Lattice>* source
+);
+}  // namespace naga::fluids::nonlocal_lbm::detail

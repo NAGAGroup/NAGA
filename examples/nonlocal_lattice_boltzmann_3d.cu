@@ -49,7 +49,7 @@ using lattice_t = naga::fluids::nonlocal_lbm::d3q27_lattice<value_type>;
 using sim_engine_t
     = naga::fluids::nonlocal_lbm::detail::simulation_engine<lattice_t>;
 
-using density_source_t = naga::fluids::nonlocal_lbm::density_source<value_type>;
+using density_source_t = naga::fluids::nonlocal_lbm::density_source<lattice_t>;
 using simulation_domain_t
     = naga::fluids::nonlocal_lbm::simulation_domain<const value_type>;
 using problem_parameters_t
@@ -168,40 +168,40 @@ int main() {
     spherical_init_peak source{};
     engine.register_density_source(source);
 
-    int sim_frame = 0;
-    std::mutex frame_mutex;
-    std::chrono::milliseconds total_time{0};
-    uint save_frame = 0;
-    value_type fps  = 60.0f;
-    while (engine.frame_number_ * engine.parameters_.time_step < 2.f) {
-        auto start = std::chrono::high_resolution_clock::now();
-        engine.step_forward();
-        auto end = std::chrono::high_resolution_clock::now();
-        total_time += std::chrono::duration_cast<std::chrono::milliseconds>(
-            end - start
-        );
-        std::thread([&] {
-            std::lock_guard<std::mutex> lock(frame_mutex);
-            std::cout << "Time: "
-                      << engine.frame_number_ * engine.parameters_.time_step
-                      << "\n";
-        }).detach();
-
-        ++sim_frame;
-
-        if (engine.frame_number_ * engine.parameters_.time_step * fps
-            < save_frame) {
-            continue;
-        }
-
-        save_future.get();
-        save_future = std::move(save_solution(engine, save_frame));
-        ++save_frame;
-    }
-
-    std::cout << "Average time per frame: " << total_time.count() / sim_frame
-              << "ms\n";
-    std::cout << "Problem size: " << domain.points.shape()[1] << "\n";
+//    int sim_frame = 0;
+//    std::mutex frame_mutex;
+//    std::chrono::milliseconds total_time{0};
+//    uint save_frame = 0;
+//    value_type fps  = 60.0f;
+//    while (engine.frame_number_ * engine.parameters_.time_step < 2.f) {
+//        auto start = std::chrono::high_resolution_clock::now();
+//        engine.step_forward();
+//        auto end = std::chrono::high_resolution_clock::now();
+//        total_time += std::chrono::duration_cast<std::chrono::milliseconds>(
+//            end - start
+//        );
+//        std::thread([&] {
+//            std::lock_guard<std::mutex> lock(frame_mutex);
+//            std::cout << "Time: "
+//                      << engine.frame_number_ * engine.parameters_.time_step
+//                      << "\n";
+//        }).detach();
+//
+//        ++sim_frame;
+//
+//        if (engine.frame_number_ * engine.parameters_.time_step * fps
+//            < save_frame) {
+//            continue;
+//        }
+//
+//        save_future.get();
+//        save_future = std::move(save_solution(engine, save_frame));
+//        ++save_frame;
+//    }
+//
+//    std::cout << "Average time per frame: " << total_time.count() / sim_frame
+//              << "ms\n";
+//    std::cout << "Problem size: " << domain.points.shape()[1] << "\n";
 
     return 0;
 }
