@@ -73,19 +73,14 @@ class uniform_grid_iterator {
         }
     }
 
-    uniform_grid_iterator(const uniform_grid_iterator& other
-    ) = default;
+    uniform_grid_iterator(const uniform_grid_iterator& other) = default;
 
-    uniform_grid_iterator(uniform_grid_iterator&& other
-    ) noexcept
+    uniform_grid_iterator(uniform_grid_iterator&& other) noexcept = default;
+
+    uniform_grid_iterator& operator=(const uniform_grid_iterator& other)
         = default;
 
-    uniform_grid_iterator&
-    operator=(const uniform_grid_iterator& other)
-        = default;
-
-    uniform_grid_iterator&
-    operator=(uniform_grid_iterator&& other) noexcept
+    uniform_grid_iterator& operator=(uniform_grid_iterator&& other) noexcept
         = default;
 
     __host__ __device__ value_type operator*() const {
@@ -195,6 +190,9 @@ class uniform_grid_iterator {
 };
 
 template<class T, uint Dimensions>
+class uniform_grid_inspector;
+
+template<class T, uint Dimensions>
 class uniform_grid {
   public:
     using iterator   = uniform_grid_iterator<T, Dimensions>;
@@ -230,18 +228,64 @@ class uniform_grid {
         return begin_[n];
     }
 
-    __host__ __device__ bool is_boundary_index(const sclx::index_t& n) const {
+  private:
+    iterator begin_;
+};
+
+template<class T, uint Dimensions>
+class uniform_grid_inspector {
+    using grid_t = uniform_grid<T, Dimensions>;
+
+    __host__ __device__ static bool
+    is_boundary_index(const grid_t& grid, const sclx::index_t& n) {
         for (uint i = 0; i < Dimensions; ++i) {
-            if (n % (begin_.grid_size_[i] - 1) == 0) {
+            if (n % (grid.begin_.grid_size_[i] - 1) == 0) {
                 return true;
             }
-            n /= (begin_.grid_size_[i] - 1);
+            n /= (grid.begin_.grid_size_[i] - 1);
         }
         return false;
     }
 
-  private:
-    iterator begin_;
+    __host__ __device__ static typename grid_t::value_type get_boundary_normal(
+        const grid_t& grid,
+        const sclx::index_t& boundary_index
+    ) {
+        if (!is_boundary_index(grid, boundary_index)) {
+#ifdef __CUDA_ARCH__
+            printf("get_boundary_normal called with non-boundary index\n");
+            return grid_t::value_type{};
+#else
+            sclx::throw_exception<std::invalid_argument>(
+                "get_boundary_normal called with non-boundary index",
+                "naga::ranges::uniform_grid::"
+            );
+#endif
+        }
+
+        size_t dim_indices[Dimensions];
+        for (uint i = 0; i < Dimensions; ++i) {
+            dim_indices[i] = boundary_index % (grid.begin_.grid_size_[i] - 1);
+            boundary_index /= (grid.begin_.grid_size_[i] - 1);
+        }
+
+        typename grid_t::value_type normal;
+
+        for (uint i = 0; i < Dimensions; ++i) {
+            if (dim_indices[i] == 0) {
+                normal[i] = -1;
+            } else if (dim_indices[i] == grid.begin_.grid_size_[i] - 2) {
+                normal[i] = 1;
+            } else {
+                normal[i] = 0;
+            }
+        }
+
+        auto norm = math::loopless::norm<Dimensions>(normal);
+        if (norm > 0) {
+            normal /= norm;
+        }
+    }
 };
 
 template class uniform_grid_iterator<float, 2>;
