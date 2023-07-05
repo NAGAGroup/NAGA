@@ -288,6 +288,4 @@ class uniform_grid_inspector {
     }
 };
 
-template class uniform_grid_iterator<float, 2>;
-
 }  // namespace naga::ranges
