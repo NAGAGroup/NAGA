@@ -38,6 +38,7 @@
 #include "../lattices.cuh"
 #include "../simulation_domain.cuh"
 #include "../simulation_variables.cuh"
+#include "../node_provider.cuh"
 #include "naga/fluids/nonlocal_lattice_boltzmann/simulation_variables.cuh"
 #include <scalix/fill.cuh>
 
@@ -107,7 +108,7 @@ class simulation_engine {
         parameters_.time_step       = time_step;
     }
 
-    void init_domain(simulation_domain<value_type> domain) {
+    void init_domain(const simulation_domain<value_type> &domain) {
         domain_ = domain;
         if (domain_.points.shape()[0] != dimensions) {
             sclx::throw_exception<std::invalid_argument>(
