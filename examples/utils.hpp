@@ -33,6 +33,7 @@
 #pragma once
 
 #include <scalix/filesystem.hpp>
+#include <fstream>
 
 sclx::filesystem::path get_examples_dir() {
     return sclx::filesystem::path(__FILE__).parent_path();
