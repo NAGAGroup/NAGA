@@ -80,3 +80,6 @@ target_link_libraries(lbm_streaming_tests_3d PRIVATE naga)
 
 add_executable(knn_validation_3d examples/knn_validation_3d.cu)
 target_link_libraries(knn_validation_3d PRIVATE naga)
+
+add_executable(ranges_example examples/ranges_example.cu)
+target_link_libraries(ranges_example PRIVATE naga)
