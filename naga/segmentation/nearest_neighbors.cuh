@@ -119,17 +119,42 @@ __host__ void batched_nearest_neighbors(
     constexpr uint dimensions
         = point_map_traits<PointMapType>::point_traits::dimensions;
 
+    uint max_shared_mem_per_block = std::numeric_limits<uint>::max();
+    int device_count               = sclx::cuda::traits::device_count();
+    int current_device = sclx::cuda::traits::current_device();
+    for (int d = 0; d < device_count; ++d) {
+        sclx::cuda::set_device(d);
+        cudaDeviceProp props{};
+        cudaGetDeviceProperties(&props, d);
+        max_shared_mem_per_block = std::min(
+            max_shared_mem_per_block,
+            static_cast<uint>(props.sharedMemPerBlock)
+        );
+    }
+    sclx::cuda::set_device(current_device);
+
+
     uint shared_mem_per_thread
         = sizeof(value_type) * (k + dimensions) + sizeof(sclx::index_t) * k;
-    uint max_shared_mem_per_block = /*48KB*/ 49152;
     uint max_threads_per_block
         = max_shared_mem_per_block / shared_mem_per_thread;
+    for (int d = 0; d < device_count; ++d) {
+        sclx::cuda::set_device(d);
+        cudaDeviceProp props{};
+        cudaGetDeviceProperties(&props, d);
+        max_threads_per_block = std::min(
+            max_threads_per_block,
+            static_cast<uint>(props.maxThreadsPerBlock)
+        );
+    }
+    sclx::cuda::set_device(current_device);
     if (max_threads_per_block == 0) {
         sclx::throw_exception<std::invalid_argument>(
             "Requested number of neighbors is too large for shared memory.",
             "naga::"
         );
     }
+
 
     for (int i = 0; i < dimensions; i++) {
         if (segmented_ref_points.shape()[i] > std::numeric_limits<int>::max()) {
