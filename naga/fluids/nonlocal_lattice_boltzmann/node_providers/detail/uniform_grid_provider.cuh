@@ -58,6 +58,17 @@ __host__ void assign_bulk_info(
 );
 
 template<class Lattice>
+__host__ void assign_bulk_and_layer_info(
+    const uniform_grid_provider<Lattice>& provider,
+    const sclx::array<typename Lattice::value_type, 2>&
+        boundary_distances_squared,
+    const size_t& layer_points_offset,
+    const sclx::array<typename Lattice::value_type, 2>& old_points,
+    sclx::array<typename Lattice::value_type, 2>& points,
+    sclx::array<typename Lattice::value_type, 1>& absorption_coefficients
+);
+
+template<class Lattice>
 struct boundary_count_criteria_functor {
     using value_type                 = typename Lattice::value_type;
     constexpr static uint dimensions = Lattice::dimensions;
@@ -69,6 +80,19 @@ struct boundary_count_criteria_functor {
     }
 
     range_type grid_range_;
+};
+
+template<class Lattice>
+struct layer_count_criteria_functor {
+    using value_type                 = typename Lattice::value_type;
+    constexpr static uint dimensions = Lattice::dimensions;
+
+    __host__ __device__ bool
+    operator()(const value_type& boundary_distance_squared) const {
+        return boundary_distance_squared <= layer_thickness_ * layer_thickness_;
+    }
+
+    value_type layer_thickness_;
 };
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

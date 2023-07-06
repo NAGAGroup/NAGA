@@ -41,7 +41,7 @@ using sim_engine_t
 
 using density_source_t = naga::fluids::nonlocal_lbm::density_source<lattice_t>;
 using simulation_domain_t
-    = naga::fluids::nonlocal_lbm::simulation_domain<const value_type>;
+    = naga::fluids::nonlocal_lbm::simulation_nodes<const value_type>;
 using problem_parameters_t
     = naga::fluids::nonlocal_lbm::problem_parameters<value_type>;
 using region_t = naga::regions::hypersphere<value_type, 2>;
@@ -126,7 +126,7 @@ int main() {
         };
 
     auto domain
-        = naga::fluids::nonlocal_lbm::simulation_domain<value_type>::import <2>(
+        = naga::fluids::nonlocal_lbm::simulation_nodes<value_type>::import <2>(
             outer_boundary,
             inner_boundaries,
             .005f

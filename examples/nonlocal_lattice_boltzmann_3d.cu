@@ -32,6 +32,7 @@
 #include "naga/fluids/nonlocal_lattice_boltzmann/simulation_variables.cuh"
 #include "utils.hpp"
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
+#include <naga/fluids/nonlocal_lattice_boltzmann/node_providers/uniform_grid_provider.cuh>
 #include <naga/regions/hypersphere.cuh>
 
 #include <vtkDoubleArray.h>
@@ -51,11 +52,14 @@ using sim_engine_t
 
 using density_source_t = naga::fluids::nonlocal_lbm::density_source<lattice_t>;
 using simulation_domain_t
-    = naga::fluids::nonlocal_lbm::simulation_domain<const value_type>;
+    = naga::fluids::nonlocal_lbm::simulation_nodes<const value_type>;
 using problem_parameters_t
     = naga::fluids::nonlocal_lbm::problem_parameters<value_type>;
 using region_t   = naga::regions::hypersphere<value_type, 3>;
 using solution_t = naga::fluids::nonlocal_lbm::state_variables<lattice_t>;
+
+using node_provider_t
+    = naga::fluids::nonlocal_lbm::uniform_grid_provider<lattice_t>;
 
 template<class T>
 struct get_vtk_array_type {
@@ -122,39 +126,31 @@ class spherical_init_peak : public density_source_t {
 std::future<void> save_solution(const sim_engine_t& engine, uint save_frame);
 
 int main() {
-    auto examples_path = get_examples_dir();
-
-    sclx::filesystem::path domain_dir
-        = examples_path / "../resources/lbm_example_domains/ball_in_cube";
-
-    naga::fluids::nonlocal_lbm::boundary_specification<value_type>
-        outer_boundary{
-            domain_dir / "cube.obj",
-            0,
-            0,
-            .01f,
-        };
-
-    std::vector<naga::fluids::nonlocal_lbm::boundary_specification<value_type>>
-        inner_boundaries{};
-
-    auto domain
-        = naga::fluids::nonlocal_lbm::simulation_domain<value_type>::import <3>(
-            outer_boundary,
-            inner_boundaries
-        );
+    value_type nodal_spacing = 0.04f;
 
     sim_engine_t engine;
     engine.set_problem_parameters(
         0.0f,
         1.0f,
-        domain.nodal_spacing * domain.nodal_spacing,
+        nodal_spacing * nodal_spacing,
         2.f,
         0.4f,
         0.2f
     );
-    engine.init_domain(domain);
+
+    node_provider_t node_provider{
+        naga::point_t<value_type, 3>{{-1.0f, -1.0f, -1.0f}},
+        naga::point_t<value_type, 3>{{1.0f, 1.0f, 1.0f}},
+        nodal_spacing,
+        0.3f,
+        0.1f
+    };
+
+    engine.init_domain(node_provider);
+    auto domain = engine.domain_;
     std::future<void> save_future = save_solution(engine, 0);
+
+    return 0;
 
     std::cout << "Lattice time step: "
               << engine.parameters_.time_step

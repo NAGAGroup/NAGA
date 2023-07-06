@@ -48,9 +48,7 @@ __host__ void assign_boundary_info(
     atomic_counter[0] = 0;
 
     sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
-        sclx::array_list<value_type, 2, 2> result_list{
-            points,
-            normals};
+        sclx::array_list<value_type, 2, 2> result_list{points, normals};
 
         auto& grid_range = provider.grid_range_;
 
@@ -67,7 +65,8 @@ __host__ void assign_boundary_info(
                         dimensions>::get_boundary_normal(grid_range, idx[0]);
 
                     for (uint i = 0; i < dimensions; ++i) {
-                        points(i, boundary_count + boundary_offset) = boundary_point[i];
+                        points(i, boundary_count + boundary_offset)
+                            = boundary_point[i];
                         normals(i, boundary_count + boundary_offset)
                             = boundary_normal[i];
                     }
@@ -102,6 +101,68 @@ __host__ void assign_bulk_info(
 
                     for (uint i = 0; i < dimensions; ++i) {
                         points(i, bulk_count) = bulk_point[i];
+                    }
+                }
+            }
+        );
+    }).get();
+}
+
+template<class Lattice>
+__host__ void assign_bulk_and_layer_info(
+    const uniform_grid_provider<Lattice>& provider,
+    const sclx::array<typename Lattice::value_type, 2>&
+        boundary_distances_squared,
+    const size_t& layer_points_offset,
+    const sclx::array<typename Lattice::value_type, 2>& old_points,
+    sclx::array<typename Lattice::value_type, 2>& points,
+    sclx::array<typename Lattice::value_type, 1>& absorption_coefficients
+) {
+    using value_type          = typename Lattice::value_type;
+    constexpr uint dimensions = Lattice::dimensions;
+    sclx::array<uint, 1> atomic_bulk_counter{1};
+    atomic_bulk_counter[0] = 0;
+    sclx::array<uint, 1> atomic_layer_counter{1};
+    atomic_layer_counter[0] = 0;
+
+    sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
+        auto& layer_thickness = provider.absorption_layer_thickness_;
+        auto& peak_rate       = provider.peak_absorption_rate_;
+
+        auto result_tuple
+            = sclx::make_array_tuple(points, absorption_coefficients);
+
+        handler.launch(
+            sclx::md_range_t<1>{absorption_coefficients.elements()},
+            result_tuple,
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                if (boundary_distances_squared[idx[0]]
+                    <= layer_thickness * layer_thickness) {
+                    uint layer_count = atomicAdd(&atomic_layer_counter[0], 1);
+
+                    for (uint i = 0; i < dimensions; ++i) {
+                        points(i, layer_count + layer_points_offset)
+                            = old_points(i, idx[0]);
+                    }
+
+                    const auto& boundary_distance
+                        = math::sqrt(boundary_distances_squared(0, idx[0]));
+
+                    value_type absorption
+                        = peak_rate
+                        * math::loopless::pow<2>(
+                              (layer_thickness - boundary_distance)
+                              / layer_thickness
+                        );
+
+                    absorption_coefficients[layer_count + layer_points_offset]
+                        = absorption;
+
+                } else {
+                    uint bulk_count = atomicAdd(&atomic_bulk_counter[0], 1);
+
+                    for (uint i = 0; i < dimensions; ++i) {
+                        points(i, bulk_count) = old_points(i, idx[0]);
                     }
                 }
             }
