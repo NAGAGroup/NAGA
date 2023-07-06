@@ -43,6 +43,9 @@ template<class T, uint Dimensions>
 class uniform_grid;
 
 template<class T, uint Dimensions>
+struct uniform_grid_inspector;
+
+template<class T, uint Dimensions>
 class uniform_grid_iterator {
   public:
     using value_type        = point_t<T, Dimensions>;
@@ -182,15 +185,13 @@ class uniform_grid_iterator {
 
   private:
     friend class uniform_grid<T, Dimensions>;
+    friend struct uniform_grid_inspector<T, Dimensions>;
 
     size_t current_index_{0};
     size_t grid_size_[Dimensions];
     T grid_spacing_[Dimensions];
     point_t<T, Dimensions> min_;
 };
-
-template<class T, uint Dimensions>
-class uniform_grid_inspector;
 
 template<class T, uint Dimensions>
 class uniform_grid {
@@ -229,32 +230,34 @@ class uniform_grid {
     }
 
   private:
+    friend struct uniform_grid_inspector<T, Dimensions>;
+
     iterator begin_;
 };
 
 template<class T, uint Dimensions>
-class uniform_grid_inspector {
+struct uniform_grid_inspector {
     using grid_t = uniform_grid<T, Dimensions>;
 
     __host__ __device__ static bool
-    is_boundary_index(const grid_t& grid, const sclx::index_t& n) {
+    is_boundary_index(const grid_t& grid, sclx::index_t n) {
         for (uint i = 0; i < Dimensions; ++i) {
-            if (n % (grid.begin_.grid_size_[i] - 1) == 0) {
+            if (n % grid.begin_.grid_size_[i] == 0
+                || n % grid.begin_.grid_size_[i]
+                       == grid.begin_.grid_size_[i] - 1) {
                 return true;
             }
-            n /= (grid.begin_.grid_size_[i] - 1);
+            n /= grid.begin_.grid_size_[i];
         }
         return false;
     }
 
-    __host__ __device__ static typename grid_t::value_type get_boundary_normal(
-        const grid_t& grid,
-        const sclx::index_t& boundary_index
-    ) {
+    __host__ __device__ static typename grid_t::value_type
+    get_boundary_normal(const grid_t& grid, sclx::index_t boundary_index) {
         if (!is_boundary_index(grid, boundary_index)) {
 #ifdef __CUDA_ARCH__
             printf("get_boundary_normal called with non-boundary index\n");
-            return grid_t::value_type{};
+            return typename grid_t::value_type{};
 #else
             sclx::throw_exception<std::invalid_argument>(
                 "get_boundary_normal called with non-boundary index",
@@ -265,8 +268,8 @@ class uniform_grid_inspector {
 
         size_t dim_indices[Dimensions];
         for (uint i = 0; i < Dimensions; ++i) {
-            dim_indices[i] = boundary_index % (grid.begin_.grid_size_[i] - 1);
-            boundary_index /= (grid.begin_.grid_size_[i] - 1);
+            dim_indices[i] = boundary_index % grid.begin_.grid_size_[i];
+            boundary_index /= grid.begin_.grid_size_[i];
         }
 
         typename grid_t::value_type normal;
@@ -274,7 +277,7 @@ class uniform_grid_inspector {
         for (uint i = 0; i < Dimensions; ++i) {
             if (dim_indices[i] == 0) {
                 normal[i] = -1;
-            } else if (dim_indices[i] == grid.begin_.grid_size_[i] - 2) {
+            } else if (dim_indices[i] == grid.begin_.grid_size_[i] - 1) {
                 normal[i] = 1;
             } else {
                 normal[i] = 0;
@@ -282,9 +285,11 @@ class uniform_grid_inspector {
         }
 
         auto norm = math::loopless::norm<Dimensions>(normal);
-        if (norm > 0) {
-            normal /= norm;
+        for (uint i = 0; i < Dimensions; ++i) {
+            normal[i] /= (norm == 0 ? 1 : norm);
         }
+
+        return normal;
     }
 };
 
