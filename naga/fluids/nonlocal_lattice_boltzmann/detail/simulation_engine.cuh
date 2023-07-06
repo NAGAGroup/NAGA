@@ -36,7 +36,7 @@
 #include "../../../nonlocal_calculus/advection.cuh"
 #include "../density_source.cuh"
 #include "../lattices.cuh"
-#include "../simulation_domain.cuh"
+#include "../node_provider.cuh"
 #include "../simulation_nodes.cuh"
 #include "../simulation_variables.cuh"
 #include "naga/fluids/nonlocal_lattice_boltzmann/simulation_variables.cuh"
@@ -204,6 +204,10 @@ class simulation_engine {
 
         density_source_term_
             = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
+    }
+
+    void init_domain(const node_provider<Lattice> &nodes) {
+        this->init_domain(nodes.get());
     }
 
     std::future<void> compute_density_source_terms() {
@@ -592,7 +596,7 @@ class simulation_engine {
 
     problem_parameters<value_type> parameters_{};
     state_variables<lattice_type> solution_{};
-    simulation_domain<value_type> domain_{};
+    simulation_nodes<value_type> domain_{};
 
     using advection_operator_t
         = nonlocal_calculus::advection_operator<value_type, dimensions>;

@@ -32,57 +32,43 @@
 
 #pragma once
 
-#include "detail/simulation_engine.cuh"
+#include "../../../../ranges/uniform_grid.cuh"
+#include <scalix/array.cuh>
+#include <scalix/execute_kernel.cuh>
 
 namespace naga::fluids::nonlocal_lbm {
+template<class Lattice>
+class uniform_grid_provider;
+}
+
+namespace naga::fluids::nonlocal_lbm::detail {
 
 template<class Lattice>
-class simulation_engine {
-  public:
-    using value_type = typename lattice_traits<Lattice>::value_type;
-    static constexpr uint lattice_size = lattice_traits<Lattice>::size;
-    static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
-    using lattice_type                 = Lattice;
+__host__ void assign_boundary_info(
+    const uniform_grid_provider<Lattice>& provider,
+    sclx::array<typename Lattice::value_type, 2>& points,
+    sclx::array<typename Lattice::value_type, 2>& normals,
+    size_t boundary_offset
+);
 
-    simulation_engine() = default;
+template<class Lattice>
+__host__ void assign_bulk_info(
+    const uniform_grid_provider<Lattice>& provider,
+    sclx::array<typename Lattice::value_type, 2>& points
+);
 
-    void set_problem_parameters(
-        value_type fluid_viscosity,
-        value_type nominal_density,
-        value_type time_step,
-        value_type characteristic_length,
-        value_type characteristic_velocity,
-        value_type lattice_characteristic_velocity
-    ) {
-        engine_ptr_->set_problem_parameters(
-            fluid_viscosity,
-            nominal_density,
-            time_step,
-            characteristic_length,
-            characteristic_velocity,
-            lattice_characteristic_velocity
-        );
+template<class Lattice>
+struct boundary_count_criteria_functor {
+    using value_type                 = typename Lattice::value_type;
+    constexpr static uint dimensions = Lattice::dimensions;
+    using range_type = typename ranges::uniform_grid<value_type, dimensions>;
+
+    __host__ __device__ bool operator()(const size_t& i) const {
+        return ranges::uniform_grid_inspector<value_type, dimensions>::
+            is_boundary_index(grid_range_, i);
     }
 
-    void init_domain(const simulation_nodes<value_type> &domain) {
-        engine_ptr_->init_domain(domain);
-    }
-
-    void init_domain(const node_provider<Lattice> &nodes) {
-        engine_ptr_->init_domain(nodes.get());
-    }
-
-    void step_forward() { engine_ptr_->step_forward(); }
-
-    void reset() { engine_ptr_->reset(); }
-
-    void register_density_source(density_source<Lattice>& source) {
-        engine_ptr_->register_density_source(source);
-    }
-
-  private:
-    std::shared_ptr<detail::simulation_engine<Lattice>> engine_ptr_
-        = std::make_shared<detail::simulation_engine<Lattice>>();
+    range_type grid_range_;
 };
 
-}  // namespace naga::fluids::nonlocal_lbm
+}  // namespace naga::fluids::nonlocal_lbm::detail

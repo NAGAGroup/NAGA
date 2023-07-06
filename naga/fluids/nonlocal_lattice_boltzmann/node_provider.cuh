@@ -32,57 +32,21 @@
 
 #pragma once
 
-#include "detail/simulation_engine.cuh"
+#include "lattices.cuh"
+#include "simulation_nodes.cuh"
 
 namespace naga::fluids::nonlocal_lbm {
 
 template<class Lattice>
-class simulation_engine {
-  public:
-    using value_type = typename lattice_traits<Lattice>::value_type;
-    static constexpr uint lattice_size = lattice_traits<Lattice>::size;
-    static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
-    using lattice_type                 = Lattice;
+class node_provider {
+public:
+    static constexpr uint dimensions = lattice_traits<Lattice>::dimensions;
+    using value_type                 = typename lattice_traits<Lattice>::value_type;
 
-    simulation_engine() = default;
+    node_provider() = default;
+    virtual ~node_provider() = default;
 
-    void set_problem_parameters(
-        value_type fluid_viscosity,
-        value_type nominal_density,
-        value_type time_step,
-        value_type characteristic_length,
-        value_type characteristic_velocity,
-        value_type lattice_characteristic_velocity
-    ) {
-        engine_ptr_->set_problem_parameters(
-            fluid_viscosity,
-            nominal_density,
-            time_step,
-            characteristic_length,
-            characteristic_velocity,
-            lattice_characteristic_velocity
-        );
-    }
-
-    void init_domain(const simulation_nodes<value_type> &domain) {
-        engine_ptr_->init_domain(domain);
-    }
-
-    void init_domain(const node_provider<Lattice> &nodes) {
-        engine_ptr_->init_domain(nodes.get());
-    }
-
-    void step_forward() { engine_ptr_->step_forward(); }
-
-    void reset() { engine_ptr_->reset(); }
-
-    void register_density_source(density_source<Lattice>& source) {
-        engine_ptr_->register_density_source(source);
-    }
-
-  private:
-    std::shared_ptr<detail::simulation_engine<Lattice>> engine_ptr_
-        = std::make_shared<detail::simulation_engine<Lattice>>();
+    virtual simulation_nodes<value_type> get() const = 0;
 };
 
-}  // namespace naga::fluids::nonlocal_lbm
+}
