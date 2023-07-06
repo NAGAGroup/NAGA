@@ -611,7 +611,7 @@ get_surface_bounds(const mesh::closed_surface_t<T>& surface) {
 }
 
 template<class T>
-simulation_domain<T> hycaps3d_load_domain(
+simulation_nodes<T> hycaps3d_load_domain(
     const boundary_specification<T>& outer_boundary,
     const std::vector<boundary_specification<T>>& inner_boundaries
 ) {
@@ -796,7 +796,7 @@ simulation_domain<T> hycaps3d_load_domain(
         }
     }
 
-    simulation_domain<T> domain;
+    simulation_nodes<T> domain;
 
     uint dims            = 3;
     size_t bulk_size     = bulk_points.size() / dims;

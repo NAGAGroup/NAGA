@@ -38,12 +38,12 @@ template<class T>
 struct boundary_specification;
 
 template<class T>
-struct simulation_domain;
+struct simulation_nodes;
 
 namespace detail {
 
 template<class T>
-simulation_domain<T> hycaps2d_load_domain(
+simulation_nodes<T> hycaps2d_load_domain(
     const boundary_specification<T>& outer_boundary,
     const std::vector<boundary_specification<T>>& inner_boundaries,
     const T& particle_spacing

@@ -67,7 +67,7 @@ struct boundary_specification {
 };
 
 template<class T>
-struct simulation_domain {
+struct simulation_nodes {
     sclx::array<T, 2> points{};  // order: bulk, boundary layers, boundary
     sclx::array<T, 2> boundary_normals{};
     sclx::array<T, 1> layer_absorption{};  // absorption coefficient for each
@@ -79,7 +79,7 @@ struct simulation_domain {
     T nodal_spacing{};
 
     template<uint Dimensions>
-    static simulation_domain import(
+    static simulation_nodes import(
         const boundary_specification<T>& outer_boundary,
         const std::vector<boundary_specification<T>>& inner_boundaries,
         const T& particle_spacing = T(0)
@@ -111,9 +111,9 @@ struct simulation_domain {
     }
 
     template<class T_ = const T>
-    operator simulation_domain<T_>(
+    operator simulation_nodes<T_>(
     ) const {  // NOLINT(google-explicit-constructor)
-        return simulation_domain<T_>{
+        return simulation_nodes<T_>{
             points,
             boundary_normals,
             layer_absorption,

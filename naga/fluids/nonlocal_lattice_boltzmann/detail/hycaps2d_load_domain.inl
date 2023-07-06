@@ -505,7 +505,7 @@ get_contour_bounds(const closed_contour_t<T>& contour) {
 }
 
 template<class T>
-simulation_domain<T> hycaps2d_load_domain(
+simulation_nodes<T> hycaps2d_load_domain(
     const boundary_specification<T>& outer_boundary,
     const std::vector<boundary_specification<T>>& inner_boundaries,
     const T& particle_spacing
@@ -637,7 +637,7 @@ simulation_domain<T> hycaps2d_load_domain(
         }
     }
 
-    simulation_domain<T> domain;
+    simulation_nodes<T> domain;
 
     uint dims            = 2;
     size_t bulk_size     = bulk_points.size() / dims;

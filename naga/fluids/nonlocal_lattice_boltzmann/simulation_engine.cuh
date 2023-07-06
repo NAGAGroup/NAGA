@@ -64,7 +64,7 @@ class simulation_engine {
         );
     }
 
-    void init_domain(const simulation_domain<value_type> &domain) {
+    void init_domain(const simulation_nodes<value_type> &domain) {
         engine_ptr_->init_domain(domain);
     }
 

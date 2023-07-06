@@ -33,7 +33,7 @@
 #pragma once
 
 #include "detail/density_source.cuh"
-#include "simulation_domain.cuh"
+#include "simulation_nodes.cuh"
 #include "simulation_variables.cuh"
 
 namespace naga::fluids::nonlocal_lbm {
@@ -44,7 +44,7 @@ class density_source {
     using value_type = typename Lattice::value_type;
 
     virtual std::future<void> add_density_source(
-        const simulation_domain<const value_type>& domain,
+        const simulation_nodes<const value_type>& domain,
         const problem_parameters<value_type>& params,
         const value_type& time,
         sclx::array<value_type, 1>& source_terms
