@@ -83,8 +83,8 @@ compute_equilibrium_distribution(
     const typename lattice_traits<Lattice>::value_type* lattice_velocity,
     const typename lattice_traits<Lattice>::value_type& lattice_weight
 ) {
-    using value_type            = typename lattice_traits<Lattice>::value_type;
-    constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
+    using value_type          = typename lattice_traits<Lattice>::value_type;
+    constexpr uint dimensions = lattice_traits<Lattice>::dimensions;
 
     value_type u_dot_u
         = math::loopless::dot<dimensions>(unitary_velocity, unitary_velocity);
@@ -247,14 +247,16 @@ struct apply_pml_absorption_no_divQ {
 
         for (uint alpha = 0; alpha < lattice_size; ++alpha) {
             value_type f_tilde_eq = compute_equilibrium_distribution<Lattice>(
-                unitary_density,
-                unitary_velocity,
-                &lattice_velocities(0, alpha),
-                lattice_weights(alpha)
-            );
+                                        unitary_density,
+                                        unitary_velocity,
+                                        &lattice_velocities(0, alpha),
+                                        lattice_weights(alpha)
+                                    )
+                                  - lattice_weights(alpha);
 
             const value_type& f_tilde_eq_prev
-                = lattice_equilibrium_distributions_prev[alpha][idx];
+                = lattice_equilibrium_distributions_prev[alpha][idx]
+                - lattice_weights(alpha);
 
             value_type Q_value
                 = (f_tilde_eq + f_tilde_eq_prev) * lattice_dt / 2.f;
@@ -271,6 +273,15 @@ struct apply_pml_absorption_no_divQ {
 
             f_shared(alpha, info.local_thread_linear_id())
                 -= sigma * (2.f * f_tilde_eq + sigma * Q_value);
+        }
+
+        if (idx[0] < absorption_layer_start || idx[0] >= absorption_layer_end) {
+            return;
+        }
+
+        for (uint alpha = 0; alpha < lattice_size; ++alpha) {
+            lattice_distributions[alpha][idx[0]]
+                = f_shared(alpha, info.local_thread_linear_id());
         }
     }
     sclx::kernel_handler handler;
@@ -653,11 +664,30 @@ class simulation_engine {
                 domain_.num_bulk_points,
                 domain_.num_bulk_points + domain_.num_layer_points};
 
+            sclx::assign_array(
+                solution_.lattice_distributions[alpha],
+                temporary_distribution_
+            );
+
             advection_operator_ptr_->step_forward(
                 c_pml,
                 lattice_pml_Q_values_[alpha],
-                solution_.lattice_distributions[alpha],
+                temporary_distribution_,
                 1.f
+            );
+
+            sclx::algorithm::elementwise_reduce(
+                sclx::algorithm::minus<>{},
+                temporary_distribution_,
+                temporary_distribution_,
+                lattice_pml_Q_values_[alpha]
+            );
+
+            sclx::algorithm::elementwise_reduce(
+                sclx::algorithm::plus<>{},
+                solution_.lattice_distributions[alpha],
+                solution_.lattice_distributions[alpha],
+                temporary_distribution_
             );
         }
 
@@ -933,14 +963,14 @@ class simulation_engine {
                     f_alpha[idx[1]] = lattice_weights[idx[0]];
                 }
             );
-
-            for (uint alpha = 0; alpha < lattice_size; ++alpha) {
-                sclx::assign_array(
-                    solution_.lattice_distributions[alpha],
-                    lattice_pml_Q_values_[alpha]
-                );
-            }
         });
+
+        for (uint alpha = 0; alpha < lattice_size; ++alpha) {
+            sclx::assign_array(
+                solution_.lattice_distributions[alpha],
+                lattice_pml_Q_values_[alpha]
+            );
+        }
     }
 
     ~simulation_engine() {
