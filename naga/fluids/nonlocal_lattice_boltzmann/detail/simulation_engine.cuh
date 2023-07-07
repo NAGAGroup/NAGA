@@ -548,6 +548,9 @@ class simulation_engine {
                         u,
                         &solution.macroscopic_values.fluid_velocity(0, idx[0])
                     );
+                    for (int d = 0; d < dimensions; ++d) {
+                        u[d] /= parameters.nondim_factors.velocity_scale;
+                    }
                     value_type lat_nu
                         = parameters.fluid_viscosity
                         / parameters.nondim_factors.viscosity_scale;
