@@ -408,7 +408,10 @@ class simulation_engine {
         for (auto& f_alpha : solution_.lattice_distributions) {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
-        temporary_distributions_
+        for (auto& Q_values : lattice_pml_Q_values_) {
+            Q_values = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+        }
+        temporary_distribution_
             = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         init_distribution();
 
@@ -855,7 +858,7 @@ class simulation_engine {
                 = velocity_map::create(&(lattice_velocities.vals[alpha][0]));
 
             auto& f_alpha0 = solution_.lattice_distributions[alpha];
-            auto& f_alpha  = temporary_distributions_;
+            auto& f_alpha  = temporary_distribution_;
 
             value_type centering_offset = lattice_weights.vals[alpha];
 
@@ -953,7 +956,7 @@ class simulation_engine {
     std::shared_ptr<interpolater_t> boundary_interpolator_ptr_{};
 
     sclx::array<value_type, 1> density_source_term_{};
-    sclx::array<value_type, 1> temporary_distributions_{};
+    sclx::array<value_type, 1> temporary_distribution_{};
     sclx::array<value_type, 1> lattice_pml_Q_values_[lattice_size]{};
     uint frame_number_ = 0;
 
