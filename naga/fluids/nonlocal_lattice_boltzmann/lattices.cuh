@@ -43,6 +43,10 @@ struct lattice_traits {
     static constexpr uint size       = Lattice::size;
     static constexpr uint dimensions = Lattice::dimensions;
     using value_type                 = typename Lattice::value_type;
+    static constexpr value_type lattice_speed_of_sound
+        = /*1 / sqrt(3)*/ static_cast<value_type>(
+            0.57735026918962576450914878050196
+        );
 };
 
 }  // namespace naga::fluids::nonlocal_lbm
