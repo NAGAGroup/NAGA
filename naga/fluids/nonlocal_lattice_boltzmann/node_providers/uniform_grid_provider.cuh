@@ -84,6 +84,12 @@ class uniform_grid_provider : public node_provider<Lattice> {
             sclx::data_capture_mode::copy,
             sclx::copy_policy::devicedevice
         );
+        sclx::algorithm::transform(
+            result.boundary_normals,
+            result.boundary_normals,
+            -1.f,
+            sclx::algorithm::multiplies<>{}
+        );
 
         assign_bulk_info(result.points);
 
