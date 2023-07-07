@@ -198,6 +198,8 @@ class pml_emulated_velocity_t {
                 c[d] = c0[d] * coeff;
             }
         }
+
+        return c;
     }
 
   private:
