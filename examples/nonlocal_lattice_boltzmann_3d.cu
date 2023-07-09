@@ -150,8 +150,6 @@ int main() {
     auto domain = engine.domain_;
     std::future<void> save_future = save_solution(engine, 0);
 
-    return 0;
-
     std::cout << "Lattice time step: "
               << engine.parameters_.time_step
                      / engine.parameters_.nondim_factors.time_scale

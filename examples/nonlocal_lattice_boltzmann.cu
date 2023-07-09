@@ -29,9 +29,20 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include "naga/fluids/nonlocal_lattice_boltzmann/simulation_variables.cuh"
 #include "utils.hpp"
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
+#include <naga/fluids/nonlocal_lattice_boltzmann/node_providers/uniform_grid_provider.cuh>
 #include <naga/regions/hypersphere.cuh>
+
+#include <vtkDoubleArray.h>
+#include <vtkFloatArray.h>
+#include <vtkNew.h>
+#include <vtkPointData.h>
+#include <vtkPoints.h>
+#include <vtkPolyData.h>
+#include <vtkUnstructuredGrid.h>
+#include <vtkXMLPolyDataWriter.h>
 
 using value_type = float;
 
@@ -44,7 +55,26 @@ using simulation_domain_t
     = naga::fluids::nonlocal_lbm::simulation_nodes<const value_type>;
 using problem_parameters_t
     = naga::fluids::nonlocal_lbm::problem_parameters<value_type>;
-using region_t = naga::regions::hypersphere<value_type, 2>;
+using region_t   = naga::regions::hypersphere<value_type, 2>;
+using solution_t = naga::fluids::nonlocal_lbm::state_variables<lattice_t>;
+
+using node_provider_t
+    = naga::fluids::nonlocal_lbm::uniform_grid_provider<lattice_t>;
+
+template<class T>
+struct get_vtk_array_type {
+    using type = void;
+};
+
+template<>
+struct get_vtk_array_type<float> {
+    using type = vtkFloatArray;
+};
+
+template<>
+struct get_vtk_array_type<double> {
+    using type = vtkDoubleArray;
+};
 
 class circular_init_peak : public density_source_t {
   public:
@@ -54,12 +84,12 @@ class circular_init_peak : public density_source_t {
         const value_type& time,
         sclx::array<value_type, 1>& source_terms
     ) final {
-        region_t source_region{0.06, {-2.4, 0.0}};
-
-        float period = 0.2f;
-        if (time > period) {
+        region_t source_region{0.1, {0.0, 0.0}};
+        static bool has_run = false;
+        if (has_run) {
             return std::async(std::launch::deferred, []() {});
         }
+        has_run = true;
 
         return sclx::execute_kernel([=](const sclx::kernel_handler& handler) {
             handler.launch(
@@ -73,16 +103,19 @@ class circular_init_peak : public density_source_t {
                                 &domain.points(0, idx[0]),
                                 source_region.center()
                             );
-                        // gaussian peak as a function of distance from the
-                        // center w/ width radius
-                        source_terms(idx[0])
-                            += 0.005f
-                             * (std::sin(
-                                 naga::math::pi<value_type> * time / period
-                             ))
-                             * exp(-distance * distance
-                                   / (2.0 * source_region.radius()
-                                      * source_region.radius()));
+
+                        auto perturbation
+                            = 0.01f
+                            * (1
+                               - naga::math::loopless::pow<2>(
+                                     2 * distance / source_region.radius()
+                                 ) / 4)
+                            * naga::math::exp(-naga::math::loopless::pow<2>(
+                                2 * distance / source_region.radius()
+                            ));
+
+                        source_terms(idx[0]
+                        ) += perturbation * params.nondim_factors.density_scale;
                     }
                 }
             );
@@ -90,65 +123,51 @@ class circular_init_peak : public density_source_t {
     }
 };
 
+std::future<void> save_solution(const sim_engine_t& engine, uint save_frame);
+
 int main() {
-    auto examples_path = get_examples_dir();
-    auto results_path
-        = get_examples_results_dir() / "nonlocal_lattice_boltzmann_results";
-
-    sclx::filesystem::create_directories(results_path);
-
-    sclx::filesystem::path domain_dir
-        = examples_path
-        / "../resources/lbm_example_domains/circles_in_rectangle";
-
-    naga::fluids::nonlocal_lbm::boundary_specification<value_type>
-        outer_boundary{
-            domain_dir / "domain.obj",
-            8,
-            4,
-            .01f,
-        };
-
-    std::vector<naga::fluids::nonlocal_lbm::boundary_specification<value_type>>
-        inner_boundaries{
-            {
-                domain_dir / "circle1.obj",
-                4,
-                2,
-                .01f,
-            },
-            {
-                domain_dir / "circle2.obj",
-                8,
-                4,
-                .01f,
-            },
-        };
-
-    auto domain
-        = naga::fluids::nonlocal_lbm::simulation_nodes<value_type>::import <2>(
-            outer_boundary,
-            inner_boundaries,
-            .005f
-        );
+    value_type nodal_spacing = 0.04f;
 
     sim_engine_t engine;
     engine.set_problem_parameters(
         0.0f,
         1.0f,
-        2 * domain.nodal_spacing * domain.nodal_spacing,
+        nodal_spacing * nodal_spacing,
         2.f,
-        0.1f,
-        0.1f
+        0.4f,
+        0.2f
     );
-    engine.init_domain(domain);
+
+    node_provider_t node_provider{
+        naga::point_t<value_type, 2>{{-1.0f, -1.0f}},
+        naga::point_t<value_type, 2>{{1.0f, 1.0f}},
+        nodal_spacing,
+        0.3f,
+        0.1f
+    };
+
+    engine.init_domain(node_provider);
+    auto domain = engine.domain_;
+    std::future<void> save_future = save_solution(engine, 0);
+
+    std::cout << "Lattice time step: "
+              << engine.parameters_.time_step
+                     / engine.parameters_.nondim_factors.time_scale
+              << "\n";
+    std::cout << "Lattice approx nodal spacing: "
+              << engine.domain_.nodal_spacing
+                     / engine.parameters_.nondim_factors.length_scale
+              << "\n";
+
     circular_init_peak source{};
     engine.register_density_source(source);
 
-    int frames = 100;
+    int sim_frame = 0;
     std::mutex frame_mutex;
     std::chrono::milliseconds total_time{0};
-    for (int frame = 0; frame < frames; ++frame) {
+    uint save_frame = 0;
+    value_type fps  = 60.0f;
+    while (engine.frame_number_ * engine.parameters_.time_step < 2.f ) {
         auto start = std::chrono::high_resolution_clock::now();
         engine.step_forward();
         auto end = std::chrono::high_resolution_clock::now();
@@ -162,51 +181,155 @@ int main() {
                       << "\n";
         }).detach();
 
-        if (frame % 100 != 0) {
+        ++sim_frame;
+
+        if (engine.frame_number_ * engine.parameters_.time_step * fps
+            < save_frame) {
             continue;
         }
 
-        std::ofstream domain_check_file(
-            results_path
-            / (std::string("result.csv.") + std::to_string(frame / 100))
-        );
-        domain_check_file << "x,y,nx,ny,absorption,ux,uy,rho";
-        for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
-            domain_check_file << ",f" << alpha;
-        }
-        domain_check_file << "\n";
-        auto& f        = engine.solution_.lattice_distributions;
-        auto& rho      = engine.solution_.macroscopic_values.fluid_density;
-        auto& velocity = engine.solution_.macroscopic_values.fluid_velocity;
-        auto& layer_absorption  = engine.domain_.layer_absorption;
-        auto& normals           = engine.domain_.boundary_normals;
-        auto& points            = engine.domain_.points;
-        size_t num_bulk_points  = engine.domain_.num_bulk_points;
-        size_t num_layer_points = engine.domain_.num_layer_points;
-        for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
-            value_type absorption = 0;
-            value_type normal[2]  = {0, 0};
-            if (i >= num_bulk_points + num_layer_points) {
-                normal[0] = normals(0, i - num_bulk_points - num_layer_points);
-                normal[1] = normals(1, i - num_bulk_points - num_layer_points);
-            } else if (i >= num_bulk_points) {
-                absorption = layer_absorption(i - num_bulk_points);
-            }
-            domain_check_file << points(0, i) << "," << points(1, i) << ","
-                              << normal[0] << "," << normal[1] << ","
-                              << absorption << "," << velocity(0, i) << ","
-                              << velocity(1, i) << "," << rho(i);
-            for (const auto& f_alpha : f) {
-                domain_check_file << "," << f_alpha(i);
-            }
-            domain_check_file << "\n";
-        }
-        domain_check_file.close();
+        save_future.get();
+        save_future = std::move(save_solution(engine, save_frame));
+        ++save_frame;
     }
 
-    std::cout << "Average time per frame: " << total_time.count() / frames
+    std::cout << "Average time per frame: " << total_time.count() / sim_frame
               << "ms\n";
     std::cout << "Problem size: " << domain.points.shape()[1] << "\n";
 
     return 0;
+}
+
+std::future<void> save_solution(const sim_engine_t& engine, uint save_frame) {
+    const auto& domain   = engine.domain_;
+    const auto& solution = engine.solution_;
+    static auto results_path
+        = get_examples_results_dir() / "nonlocal_lattice_boltzmann_2d_results";
+
+    static bool first = true;
+
+    if (first) {
+        first = false;
+        sclx::filesystem::remove_all(results_path);
+        sclx::filesystem::create_directories(results_path);
+    }
+
+    vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
+    points->SetNumberOfPoints(static_cast<vtkIdType>(domain.points.shape()[1]));
+
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> f
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
+    f->SetNumberOfComponents(lattice_t::size);
+    f->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1]));
+    f->SetName("f");
+
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> density
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
+    density->SetNumberOfComponents(1);
+    density->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1])
+    );
+    density->SetName("density");
+
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> velocity
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
+    velocity->SetNumberOfComponents(3);
+    velocity->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1])
+    );
+    velocity->SetName("velocity");
+
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> absorption
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
+    absorption->SetNumberOfComponents(1);
+    absorption->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape(
+    )[1]));
+    absorption->SetName("absorption");
+
+    vtkSmartPointer<get_vtk_array_type<value_type>::type> normals
+        = vtkSmartPointer<get_vtk_array_type<value_type>::type>::New();
+    normals->SetNumberOfComponents(3);
+    normals->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1])
+    );
+    normals->SetName("normals");
+
+    vtkSmartPointer<vtkIntArray> type = vtkSmartPointer<vtkIntArray>::New();
+    type->SetNumberOfComponents(1);
+    type->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1]));
+    type->SetName("type");
+
+    vtkSmartPointer<vtkCellArray> cells = vtkSmartPointer<vtkCellArray>::New();
+    cells->Allocate(domain.points.shape()[1]);
+
+    for (vtkIdType i = 0; i < domain.points.shape()[1]; ++i) {
+        points->SetPoint(
+            i,
+            domain.points(0, i),
+            domain.points(1, i),
+            0
+        );
+
+        value_type f_i[lattice_t::size];
+        auto lat_weights
+            = naga::fluids::nonlocal_lbm::detail::lattice_interface<
+                lattice_t>::lattice_weights();
+        for (int alpha = 0; alpha < lattice_t::size; ++alpha) {
+            f_i[alpha] = (solution.lattice_distributions[alpha][i])
+                       / lat_weights.vals[alpha];
+        }
+        f->SetTuple(i, f_i);
+
+        density->SetTuple1(i, solution.macroscopic_values.fluid_density(i));
+
+        velocity->SetTuple3(
+            i,
+            solution.macroscopic_values.fluid_velocity(0, i),
+            solution.macroscopic_values.fluid_velocity(1, i),
+            0
+        );
+
+        int type_i = 0;
+        value_type normal_i[3]{0, 0, 0};
+        value_type absorption_i = 0;
+        if (i >= domain.num_bulk_points + domain.num_layer_points) {
+            type_i      = 2;
+            normal_i[0] = domain.boundary_normals(
+                0,
+                i - domain.num_bulk_points - domain.num_layer_points
+            );
+            normal_i[1] = domain.boundary_normals(
+                1,
+                i - domain.num_bulk_points - domain.num_layer_points
+            );
+        } else if (i >= domain.num_bulk_points) {
+            type_i       = 1;
+            absorption_i = domain.layer_absorption(i - domain.num_bulk_points);
+        }
+        normals->SetTuple3(i, normal_i[0], normal_i[1], normal_i[2]);
+        type->SetTuple1(i, type_i);
+        absorption->SetTuple1(i, absorption_i);
+
+        cells->InsertNextCell(1, &i);
+    }
+
+    return std::async(std::launch::async, [=]() {
+        std::string filename
+            = results_path
+            / (std::string("result.") + std::to_string(save_frame) + ".vtp");
+        vtkSmartPointer<vtkPolyData> polydata
+            = vtkSmartPointer<vtkPolyData>::New();
+        polydata->SetPoints(points);
+        polydata->GetPointData()->AddArray(f);
+        polydata->GetPointData()->AddArray(density);
+        polydata->GetPointData()->AddArray(velocity);
+        polydata->GetPointData()->AddArray(absorption);
+        polydata->GetPointData()->AddArray(normals);
+        polydata->GetPointData()->AddArray(type);
+        polydata->SetVerts(cells);
+
+        vtkSmartPointer<vtkXMLPolyDataWriter> writer
+            = vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+        writer->SetFileName(filename.c_str());
+        writer->SetInputData(polydata);
+        writer->SetCompressorTypeToNone();
+        writer->Write();
+    });
 }
