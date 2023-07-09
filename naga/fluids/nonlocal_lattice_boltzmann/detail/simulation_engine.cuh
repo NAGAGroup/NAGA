@@ -39,13 +39,13 @@
 #include "../node_provider.cuh"
 #include "../simulation_nodes.cuh"
 #include "../simulation_variables.cuh"
-#include "naga/fluids/nonlocal_lattice_boltzmann/simulation_variables.cuh"
+#include "equilibrium_distribution.cuh"
 #include <scalix/fill.cuh>
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
 template<class Lattice>
-__device__ void compute_unitary_macroscopic_quants(
+__device__ void compute_unitless_macroscopic_quants(
     typename lattice_traits<Lattice>::value_type& density_result,
     typename lattice_traits<Lattice>::value_type* velocity_result,
     sclx::local_array<typename lattice_traits<Lattice>::value_type, 2>&
@@ -74,96 +74,6 @@ __device__ void compute_unitary_macroscopic_quants(
         u[d] /= rho;
     }
 }
-
-template<class Lattice>
-__device__ typename lattice_traits<Lattice>::value_type
-compute_equilibrium_distribution(
-    const typename lattice_traits<Lattice>::value_type& unitary_density,
-    const typename lattice_traits<Lattice>::value_type* unitary_velocity,
-    const typename lattice_traits<Lattice>::value_type* lattice_velocity,
-    const typename lattice_traits<Lattice>::value_type& lattice_weight
-) {
-    using value_type          = typename lattice_traits<Lattice>::value_type;
-    constexpr uint dimensions = lattice_traits<Lattice>::dimensions;
-
-    value_type u_dot_u
-        = math::loopless::dot<dimensions>(unitary_velocity, unitary_velocity);
-    value_type u_dot_c
-        = math::loopless::dot<dimensions>(unitary_velocity, lattice_velocity);
-
-    constexpr value_type c_s = lattice_traits<Lattice>::lattice_speed_of_sound;
-
-    constexpr auto pow2 = math::loopless::pow<2, value_type>;
-    constexpr auto pow4 = math::loopless::pow<4, value_type>;
-
-    return lattice_weight * unitary_density
-         * (1 + u_dot_c / (pow2(c_s)) + pow2(u_dot_c) / (2 * pow4(c_s))
-            - u_dot_u);
-}
-
-template<class Lattice>
-struct equilibrium_distribution_kernel_body {
-    using value_type = typename lattice_traits<Lattice>::value_type;
-    static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
-    static constexpr uint lattice_size = lattice_traits<Lattice>::size;
-
-    __device__ void operator()(
-        const sclx::md_index_t<1>& idx,
-        const sclx::kernel_info<>& info
-    ) {
-        if (info.local_thread_linear_id() == 0) {
-            for (int i = 0; i < dimensions * lattice_size; ++i) {
-                lattice_velocities(i % dimensions, i / dimensions)
-                    = lattice_interface<Lattice>::lattice_velocities()
-                          .vals[i / dimensions][i % dimensions];
-
-                if (i % dimensions == 0) {
-                    lattice_weights(i / dimensions)
-                        = lattice_interface<Lattice>::lattice_weights()
-                              .vals[i / dimensions];
-                }
-            }
-        }
-        handler.syncthreads();
-
-        for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            f_shared(alpha, info.local_thread_linear_id())
-                = lattice_distributions[alpha][idx[0]];
-        }
-
-        value_type unitary_density = fluid_density[idx] / density_scale;
-        value_type unitary_velocity[dimensions];
-        for (uint d = 0; d < dimensions; ++d) {
-            unitary_velocity[d] = fluid_velocity(d, idx[0]) / velocity_scale;
-        }
-
-        for (uint alpha = 0; alpha < lattice_size; ++alpha) {
-            value_type f_tilde_eq = compute_equilibrium_distribution<Lattice>(
-                unitary_density,
-                unitary_velocity,
-                &lattice_velocities(0, alpha),
-                lattice_weights(alpha)
-            );
-
-            lattice_equilibrium_distributions[alpha][idx] = f_tilde_eq;
-        }
-    }
-    sclx::kernel_handler handler;
-
-    sclx::array_list<value_type, 1, lattice_size>
-        lattice_equilibrium_distributions;
-
-    sclx::array_list<const value_type, 1, lattice_size> lattice_distributions;
-
-    sclx::array<const value_type, 1> fluid_density;
-    sclx::array<const value_type, 2> fluid_velocity;
-
-    sclx::local_array<value_type, 2> f_shared;
-    sclx::local_array<value_type, 2> lattice_velocities;
-    sclx::local_array<value_type, 1> lattice_weights;
-    value_type density_scale;
-    value_type velocity_scale;
-};
 
 template<class T, uint Dimensions>
 class pml_emulated_velocity_t {
@@ -210,7 +120,7 @@ class pml_emulated_velocity_t {
 };
 
 template<class Lattice>
-struct apply_pml_absorption_no_divQ {
+struct apply_pml_absorption_no_divQ_subtask {
     using value_type = typename lattice_traits<Lattice>::value_type;
     static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<Lattice>::size;
@@ -234,16 +144,16 @@ struct apply_pml_absorption_no_divQ {
         }
         handler.syncthreads();
 
-        value_type unitary_density = fluid_density[idx] / density_scale;
-        value_type unitary_velocity[dimensions];
+        value_type unitless_density = fluid_density[idx] / density_scale;
+        value_type unitless_velocity[dimensions];
         for (uint d = 0; d < dimensions; ++d) {
-            unitary_velocity[d] = fluid_velocity(d, idx[0]) / velocity_scale;
+            unitless_velocity[d] = fluid_velocity(d, idx[0]) / velocity_scale;
         }
 
         for (uint alpha = 0; alpha < lattice_size; ++alpha) {
             value_type f_tilde_eq = compute_equilibrium_distribution<Lattice>(
-                                        unitary_density,
-                                        unitary_velocity,
+                                        unitless_density,
+                                        unitless_velocity,
                                         &lattice_velocities(0, alpha),
                                         lattice_weights(alpha)
                                     )
@@ -274,8 +184,8 @@ struct apply_pml_absorption_no_divQ {
     }
     sclx::kernel_handler handler;
 
-    sclx::index_t absorption_layer_start;
-    sclx::index_t absorption_layer_end;
+    sclx::index_t absorption_layer_start{};
+    sclx::index_t absorption_layer_end{};
 
     sclx::array_list<value_type, 1, lattice_size> lattice_distributions;
     sclx::array_list<value_type, 1, lattice_size> lattice_pml_Q_values;
@@ -497,7 +407,7 @@ class simulation_engine {
 
                     value_type rho{};
                     value_type u[dimensions]{};
-                    compute_unitary_macroscopic_quants<Lattice>(
+                    compute_unitless_macroscopic_quants<Lattice>(
                         rho,
                         u,
                         f_shared,
@@ -611,7 +521,7 @@ class simulation_engine {
                 result_arrays_raw
             );
 
-            apply_pml_absorption_no_divQ<Lattice> pml_kernel_body{
+            apply_pml_absorption_no_divQ_subtask<Lattice> pml_kernel_body{
                 handler,
                 domain_.num_bulk_points,
                 domain_.num_bulk_points + domain_.num_layer_points,
@@ -691,7 +601,7 @@ class simulation_engine {
             sclx::array_list<value_type, 1, lattice_size>
                 lattice_equilibrium_distributions(lattice_pml_Q_values_);
 
-            equilibrium_distribution_kernel_body<Lattice> equilib_kernel_body{
+            compute_equilibrium_subtask<Lattice> equilib_kernel_body{
                 handler,
                 lattice_equilibrium_distributions,
                 lattice_distributions,
