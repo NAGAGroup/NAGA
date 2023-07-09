@@ -234,11 +234,6 @@ struct apply_pml_absorption_no_divQ {
         }
         handler.syncthreads();
 
-        for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            f_shared(alpha, info.local_thread_linear_id())
-                = lattice_distributions[alpha][idx[0]];
-        }
-
         value_type unitary_density = fluid_density[idx] / density_scale;
         value_type unitary_velocity[dimensions];
         for (uint d = 0; d < dimensions; ++d) {
@@ -254,8 +249,10 @@ struct apply_pml_absorption_no_divQ {
                                     )
                                   - lattice_weights(alpha);
 
+            // note that lattice_pml_Q_values is also used to store the
+            // previous value of f_tilde_eq
             const value_type& f_tilde_eq_prev
-                = lattice_equilibrium_distributions_prev[alpha][idx]
+                = lattice_pml_Q_values[alpha][idx]
                 - lattice_weights(alpha);
 
             value_type Q_value
@@ -271,17 +268,8 @@ struct apply_pml_absorption_no_divQ {
             const value_type& sigma
                 = absorption_coefficients[idx[0] - absorption_layer_start];
 
-            f_shared(alpha, info.local_thread_linear_id())
-                -= sigma * (2.f * f_tilde_eq + sigma * Q_value);
-        }
-
-        if (idx[0] < absorption_layer_start || idx[0] >= absorption_layer_end) {
-            return;
-        }
-
-        for (uint alpha = 0; alpha < lattice_size; ++alpha) {
             lattice_distributions[alpha][idx[0]]
-                = f_shared(alpha, info.local_thread_linear_id());
+                -= sigma * (2.f * f_tilde_eq + sigma * Q_value);
         }
     }
     sclx::kernel_handler handler;
@@ -292,13 +280,10 @@ struct apply_pml_absorption_no_divQ {
     sclx::array_list<value_type, 1, lattice_size> lattice_distributions;
     sclx::array_list<value_type, 1, lattice_size> lattice_pml_Q_values;
 
-    sclx::array_list<const value_type, 1, lattice_size>
-        lattice_equilibrium_distributions_prev;
     sclx::array<const value_type, 1> absorption_coefficients;
     sclx::array<const value_type, 1> fluid_density;
     sclx::array<const value_type, 2> fluid_velocity;
 
-    sclx::local_array<value_type, 2> f_shared;
     sclx::local_array<value_type, 2> lattice_velocities;
     sclx::local_array<value_type, 1> lattice_weights;
     value_type density_scale;
@@ -599,11 +584,6 @@ class simulation_engine {
         }
 
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-            sclx::local_array<value_type, 2> f_shared(
-                handler,
-                {lattice_size,
-                 sclx::cuda::traits::kernel::default_block_shape[0]}
-            );
             sclx::local_array<value_type, 2> lattice_velocities(
                 handler,
                 {dimensions, lattice_size}
@@ -619,8 +599,6 @@ class simulation_engine {
             sclx::array_list<value_type, 1, lattice_size> lattice_pml_Q_values(
                 lattice_pml_Q_values_
             );
-            sclx::array_list<const value_type, 1, lattice_size>
-                lattice_equilibrium_distributions_prev = lattice_pml_Q_values;
 
             sclx::array<value_type, 1> result_arrays_raw[2 * lattice_size];
             for (int alpha = 0; alpha < lattice_size; ++alpha) {
@@ -639,11 +617,9 @@ class simulation_engine {
                 domain_.num_bulk_points + domain_.num_layer_points,
                 lattice_distributions,
                 lattice_pml_Q_values,
-                lattice_equilibrium_distributions_prev,
                 domain_.layer_absorption,
                 solution_.macroscopic_values.fluid_density,
                 solution_.macroscopic_values.fluid_velocity,
-                f_shared,
                 lattice_velocities,
                 lattice_weights,
                 parameters_.nondim_factors.density_scale,
