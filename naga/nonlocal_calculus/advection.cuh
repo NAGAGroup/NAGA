@@ -211,6 +211,10 @@ class advection_operator {
         );
     }
 
+    const divergence_operator<T, Dimensions>& divergence_op() const {
+        return *divergence_op_;
+    }
+
   private:
     advection_operator() = default;
     std::shared_ptr<divergence_operator<T, Dimensions>> divergence_op_;
