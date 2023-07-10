@@ -34,6 +34,7 @@
 
 #include "../../../math.cuh"
 #include "subtask_factory.h"
+#include "../lattices.cuh"
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
@@ -64,6 +65,11 @@ compute_equilibrium_distribution(
 
 template<class Lattice>
 class compute_equilibrium_subtask;
+
+// Clion can't find implementation of the static `create` method in
+// the following class. This is a bug in Clion.
+//
+// You can find the implementation in the .inl variant of this file.
 
 template<class Lattice>
 struct subtask_factory<compute_equilibrium_subtask<Lattice>> {

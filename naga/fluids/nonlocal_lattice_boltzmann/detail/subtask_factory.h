@@ -32,14 +32,13 @@
 
 #pragma once
 
-#include <scalix/execute_kernel.cuh>
-
 namespace naga::fluids::nonlocal_lbm::detail {
 
 template<class Subtask>
 struct subtask_factory {
     template<class... Args>
     static Subtask create(Args... args) {
+        static_assert(std::is_same_v<Subtask, Subtask>, "Seems no factory was defined for this subtask.");
         return Subtask(args...);
     }
 };
