@@ -48,7 +48,7 @@ class compute_equilibrium_subtask {
         : handler_(handler) {
         lattice_equilibrium_distributions_
             = sclx::array_list<value_type, 1, lattice_size>(
-                engine.lattice_pml_Q_values_
+                engine.lattice_equilibrium_values_
             );
         lattice_distributions_ = sclx::array_list<value_type, 1, lattice_size>(
             engine.solution_.lattice_distributions

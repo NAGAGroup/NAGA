@@ -77,17 +77,19 @@ __device__ void compute_unitless_macroscopic_quants(
 }
 
 template<class T, uint Dimensions>
-class pml_emulated_velocity_t {
+class pml_div_Q1_field_map {
   public:
     using point_type = point_t<T, Dimensions>;
 
-    __host__ __device__ pml_emulated_velocity_t(
+    __host__ __device__ pml_div_Q1_field_map(
         const T* c0,
-        const sclx::array<T, 1>& absorption_coeff,
+        const sclx::array<const T, 1>& absorption_coeff,
+        const sclx::array<const T, 1>& Q1,
         size_t pml_start_index,
         size_t pml_end_index
     )
         : absorption_coeff(absorption_coeff),
+          Q1(Q1),
           pml_start_index(pml_start_index),
           pml_end_index(pml_end_index) {
 
@@ -106,16 +108,26 @@ class pml_emulated_velocity_t {
             size_t pml_index = i - pml_start_index;
             T coeff          = absorption_coeff[pml_index];
             for (uint d = 0; d < Dimensions; d++) {
-                c[d] = c0[d] * coeff;
+                c[d] = -c0[d] * coeff * Q1[pml_index];
             }
         }
 
         return c;
     }
 
+    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
+    ) const {
+        return (*this)[index[0]];
+    }
+
+    __host__ __device__ size_t size() const {
+        return absorption_coeff.elements();
+    }
+
   private:
     T c0[Dimensions];
-    sclx::array<T, 1> absorption_coeff;
+    sclx::array<const T, 1> absorption_coeff;
+    sclx::array<const T, 1> Q1;
     size_t pml_start_index;
     size_t pml_end_index;
 };
@@ -316,7 +328,7 @@ class simulation_engine {
         for (auto& f_alpha : solution_.lattice_distributions) {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
-        for (auto& Q_values : lattice_pml_Q_values_) {
+        for (auto& Q_values : lattice_equilibrium_values_) {
             Q_values = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
         temporary_distribution_
@@ -507,7 +519,7 @@ class simulation_engine {
                 solution_.lattice_distributions
             );
             sclx::array_list<value_type, 1, lattice_size> lattice_pml_Q_values(
-                lattice_pml_Q_values_
+                lattice_equilibrium_values_
             );
 
             sclx::array<value_type, 1> result_arrays_raw[2 * lattice_size];
@@ -515,7 +527,7 @@ class simulation_engine {
                 result_arrays_raw[alpha]
                     = solution_.lattice_distributions[alpha];
                 result_arrays_raw[alpha + lattice_size]
-                    = lattice_pml_Q_values_[alpha];
+                    = lattice_equilibrium_values_[alpha];
             }
             sclx::array_list<value_type, 1, lattice_size> result_arrays(
                 result_arrays_raw
@@ -544,29 +556,20 @@ class simulation_engine {
         }).get();
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            pml_emulated_velocity_t<value_type, dimensions> c_pml{
+            const auto& Q1
+                = lattice_equilibrium_values_[alpha];  // to save space we
+                                                       // temporarily use this
+                                                       // variable as Q1
+            pml_div_Q1_field_map<value_type, dimensions> field_map{
                 lattice_interface<Lattice>::lattice_velocities().vals[alpha],
+                Q1,
                 domain_.layer_absorption,
                 domain_.num_bulk_points,
                 domain_.num_bulk_points + domain_.num_layer_points};
 
-            sclx::assign_array(
-                solution_.lattice_distributions[alpha],
+            advection_operator_ptr_->divergence_op().apply(
+                field_map,
                 temporary_distribution_
-            );
-
-            advection_operator_ptr_->step_forward(
-                c_pml,
-                lattice_pml_Q_values_[alpha],
-                temporary_distribution_,
-                1.f
-            );
-
-            sclx::algorithm::elementwise_reduce(
-                sclx::algorithm::minus<>{},
-                temporary_distribution_,
-                temporary_distribution_,
-                lattice_pml_Q_values_[alpha]
             );
 
             sclx::algorithm::elementwise_reduce(
@@ -824,7 +827,7 @@ class simulation_engine {
         for (uint alpha = 0; alpha < lattice_size; ++alpha) {
             sclx::assign_array(
                 solution_.lattice_distributions[alpha],
-                lattice_pml_Q_values_[alpha]
+                lattice_equilibrium_values_[alpha]
             );
         }
     }
@@ -848,7 +851,7 @@ class simulation_engine {
 
     sclx::array<value_type, 1> density_source_term_{};
     sclx::array<value_type, 1> temporary_distribution_{};
-    sclx::array<value_type, 1> lattice_pml_Q_values_[lattice_size]{};
+    sclx::array<value_type, 1> lattice_equilibrium_values_[lattice_size]{};
     uint frame_number_ = 0;
 
     std::vector<density_source<Lattice>*> density_sources_{};
@@ -866,8 +869,6 @@ void unregister_density_source(
     }
     source->registered_engine_ = nullptr;
 }
-
-// template class simulation_engine<d2q9_lattice<float>>;
 
 }  // namespace naga::fluids::nonlocal_lbm::detail
 
