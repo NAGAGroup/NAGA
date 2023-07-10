@@ -40,6 +40,7 @@
 #include "../simulation_nodes.cuh"
 #include "../simulation_variables.cuh"
 #include "equilibrium_distribution.cuh"
+#include "subtask_factory.h"
 #include <scalix/fill.cuh>
 
 namespace naga::fluids::nonlocal_lbm::detail {
@@ -162,8 +163,7 @@ struct apply_pml_absorption_no_divQ_subtask {
             // note that lattice_pml_Q_values is also used to store the
             // previous value of f_tilde_eq
             const value_type& f_tilde_eq_prev
-                = lattice_pml_Q_values[alpha][idx]
-                - lattice_weights(alpha);
+                = lattice_pml_Q_values[alpha][idx] - lattice_weights(alpha);
 
             value_type Q_value
                 = (f_tilde_eq + f_tilde_eq_prev) * lattice_dt / 2.f;
@@ -578,45 +578,15 @@ class simulation_engine {
         }
 
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-            sclx::local_array<value_type, 2> f_shared(
-                handler,
-                {lattice_size,
-                 sclx::cuda::traits::kernel::default_block_shape[0]}
-            );
-            sclx::local_array<value_type, 2> lattice_velocities(
-                handler,
-                {dimensions, lattice_size}
-            );
-            sclx::local_array<value_type, 1> lattice_weights(
-                handler,
-                {lattice_size}
-            );
-
-            std::vector<sclx::array<const value_type, 1>> lat_dist_vec(
-                solution_.lattice_distributions,
-                solution_.lattice_distributions + lattice_size
-            );
-            sclx::array_list<const value_type, 1, lattice_size>
-                lattice_distributions(lat_dist_vec);
-            sclx::array_list<value_type, 1, lattice_size>
-                lattice_equilibrium_distributions(lattice_pml_Q_values_);
-
-            compute_equilibrium_subtask<Lattice> equilib_kernel_body{
-                handler,
-                lattice_equilibrium_distributions,
-                lattice_distributions,
-                solution_.macroscopic_values.fluid_density,
-                solution_.macroscopic_values.fluid_velocity,
-                f_shared,
-                lattice_velocities,
-                lattice_weights,
-                parameters_.nondim_factors.density_scale,
-                parameters_.nondim_factors.velocity_scale};
-
+            auto subtask
+                = subtask_factory<compute_equilibrium_subtask<Lattice>>::create(
+                    *this,
+                    handler
+                );
             handler.launch(
                 sclx::md_range_t<1>{domain_.points.shape()[1]},
-                lattice_equilibrium_distributions,
-                equilib_kernel_body
+                subtask.result(),
+                subtask
             );
         }).get();
     }
@@ -900,3 +870,5 @@ void unregister_density_source(
 // template class simulation_engine<d2q9_lattice<float>>;
 
 }  // namespace naga::fluids::nonlocal_lbm::detail
+
+#include "equilibrium_distribution.inl"

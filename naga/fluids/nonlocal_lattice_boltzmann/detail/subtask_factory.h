@@ -32,45 +32,16 @@
 
 #pragma once
 
-#include "../../../math.cuh"
-#include "subtask_factory.h"
+#include <scalix/execute_kernel.cuh>
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
-template<class Lattice>
-__device__ typename lattice_traits<Lattice>::value_type
-compute_equilibrium_distribution(
-    const typename lattice_traits<Lattice>::value_type& unitless_density,
-    const typename lattice_traits<Lattice>::value_type* unitless_velocity,
-    const typename lattice_traits<Lattice>::value_type* lattice_velocity,
-    const typename lattice_traits<Lattice>::value_type& lattice_weight
-) {
-    using value_type          = typename lattice_traits<Lattice>::value_type;
-    constexpr uint dimensions = lattice_traits<Lattice>::dimensions;
-
-    value_type u_dot_u
-        = math::loopless::dot<dimensions>(unitless_velocity, unitless_velocity);
-    value_type u_dot_c
-        = math::loopless::dot<dimensions>(unitless_velocity, lattice_velocity);
-
-    constexpr value_type c_s = lattice_traits<Lattice>::lattice_speed_of_sound;
-
-    using namespace math::loopless;
-
-    return lattice_weight * unitless_density
-         * (1 + u_dot_c / (pow<2>(c_s)) + pow<2>(u_dot_c) / (2 * pow<4>(c_s))
-            - u_dot_u);
-}
-
-template<class Lattice>
-class compute_equilibrium_subtask;
-
-template<class Lattice>
-struct subtask_factory<compute_equilibrium_subtask<Lattice>> {
-    static compute_equilibrium_subtask<Lattice> create(
-        const simulation_engine<Lattice>& engine,
-        sclx::kernel_handler& handler
-    );
+template<class Subtask>
+struct subtask_factory {
+    template<class... Args>
+    static Subtask create(Args... args) {
+        return Subtask(args...);
+    }
 };
 
 }  // namespace naga::fluids::nonlocal_lbm::detail
