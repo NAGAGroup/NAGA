@@ -97,87 +97,21 @@ class pml_div_Q1_field_map {
 
 /**
  * @brief Adds the PML absorption term to distribution, sans divergence terms
- * @tparam Lattice
  */
 template<class Lattice>
-struct partial_pml_2d_absorption_subtask {
-    using value_type = typename lattice_traits<Lattice>::value_type;
-    static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
-    static constexpr uint lattice_size = lattice_traits<Lattice>::size;
+class partial_pml_2d_subtask;
 
-    __device__ void operator()(
-        const sclx::md_index_t<1>& idx,
-        const sclx::kernel_info<>& info
-    ) {
-        if (info.local_thread_linear_id() == 0) {
-            for (int i = 0; i < dimensions * lattice_size; ++i) {
-                lattice_velocities(i % dimensions, i / dimensions)
-                    = lattice_interface<Lattice>::lattice_velocities()
-                          .vals[i / dimensions][i % dimensions];
+// Clion can't find implementation of the static `create` method in
+// the following class. This is a bug in Clion.
+//
+// You can find the implementation in the .inl variant of this file.
 
-                if (i % dimensions == 0) {
-                    lattice_weights(i / dimensions)
-                        = lattice_interface<Lattice>::lattice_weights()
-                              .vals[i / dimensions];
-                }
-            }
-        }
-        handler.syncthreads();
-
-        value_type unitless_density = fluid_density[idx] / density_scale;
-        value_type unitless_velocity[dimensions];
-        for (uint d = 0; d < dimensions; ++d) {
-            unitless_velocity[d] = fluid_velocity(d, idx[0]) / velocity_scale;
-        }
-
-        for (uint alpha = 0; alpha < lattice_size; ++alpha) {
-            value_type f_tilde_eq = compute_equilibrium_distribution<Lattice>(
-                                        unitless_density,
-                                        unitless_velocity,
-                                        &lattice_velocities(0, alpha),
-                                        lattice_weights(alpha)
-                                    )
-                                  - lattice_weights(alpha);
-
-            // note that lattice_pml_Q_values is also used to store the
-            // previous value of f_tilde_eq
-            const value_type& f_tilde_eq_prev
-                = lattice_pml_Q_values[alpha][idx] - lattice_weights(alpha);
-
-            value_type Q_value
-                = (f_tilde_eq + f_tilde_eq_prev) * lattice_dt / 2.f;
-
-            lattice_pml_Q_values[alpha][idx] = Q_value;
-
-            if (idx[0] < absorption_layer_start
-                || idx[0] >= absorption_layer_end) {
-                continue;
-            }
-
-            const value_type& sigma
-                = absorption_coefficients[idx[0] - absorption_layer_start];
-
-            lattice_distributions[alpha][idx[0]]
-                -= sigma * (2.f * f_tilde_eq + sigma * Q_value);
-        }
-    }
-    sclx::kernel_handler handler;
-
-    sclx::index_t absorption_layer_start{};
-    sclx::index_t absorption_layer_end{};
-
-    sclx::array_list<value_type, 1, lattice_size> lattice_distributions;
-    sclx::array_list<value_type, 1, lattice_size> lattice_pml_Q_values;
-
-    sclx::array<const value_type, 1> absorption_coefficients;
-    sclx::array<const value_type, 1> fluid_density;
-    sclx::array<const value_type, 2> fluid_velocity;
-
-    sclx::local_array<value_type, 2> lattice_velocities;
-    sclx::local_array<value_type, 1> lattice_weights;
-    value_type density_scale;
-    value_type velocity_scale;
-    value_type lattice_dt;
+template<class Lattice>
+struct subtask_factory<partial_pml_2d_subtask<Lattice>> {
+    static partial_pml_2d_subtask<Lattice> create(
+        const simulation_engine<Lattice>& engine,
+        sclx::kernel_handler& handler
+    );
 };
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

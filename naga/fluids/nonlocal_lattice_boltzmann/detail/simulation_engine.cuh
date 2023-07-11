@@ -370,52 +370,16 @@ class simulation_engine {
         }
 
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-            sclx::local_array<value_type, 2> lattice_velocities(
-                handler,
-                {dimensions, lattice_size}
-            );
-            sclx::local_array<value_type, 1> lattice_weights(
-                handler,
-                {lattice_size}
-            );
-
-            sclx::array_list<value_type, 1, lattice_size> lattice_distributions(
-                solution_.lattice_distributions
-            );
-            sclx::array_list<value_type, 1, lattice_size> lattice_pml_Q_values(
-                lattice_equilibrium_values_
-            );
-
-            sclx::array<value_type, 1> result_arrays_raw[2 * lattice_size];
-            for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                result_arrays_raw[alpha]
-                    = solution_.lattice_distributions[alpha];
-                result_arrays_raw[alpha + lattice_size]
-                    = lattice_equilibrium_values_[alpha];
-            }
-            sclx::array_list<value_type, 1, lattice_size> result_arrays(
-                result_arrays_raw
-            );
-
-            partial_pml_2d_absorption_subtask<Lattice> pml_kernel_body{
-                handler,
-                domain_.num_bulk_points,
-                domain_.num_bulk_points + domain_.num_layer_points,
-                lattice_distributions,
-                lattice_pml_Q_values,
-                domain_.layer_absorption,
-                solution_.macroscopic_values.fluid_density,
-                solution_.macroscopic_values.fluid_velocity,
-                lattice_velocities,
-                lattice_weights,
-                parameters_.nondim_factors.density_scale,
-                parameters_.nondim_factors.velocity_scale,
-                parameters_.time_step / parameters_.nondim_factors.time_scale};
+            auto subtask
+                = subtask_factory<partial_pml_2d_subtask<Lattice>>::create(
+                    *this,
+                    handler
+                );
 
             handler.launch(
                 sclx::md_range_t<1>{domain_.points.shape()[1]},
-                result_arrays,
-                pml_kernel_body
+                subtask.result(),
+                subtask
             );
         }).get();
 
@@ -737,3 +701,4 @@ void unregister_density_source(
 }  // namespace naga::fluids::nonlocal_lbm::detail
 
 #include "equilibrium_distribution.inl"
+#include "pml_absorption_2d.inl"

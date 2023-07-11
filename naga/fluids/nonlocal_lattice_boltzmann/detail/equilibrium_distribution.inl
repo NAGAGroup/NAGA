@@ -44,8 +44,7 @@ class compute_equilibrium_subtask {
     __host__ compute_equilibrium_subtask(
         const simulation_engine<Lattice>& engine,
         sclx::kernel_handler& handler
-    )
-        : handler_(handler) {
+    ) {
         lattice_equilibrium_distributions_
             = sclx::array_list<value_type, 1, lattice_size>(
                 engine.lattice_equilibrium_values_
@@ -58,18 +57,20 @@ class compute_equilibrium_subtask {
         fluid_velocity_ = engine.solution_.macroscopic_values.fluid_velocity;
 
         f_shared_ = sclx::local_array<value_type, 2>(
-            handler_,
+            handler,
             {lattice_size, sclx::cuda::traits::kernel::default_block_shape[0]}
         );
         lattice_velocities_ = sclx::local_array<value_type, 2>(
-            handler_,
+            handler,
             {dimensions, lattice_size}
         );
         lattice_weights_
-            = sclx::local_array<value_type, 1>(handler_, {lattice_size});
+            = sclx::local_array<value_type, 1>(handler, {lattice_size});
 
         density_scale_  = engine.parameters_.nondim_factors.density_scale;
         velocity_scale_ = engine.parameters_.nondim_factors.velocity_scale;
+
+        this->handler_ = handler;
     }
 
     __device__ void operator()(
@@ -119,7 +120,7 @@ class compute_equilibrium_subtask {
     }
 
   private:
-    sclx::kernel_handler& handler_;
+    sclx::kernel_handler handler_;
 
     sclx::array_list<value_type, 1, lattice_size>
         lattice_equilibrium_distributions_;
