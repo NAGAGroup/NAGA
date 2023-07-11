@@ -38,7 +38,10 @@ template<class Subtask>
 struct subtask_factory {
     template<class... Args>
     static Subtask create(Args... args) {
-        static_assert(std::is_same_v<Subtask, Subtask>, "Seems no factory was defined for this subtask.");
+        static_assert(
+            std::is_same_v<Subtask, Subtask>,
+            "Seems no factory was defined for this subtask."
+        );
         return Subtask(args...);
     }
 };

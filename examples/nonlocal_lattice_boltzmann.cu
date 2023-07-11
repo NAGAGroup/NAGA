@@ -143,11 +143,10 @@ int main() {
         naga::point_t<value_type, 2>{{1.0f, 1.0f}},
         nodal_spacing,
         0.3f,
-        0.1f
-    };
+        0.1f};
 
     engine.init_domain(node_provider);
-    auto domain = engine.domain_;
+    auto domain                   = engine.domain_;
     std::future<void> save_future = save_solution(engine, 0);
 
     std::cout << "Lattice time step: "
@@ -167,7 +166,7 @@ int main() {
     std::chrono::milliseconds total_time{0};
     uint save_frame = 0;
     value_type fps  = 60.0f;
-    while (engine.frame_number_ * engine.parameters_.time_step < 2.f ) {
+    while (engine.frame_number_ * engine.parameters_.time_step < 2.f) {
         auto start = std::chrono::high_resolution_clock::now();
         engine.step_forward();
         auto end = std::chrono::high_resolution_clock::now();
@@ -260,12 +259,7 @@ std::future<void> save_solution(const sim_engine_t& engine, uint save_frame) {
     cells->Allocate(domain.points.shape()[1]);
 
     for (vtkIdType i = 0; i < domain.points.shape()[1]; ++i) {
-        points->SetPoint(
-            i,
-            domain.points(0, i),
-            domain.points(1, i),
-            0
-        );
+        points->SetPoint(i, domain.points(0, i), domain.points(1, i), 0);
 
         value_type f_i[lattice_t::size];
         auto lat_weights

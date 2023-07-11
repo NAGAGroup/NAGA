@@ -39,14 +39,14 @@ namespace naga::fluids::nonlocal_lbm {
 
 template<class Lattice>
 class node_provider {
-public:
+  public:
     static constexpr uint dimensions = lattice_traits<Lattice>::dimensions;
-    using value_type                 = typename lattice_traits<Lattice>::value_type;
+    using value_type = typename lattice_traits<Lattice>::value_type;
 
-    node_provider() = default;
+    node_provider()          = default;
     virtual ~node_provider() = default;
 
     virtual simulation_nodes<value_type> get() const = 0;
 };
 
-}
+}  // namespace naga::fluids::nonlocal_lbm

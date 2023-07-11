@@ -33,8 +33,8 @@
 #pragma once
 
 #include "../../../math.cuh"
-#include "subtask_factory.h"
 #include "../lattices.cuh"
+#include "subtask_factory.h"
 
 namespace naga::fluids::nonlocal_lbm::detail {
 

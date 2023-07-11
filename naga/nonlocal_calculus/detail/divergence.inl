@@ -195,8 +195,8 @@ void compute_divergence_weights(
                         point_t<T, 3> xy(
                             {x_k[0] - x_i[0], x_k[1] - x_i[1], x_k[2] - x_i[2]}
                         );
-                        T r       = math::loopless::norm<3>(xy);
-                        T r_x1x2  = math::loopless::norm<2>(xy);
+                        T r      = math::loopless::norm<3>(xy);
+                        T r_x1x2 = math::loopless::norm<2>(xy);
                         quad_weight *= r * r_x1x2;
                     }
 

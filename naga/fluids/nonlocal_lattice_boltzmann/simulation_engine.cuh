@@ -64,11 +64,11 @@ class simulation_engine {
         );
     }
 
-    void init_domain(const simulation_nodes<value_type> &domain) {
+    void init_domain(const simulation_nodes<value_type>& domain) {
         engine_ptr_->init_domain(domain);
     }
 
-    void init_domain(const node_provider<Lattice> &nodes) {
+    void init_domain(const node_provider<Lattice>& nodes) {
         engine_ptr_->init_domain(nodes.get());
     }
 

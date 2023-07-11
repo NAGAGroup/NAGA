@@ -120,8 +120,8 @@ __host__ void batched_nearest_neighbors(
         = point_map_traits<PointMapType>::point_traits::dimensions;
 
     uint max_shared_mem_per_block = std::numeric_limits<uint>::max();
-    int device_count               = sclx::cuda::traits::device_count();
-    int current_device = sclx::cuda::traits::current_device();
+    int device_count              = sclx::cuda::traits::device_count();
+    int current_device            = sclx::cuda::traits::current_device();
     for (int d = 0; d < device_count; ++d) {
         sclx::cuda::set_device(d);
         cudaDeviceProp props{};
@@ -132,7 +132,6 @@ __host__ void batched_nearest_neighbors(
         );
     }
     sclx::cuda::set_device(current_device);
-
 
     uint shared_mem_per_thread
         = sizeof(value_type) * (k + dimensions) + sizeof(sclx::index_t) * k;
@@ -154,7 +153,6 @@ __host__ void batched_nearest_neighbors(
             "naga::"
         );
     }
-
 
     for (int i = 0; i < dimensions; i++) {
         if (segmented_ref_points.shape()[i] > std::numeric_limits<int>::max()) {
@@ -310,11 +308,9 @@ __host__ void batched_nearest_neighbors(
                     const size_t* prime_numbers;
                     if (max_linear_search_idx < small_prime_numbers[0]) {
                         prime_numbers = small_prime_numbers;
-                    } else if (max_linear_search_idx
-                               < medium_prime_numbers[0]) {
+                    } else if (max_linear_search_idx < medium_prime_numbers[0]) {
                         prime_numbers = medium_prime_numbers;
-                    } else if (max_linear_search_idx
-                               < large_prime_numbers[0]) {
+                    } else if (max_linear_search_idx < large_prime_numbers[0]) {
                         prime_numbers = large_prime_numbers;
                     } else {
                         prime_numbers = very_large_prime_numbers;

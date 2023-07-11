@@ -61,14 +61,16 @@ int main() {
     size_t num_query_points = 30;
     sclx::array<float, 2> query_points{3, num_query_points};
 
-
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
         handle.launch(
             sclx::md_range_t<1>{num_query_points},
             query_points,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
                 thrust::default_random_engine rng;
-                thrust::uniform_real_distribution<float> dist(0, grid_spacing * static_cast<float>(grid_size - 1));
+                thrust::uniform_real_distribution<float> dist(
+                    0,
+                    grid_spacing * static_cast<float>(grid_size - 1)
+                );
                 rng.discard(idx[0]);
                 query_points(0, idx[0]) = dist(rng);
                 query_points(1, idx[0]) = dist(rng);
@@ -76,7 +78,6 @@ int main() {
             }
         );
     }).get();
-
 
     using point_map_t = naga::default_point_map<float, 3>;
     using segmentation_t

@@ -143,11 +143,10 @@ int main() {
         naga::point_t<value_type, 3>{{1.0f, 1.0f, 1.0f}},
         nodal_spacing,
         0.3f,
-        0.1f
-    };
+        0.1f};
 
     engine.init_domain(node_provider);
-    auto domain = engine.domain_;
+    auto domain                   = engine.domain_;
     std::future<void> save_future = save_solution(engine, 0);
 
     std::cout << "Lattice time step: "

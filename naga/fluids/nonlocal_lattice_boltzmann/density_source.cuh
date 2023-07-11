@@ -57,20 +57,18 @@ class density_source {
         detail::unregister_density_source(*registered_engine_, this);
     }
 
-    virtual ~density_source() {
-        unregister();
-    }
+    virtual ~density_source() { unregister(); }
 
   protected:
     friend class detail::simulation_engine<Lattice>;
 
-    template <class Lattice_>
+    template<class Lattice_>
     friend void detail::unregister_density_source(
         detail::simulation_engine<Lattice_>& engine,
         density_source<Lattice_>* source
     );
 
-    void notify_registered(detail::simulation_engine<Lattice> *engine) {
+    void notify_registered(detail::simulation_engine<Lattice>* engine) {
         if (registered_engine_) {
             sclx::throw_exception<std::runtime_error>(
                 "Density source already registered with an engine.",
