@@ -328,7 +328,7 @@ class simulation_engine {
                         = solution.macroscopic_values.fluid_density(idx[0])
                         / parameters.nondim_factors.density_scale;
                     value_type u[dimensions];
-                    sclx::cexpr_memcpy<dimensions>(
+                    sclx::constexpr_assign_array<dimensions>(
                         u,
                         &solution.macroscopic_values.fluid_velocity(0, idx[0])
                     );

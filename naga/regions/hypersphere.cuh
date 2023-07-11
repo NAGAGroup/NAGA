@@ -32,7 +32,7 @@
 
 #pragma once
 #include "../distance_functions.cuh"
-#include <scalix/cexpr_memcpy.cuh>
+#include <scalix/constexpr_assign_array.cuh>
 
 namespace naga::regions {
 
@@ -52,7 +52,7 @@ class hypersphere {
         const T (&center)[Dimensions]
     )
         : radius_(radius) {
-        sclx::cexpr_memcpy<Dimensions>(this->center_, center);
+        sclx::constexpr_assign_array<Dimensions>(this->center_, center);
     }
 
     template<class VectorT>
