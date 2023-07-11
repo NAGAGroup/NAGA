@@ -45,16 +45,22 @@ class partial_pml_2d_subtask {
         sclx::kernel_handler& handler
     ) {
         params_local_ = sclx::local_array<parameters, 1>(handler, {1});
-        params_ = sclx::detail::make_unified_ptr(parameters{});
-        *params_ = parameters(engine, handler);
+        params_       = sclx::detail::make_unified_ptr(parameters{});
+        *params_      = parameters(engine, handler);
     }
 
     __device__ void operator()(
         const sclx::md_index_t<1>& idx,
         const sclx::kernel_info<>& info
     ) {
-        auto& params  = params_local_[0];
-        auto& handler = params_->handler;
+        auto& params = params_local_[0];
+// the following if/else macro prevents linting errors in IDEs
+// since the return type is different for host and device
+#ifdef __CUDA_ARCH__
+        sclx::kernel_handler& handler = params_->handler;
+#else
+        sclx::kernel_handler handler;
+#endif
         if (info.local_thread_linear_id() == 0) {
             params = *params_;
             for (int i = 0; i < dimensions * lattice_size; ++i) {
@@ -189,7 +195,6 @@ class partial_pml_2d_subtask {
     };
 
   private:
-
     sclx::detail::unified_ptr<parameters> params_;
     sclx::local_array<parameters, 1> params_local_;
 };
