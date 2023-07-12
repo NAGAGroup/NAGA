@@ -43,12 +43,12 @@ class compute_equilibrium_subtask {
 
     __host__ compute_equilibrium_subtask(
         const simulation_engine<Lattice>& engine,
-        sclx::kernel_handler& handler
-    ) {
-        lattice_equilibrium_distributions_
-            = sclx::array_list<value_type, 1, lattice_size>(
-                engine.lattice_equilibrium_values_
-            );
+        sclx::kernel_handler& handler,
+        const sclx::
+            array_list<typename Lattice::value_type, 1, Lattice::size>&
+                lattice_equilibrium_values
+    ) : lattice_equilibrium_distributions_(lattice_equilibrium_values) {
+
         lattice_distributions_ = sclx::array_list<value_type, 1, lattice_size>(
             engine.solution_.lattice_distributions
         );
@@ -141,9 +141,12 @@ template<class Lattice>
 compute_equilibrium_subtask<Lattice>
 subtask_factory<compute_equilibrium_subtask<Lattice>>::create(
     const simulation_engine<Lattice>& engine,
-    sclx::kernel_handler& handler
+    sclx::kernel_handler& handler,
+    const sclx::
+        array_list<typename Lattice::value_type, 1, Lattice::size>&
+            lattice_equilibrium_values
 ) {
-    return {engine, handler};
+    return {engine, handler, lattice_equilibrium_values};
 }
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

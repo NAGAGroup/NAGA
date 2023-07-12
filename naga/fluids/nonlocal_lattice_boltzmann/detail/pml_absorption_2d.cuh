@@ -39,79 +39,21 @@
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
-template<class T, uint Dimensions>
-class pml_div_Q1_field_map {
+template <class Lattice>
+class simulation_engine;
+
+template <class Lattice>
+class pml_absorption_operator {
   public:
-    using point_type = point_t<T, Dimensions>;
+    using value_type = typename lattice_traits<Lattice>::value_type;
+    static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
+    static constexpr uint lattice_size = lattice_traits<Lattice>::size;
 
-    __host__ __device__ pml_div_Q1_field_map(
-        const T* c0,
-        const sclx::array<const T, 1>& absorption_coeff,
-        const sclx::array<const T, 1>& Q1,
-        size_t pml_start_index,
-        size_t pml_end_index
-    )
-        : absorption_coeff(absorption_coeff),
-          Q1(Q1),
-          pml_start_index(pml_start_index),
-          pml_end_index(pml_end_index) {
+    pml_absorption_operator() = default;
 
-        for (uint d = 0; d < Dimensions; d++) {
-            this->c0[d] = c0[d];
-        }
-    }
+    explicit pml_absorption_operator(simulation_engine<Lattice>* engine){}
 
-    __host__ __device__ point_type operator[](sclx::index_t i) const {
-        point_type c;
-        if (i < pml_start_index || i >= pml_end_index) {
-            for (uint d = 0; d < Dimensions; d++) {
-                c[d] = 0.f;
-            }
-        } else {
-            size_t pml_index = i - pml_start_index;
-            T coeff          = absorption_coeff[pml_index];
-            for (uint d = 0; d < Dimensions; d++) {
-                c[d] = -c0[d] * coeff * Q1[pml_index];
-            }
-        }
-
-        return c;
-    }
-
-    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
-    ) const {
-        return (*this)[index[0]];
-    }
-
-    __host__ __device__ size_t size() const {
-        return absorption_coeff.elements();
-    }
-
-  private:
-    T c0[Dimensions];
-    sclx::array<const T, 1> absorption_coeff;
-    sclx::array<const T, 1> Q1;
-    size_t pml_start_index;
-    size_t pml_end_index;
-};
-
-/**
- * @brief Adds the PML absorption term to distribution, sans divergence terms
- */
-template<class Lattice>
-class partial_pml_2d_subtask;
-
-// Clion can't find implementation of the static `create` method in
-// the following class. This is a bug in Clion.
-//
-// You can find the implementation in the .inl variant of this file.
-
-template<class Lattice>
-struct subtask_factory<partial_pml_2d_subtask<Lattice>> {
-    static partial_pml_2d_subtask<Lattice> create(
-        const simulation_engine<Lattice>& engine,
-        sclx::kernel_handler& handler
-    );
+    void apply(){}
 };
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

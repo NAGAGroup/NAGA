@@ -33,6 +33,62 @@
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
+template<class T, uint Dimensions>
+class pml_div_Q1_field_map {
+  public:
+    using point_type = point_t<T, Dimensions>;
+
+    __host__ __device__ pml_div_Q1_field_map(
+        const T* c0,
+        const sclx::array<const T, 1>& absorption_coeff,
+        const sclx::array<const T, 1>& Q1,
+        size_t pml_start_index,
+        size_t pml_end_index
+    )
+        : absorption_coeff(absorption_coeff),
+          Q1(Q1),
+          pml_start_index(pml_start_index),
+          pml_end_index(pml_end_index) {
+
+        for (uint d = 0; d < Dimensions; d++) {
+            this->c0[d] = c0[d];
+        }
+    }
+
+    __host__ __device__ point_type operator[](sclx::index_t i) const {
+        point_type c;
+        if (i < pml_start_index || i >= pml_end_index) {
+            for (uint d = 0; d < Dimensions; d++) {
+                c[d] = 0.f;
+            }
+        } else {
+            size_t pml_index = i - pml_start_index;
+            T coeff          = absorption_coeff[pml_index];
+            for (uint d = 0; d < Dimensions; d++) {
+                c[d] = -c0[d] * coeff * Q1[pml_index];
+            }
+        }
+
+        return c;
+    }
+
+    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
+    ) const {
+        return (*this)[index[0]];
+    }
+
+    __host__ __device__ size_t size() const {
+        return absorption_coeff.elements();
+    }
+
+  private:
+    T c0[Dimensions];
+    sclx::array<const T, 1> absorption_coeff;
+    sclx::array<const T, 1> Q1;
+    size_t pml_start_index;
+    size_t pml_end_index;
+};
+
 template<class Lattice>
 class partial_pml_2d_subtask {
   public:
@@ -42,11 +98,12 @@ class partial_pml_2d_subtask {
 
     partial_pml_2d_subtask(
         const simulation_engine<Lattice>& engine,
-        sclx::kernel_handler& handler
+        sclx::kernel_handler& handler,
+        const sclx::array_list<value_type, 1, lattice_size>& lattice_Q1_values
     ) {
         params_local_ = sclx::local_array<parameters, 1>(handler, {1});
         params_       = sclx::detail::make_unified_ptr(parameters{});
-        *params_      = parameters(engine, handler);
+        *params_      = parameters(engine, handler, lattice_Q1_values);
     }
 
     __device__ void operator()(
@@ -139,7 +196,9 @@ class partial_pml_2d_subtask {
 
         parameters(
             const simulation_engine<Lattice>& engine,
-            sclx::kernel_handler& handler
+            sclx::kernel_handler& handler,
+            const sclx::array_list<value_type, 1, lattice_size>&
+                lattice_Q1_values
         ) {
             absorption_layer_start = engine.domain_.num_bulk_points;
             absorption_layer_end   = engine.domain_.num_bulk_points
@@ -150,11 +209,7 @@ class partial_pml_2d_subtask {
                     engine.solution_.lattice_distributions
                 );
 
-            lattice_Q1_values = sclx::array_list<value_type, 1, lattice_size>(
-                engine
-                    .lattice_equilibrium_values_  // temporarily use this array
-                                                  // as Q1 values to save memory
-            );
+            this->lattice_Q1_values = lattice_Q1_values;
 
             absorption_coefficients = engine.domain_.layer_absorption;
             fluid_density  = engine.solution_.macroscopic_values.fluid_density;
@@ -200,12 +255,103 @@ class partial_pml_2d_subtask {
 };
 
 template<class Lattice>
-partial_pml_2d_subtask<Lattice>
-subtask_factory<partial_pml_2d_subtask<Lattice>>::create(
-    const simulation_engine<Lattice>& engine,
-    sclx::kernel_handler& handler
-) {
-    return {engine, handler};
-}
+struct subtask_factory<partial_pml_2d_subtask<Lattice>> {
+    static partial_pml_2d_subtask<Lattice> create(
+        const simulation_engine<Lattice>& engine,
+        sclx::kernel_handler& handler,
+        const sclx::
+            array_list<typename Lattice::value_type, 1, Lattice::size>&
+                lattice_Q1_values
+    ) {
+        return {engine, handler, lattice_Q1_values};
+    }
+};
+
+
+
+template <class T>
+class pml_absorption_operator<d2q9_lattice<T>> {
+  public:
+    using lattice = d2q9_lattice<T>;
+    using value_type = typename lattice_traits<lattice>::value_type;
+    static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
+    static constexpr uint lattice_size = lattice_traits<lattice>::size;
+
+    pml_absorption_operator() = default;
+
+    explicit pml_absorption_operator(simulation_engine<lattice>* engine)
+        : engine_(engine) {
+        std::vector<sclx::array<value_type, 1>> lattice_Q1_values_raw;
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            sclx::array<value_type, 1> Q1_alpha{engine_->domain_.points.shape()[1]};
+            sclx::fill(
+                Q1_alpha,
+                lattice_interface<lattice>::lattice_weights().vals[alpha]
+            );
+            lattice_Q1_values_raw.push_back(Q1_alpha);
+        }
+        lattice_Q1_values_
+            = sclx::array_list<value_type, 1, lattice_size>(lattice_Q1_values_raw);
+    }
+
+    void apply() {
+        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            auto subtask
+                = subtask_factory<partial_pml_2d_subtask<lattice>>::create(
+                    *engine_,
+                    handler,
+                    lattice_Q1_values_
+                );
+
+            handler.launch(
+                sclx::md_range_t<1>{engine_->domain_.points.shape()[1]},
+                subtask.result(),
+                subtask
+            );
+        }).get();
+
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            const auto& Q1
+                = lattice_Q1_values_[alpha];
+
+            pml_div_Q1_field_map<value_type, dimensions> field_map{
+                lattice_interface<lattice>::lattice_velocities().vals[alpha],
+                Q1,
+                engine_->domain_.layer_absorption,
+                engine_->domain_.num_bulk_points,
+                engine_->domain_.num_bulk_points + engine_->domain_.num_layer_points};
+
+            engine_->advection_operator_ptr_->divergence_op().apply(
+                field_map,
+                engine_->temporary_distribution_
+            );
+
+            sclx::algorithm::elementwise_reduce(
+                sclx::algorithm::plus<>{},
+                engine_->solution_.lattice_distributions[alpha],
+                engine_->solution_.lattice_distributions[alpha],
+                engine_->temporary_distribution_
+            );
+        }
+
+        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            auto subtask
+                = subtask_factory<compute_equilibrium_subtask<lattice>>::create(
+                    *engine_,
+                    handler,
+                    lattice_Q1_values_
+                );
+            handler.launch(
+                sclx::md_range_t<1>{engine_->domain_.points.shape()[1]},
+                subtask.result(),
+                subtask
+            );
+        }).get();
+    }
+
+  private:
+    simulation_engine<lattice> *engine_;
+    sclx::array_list<value_type, 1, lattice_size> lattice_Q1_values_;
+};
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

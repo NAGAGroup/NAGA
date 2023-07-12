@@ -192,9 +192,6 @@ class simulation_engine {
         for (auto& f_alpha : solution_.lattice_distributions) {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
-        for (auto& Q_values : lattice_equilibrium_values_) {
-            Q_values = sclx::array<value_type, 1>{domain_.points.shape()[1]};
-        }
         temporary_distribution_
             = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         init_distribution();
@@ -210,6 +207,10 @@ class simulation_engine {
 
         density_source_term_
             = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
+
+        pml_absorption_operator_ = pml_absorption_operator<Lattice>{
+            this
+        };
     }
 
     void init_domain(const node_provider<Lattice>& nodes) {
@@ -369,57 +370,7 @@ class simulation_engine {
             return;
         }
 
-        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-            auto subtask
-                = subtask_factory<partial_pml_2d_subtask<Lattice>>::create(
-                    *this,
-                    handler
-                );
-
-            handler.launch(
-                sclx::md_range_t<1>{domain_.points.shape()[1]},
-                subtask.result(),
-                subtask
-            );
-        }).get();
-
-        for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            const auto& Q1
-                = lattice_equilibrium_values_[alpha];  // to save space we
-                                                       // temporarily use this
-                                                       // variable as Q1
-            pml_div_Q1_field_map<value_type, dimensions> field_map{
-                lattice_interface<Lattice>::lattice_velocities().vals[alpha],
-                Q1,
-                domain_.layer_absorption,
-                domain_.num_bulk_points,
-                domain_.num_bulk_points + domain_.num_layer_points};
-
-            advection_operator_ptr_->divergence_op().apply(
-                field_map,
-                temporary_distribution_
-            );
-
-            sclx::algorithm::elementwise_reduce(
-                sclx::algorithm::plus<>{},
-                solution_.lattice_distributions[alpha],
-                solution_.lattice_distributions[alpha],
-                temporary_distribution_
-            );
-        }
-
-        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-            auto subtask
-                = subtask_factory<compute_equilibrium_subtask<Lattice>>::create(
-                    *this,
-                    handler
-                );
-            handler.launch(
-                sclx::md_range_t<1>{domain_.points.shape()[1]},
-                subtask.result(),
-                subtask
-            );
-        }).get();
+        pml_absorption_operator_.apply();
     }
 
     void bounce_back_step() {
@@ -651,13 +602,6 @@ class simulation_engine {
                 }
             );
         });
-
-        for (uint alpha = 0; alpha < lattice_size; ++alpha) {
-            sclx::assign_array(
-                solution_.lattice_distributions[alpha],
-                lattice_equilibrium_values_[alpha]
-            );
-        }
     }
 
     ~simulation_engine() {
@@ -679,10 +623,11 @@ class simulation_engine {
 
     sclx::array<value_type, 1> density_source_term_{};
     sclx::array<value_type, 1> temporary_distribution_{};
-    sclx::array<value_type, 1> lattice_equilibrium_values_[lattice_size]{};
     uint frame_number_ = 0;
 
     std::vector<density_source<Lattice>*> density_sources_{};
+
+    pml_absorption_operator<Lattice> pml_absorption_operator_{};
 };
 
 template<class Lattice>

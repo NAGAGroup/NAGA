@@ -66,16 +66,14 @@ compute_equilibrium_distribution(
 template<class Lattice>
 class compute_equilibrium_subtask;
 
-// Clion can't find implementation of the static `create` method in
-// the following class. This is a bug in Clion.
-//
-// You can find the implementation in the .inl variant of this file.
-
 template<class Lattice>
 struct subtask_factory<compute_equilibrium_subtask<Lattice>> {
     static compute_equilibrium_subtask<Lattice> create(
         const simulation_engine<Lattice>& engine,
-        sclx::kernel_handler& handler
+        sclx::kernel_handler& handler,
+        const sclx::
+            array_list<typename Lattice::value_type, 1, Lattice::size>&
+                lattice_equilibrium_values
     );
 };
 
