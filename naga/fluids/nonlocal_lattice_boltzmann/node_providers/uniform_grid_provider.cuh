@@ -133,10 +133,6 @@ class uniform_grid_provider : public node_provider<Lattice> {
         size_t layer_points_offset
             = grid_range_.size() - boundary_size - num_layer_points;
 
-        std::cout << "num_layer_points: " << num_layer_points << std::endl;
-        std::cout << "layer_points_offset: " << layer_points_offset
-                  << std::endl;
-
         assign_bulk_and_layer_info(
             boundary_distances_squared,
             layer_points_offset,
