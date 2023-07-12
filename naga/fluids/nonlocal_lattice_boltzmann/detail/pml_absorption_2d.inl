@@ -687,6 +687,23 @@ class partial_pml_subtask<d3q27_lattice<T>> {
     sclx::local_array<parameters, 1> params_local_;
 };
 
+template<class T>
+struct subtask_factory<partial_pml_subtask<d3q27_lattice<T>>> {
+    using lattice = d3q27_lattice<T>;
+    static partial_pml_subtask<lattice> create(
+        const simulation_engine<lattice>& engine,
+        sclx::kernel_handler& handler,
+        const sclx::
+            array_list<typename lattice::value_type, 1, lattice::size>&
+                lattice_Q1_values,
+        const sclx::
+            array_list<typename lattice::value_type, 1, lattice::size>&
+                lattice_Q2_values
+    ) {
+        return {engine, handler, lattice_Q1_values, lattice_Q2_values};
+    }
+};
+
 template <class T>
 class pml_absorption_operator<d3q27_lattice<T>> {
   public:
