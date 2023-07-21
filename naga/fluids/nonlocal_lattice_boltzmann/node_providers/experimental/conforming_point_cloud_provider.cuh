@@ -1,0 +1,316 @@
+
+// BSD 3-Clause License
+//
+// Copyright (c) 2023 Jack Myers
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// * Redistributions of source code must retain the above copyright notice, this
+// list of conditions and the following disclaimer.
+//
+// * Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// * Neither the name of the copyright holder nor the names of its
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+
+#pragma once
+#include "../../node_provider.cuh"
+#include "detail/conforming_point_cloud_provider.hpp"
+#include <scalix/filesystem.hpp>
+
+namespace naga::fluids::nonlocal_lbm {
+template<class T>
+class d2q9_lattice;
+}
+
+namespace naga::experimental::fluids::nonlocal_lbm {
+
+template<class Lattice>
+using node_provider = ::naga::fluids::nonlocal_lbm::node_provider<Lattice>;
+
+template<class T>
+using simulation_nodes = ::naga::fluids::nonlocal_lbm::simulation_nodes<T>;
+
+template<class T>
+T distance_to_edge(
+    const T* xi,
+    const std::vector<T>& x1,
+    const std::vector<T>& x1_normal,
+    const std::vector<T>& x2,
+    const std::vector<T>& x2_normal
+) {
+    std::vector<T> average_normal
+        = {(x2_normal[0] + x1_normal[0]) / 2,
+           (x2_normal[1] + x1_normal[1]) / 2};
+    T norm_normal = math::loopless::norm<2>(average_normal.data());
+    average_normal[0] /= norm_normal;
+    average_normal[1] /= norm_normal;
+
+    std::vector<T> x12         = {x2[0] - x1[0], x2[1] - x1[1]};
+    T mag_x12                  = sqrtf(x12[0] * x12[0] + x12[1] * x12[1]);
+    std::vector<T> e1          = {x12[0] / mag_x12, x12[1] / mag_x12};
+    std::vector<T> edge_normal = {e1[1], -e1[0]};
+    if (edge_normal[0] * average_normal[0] + edge_normal[1] * average_normal[1]
+        < 0) {
+        edge_normal[0] *= -1;
+        edge_normal[1] *= -1;
+    }
+    std::vector<T> x1i = {xi[0] - x1[0], xi[1] - x1[1]};
+    T mag_x1i          = sqrtf(x1i[0] * x1i[0] + x1i[1] * x1i[1]);
+    T x1i_dot_e1       = x1i[0] * e1[0] + x1i[1] * e1[1];
+    T x1i_dot_normal   = x1i[0] * edge_normal[0] + x1i[1] * edge_normal[1];
+    T distance         = std::abs(x1i_dot_normal);
+    if (x1i_dot_e1 > mag_x12) {
+        T mag_x2i = sqrtf(
+            (xi[0] - x2[0]) * (xi[0] - x2[0])
+            + (xi[1] - x2[1]) * (xi[1] - x2[1])
+        );
+        distance = mag_x2i;
+    } else if (x1i_dot_e1 <= 0)
+        distance = mag_x1i;
+
+    if (x1i_dot_normal <= 0)
+        distance *= -1;
+
+    return distance;
+}
+
+template<class T, class U>
+T get_distance_to_contour(
+    const T* p_new,
+    const std::vector<U>& vertices,
+    const std::vector<U>& vertex_normals,
+    const std::vector<size_t>& edges
+) {
+    std::vector<size_t> edge = {edges[0], edges[1]};
+    auto min_distance        = distance_to_edge<T>(
+        p_new,
+        {vertices[2 * edge[0]], vertices[2 * edge[0] + 1]},
+        {vertex_normals[2 * edge[0]], vertex_normals[2 * edge[0] + 1]},
+        {vertices[2 * edge[1]], vertices[2 * edge[1] + 1]},
+        {vertex_normals[2 * edge[1]], vertex_normals[2 * edge[1] + 1]}
+    );
+    for (size_t e = 1; e < edges.size() / 2; e++) {
+        edge          = {edges[2 * e], edges[2 * e + 1]};
+        auto distance = distance_to_edge<T>(
+            p_new,
+            {vertices[2 * edge[0]], vertices[2 * edge[0] + 1]},
+            {vertex_normals[2 * edge[0]], vertex_normals[2 * edge[0] + 1]},
+            {vertices[2 * edge[1]], vertices[2 * edge[1] + 1]},
+            {vertex_normals[2 * edge[1]], vertex_normals[2 * edge[1] + 1]}
+        );
+        if (std::abs(distance) < std::abs(min_distance))
+            min_distance = distance;
+    }
+
+    return min_distance;
+}
+
+template<class Lattice>
+class conforming_point_cloud_provider : public node_provider<Lattice> {
+  public:
+    using base                       = node_provider<Lattice>;
+    static constexpr uint dimensions = base::dimensions;
+    using value_type                 = typename base::value_type;
+
+    conforming_point_cloud_provider(
+        const double& approximate_spacing,
+        const sclx::filesystem::path& domain,
+        const std::vector<sclx::filesystem::path>& immersed_boundaries = {},
+        const double& domain_absorption_layer_thickness                = 0,
+        const double& domain_boundary_absorption_rate                  = 0,
+        const std::vector<double>& immersed_boundary_layer_thicknesses = {},
+        const std::vector<double>& immersed_boundary_absorption_rates  = {}
+    ) {}
+
+    simulation_nodes<value_type> get() const final { return {}; }
+};
+
+template<class T>
+class conforming_point_cloud_provider<
+    ::naga::fluids::nonlocal_lbm::d2q9_lattice<T>>
+    : public node_provider<::naga::fluids::nonlocal_lbm::d2q9_lattice<T>> {
+  public:
+    using base = node_provider<::naga::fluids::nonlocal_lbm::d2q9_lattice<T>>;
+    static constexpr uint dimensions = base::dimensions;
+    using value_type                 = typename base::value_type;
+
+    conforming_point_cloud_provider(
+        const double& approximate_spacing,
+        const sclx::filesystem::path& domain,
+        const std::vector<sclx::filesystem::path>& immersed_boundaries = {},
+        const double& domain_absorption_layer_thickness                = 0,
+        const double& domain_boundary_absorption_rate                  = 0,
+        const std::vector<double>& immersed_boundary_layer_thicknesses = {},
+        const std::vector<double>& immersed_boundary_absorption_rates  = {}
+    ) {
+
+        auto conforming_point_cloud
+            = detail::conforming_point_cloud_t<dimensions>::create(
+                approximate_spacing,
+                domain,
+                immersed_boundaries
+            );
+
+        nodes_.points = sclx::array<value_type, 2>{
+            dimensions,
+            conforming_point_cloud.points().size()};
+        for (size_t i = 0; i < conforming_point_cloud.points().size(); ++i) {
+            for (size_t j = 0; j < dimensions; ++j) {
+                nodes_.points(j, i) = conforming_point_cloud.points()[i][j];
+            }
+        }
+
+        nodes_.boundary_normals = sclx::array<value_type, 2>{
+            dimensions,
+            conforming_point_cloud.normals().size()};
+        for (size_t i = 0; i < conforming_point_cloud.normals().size(); ++i) {
+            for (size_t j = 0; j < dimensions; ++j) {
+                nodes_.boundary_normals(j, i)
+                    = conforming_point_cloud.normals()[i][j];
+            }
+        }
+
+        nodes_.num_bulk_points = conforming_point_cloud.num_bulk_points();
+        nodes_.num_boundary_points
+            = conforming_point_cloud.num_boundary_points();
+
+        nodes_.nodal_spacing = approximate_spacing;
+
+        std::vector<point_t<double, dimensions>> bulk_points(
+            conforming_point_cloud.points().begin(),
+            conforming_point_cloud.points().begin()
+                + conforming_point_cloud.num_bulk_points()
+        );
+        auto absorption_rates
+            = sclx::zeros<value_type, 1>({nodes_.num_bulk_points});
+        auto contour_distances
+            = sclx::zeros<value_type, 1>({nodes_.num_bulk_points});
+        sclx::fill<value_type, 1>(
+            contour_distances,
+            std::numeric_limits<value_type>::max()
+        );
+
+        using closed_contour_t = typename detail::conforming_point_cloud_t<
+            dimensions>::closed_contour_t;
+
+        if (domain_absorption_layer_thickness > 0) {
+            closed_contour_t domain_contour = conforming_point_cloud.domain();
+#pragma omp parallel for
+            for (size_t i = 0; i < nodes_.num_bulk_points; ++i) {
+                auto distance_to_domain_contour = get_distance_to_contour(
+                    &bulk_points[i][0],
+                    domain_contour.vertices(),
+                    domain_contour.vertex_normals(),
+                    domain_contour.edges()
+                );
+                distance_to_domain_contour
+                    = std::abs(distance_to_domain_contour);
+                if (distance_to_domain_contour
+                    < domain_absorption_layer_thickness) {
+                    contour_distances(i) = distance_to_domain_contour;
+                    absorption_rates(i)
+                        = ::naga::math::loopless::pow<2>(
+                              (domain_absorption_layer_thickness
+                               - distance_to_domain_contour)
+                              / domain_absorption_layer_thickness
+                          )
+                        * domain_boundary_absorption_rate;
+                }
+            }
+        }
+
+        for (size_t i = 0; i < immersed_boundaries.size(); ++i) {
+            if (immersed_boundary_layer_thicknesses[i] == 0) {
+                continue;
+            }
+            closed_contour_t immersed_boundary_contour
+                = conforming_point_cloud.immersed_boundaries()[i];
+#pragma omp parallel for
+            for (size_t j = 0; j < nodes_.num_bulk_points; ++j) {
+                auto distance_to_immersed_boundary_contour
+                    = get_distance_to_contour(
+                        &bulk_points[j][0],
+                        immersed_boundary_contour.vertices(),
+                        immersed_boundary_contour.vertex_normals(),
+                        immersed_boundary_contour.edges()
+                    );
+                distance_to_immersed_boundary_contour
+                    = std::abs(distance_to_immersed_boundary_contour);
+
+                if (distance_to_immersed_boundary_contour
+                        <= immersed_boundary_layer_thicknesses[i]
+                    && distance_to_immersed_boundary_contour
+                           < contour_distances(j)) {
+                    contour_distances(j)
+                        = distance_to_immersed_boundary_contour;
+                    absorption_rates(j)
+                        = ::naga::math::loopless::pow<2>(
+                              (immersed_boundary_layer_thicknesses[i]
+                               - distance_to_immersed_boundary_contour)
+                              / immersed_boundary_layer_thicknesses[i]
+                          )
+                        * immersed_boundary_absorption_rates[i];
+                }
+            }
+        }
+        size_t num_layer_points = std::count_if(
+            absorption_rates.begin(),
+            absorption_rates.end(),
+            [](const auto& rate) { return rate > 0; }
+        );
+        if (num_layer_points == 0) {
+            return;
+        }
+
+        std::stable_partition(
+            bulk_points.begin(),
+            bulk_points.end(),
+            [&](const auto& point) {
+                return contour_distances(&point - &bulk_points[0])
+                    == std::numeric_limits<value_type>::max();
+            }
+        );
+        std::stable_partition(
+            absorption_rates.begin(),
+            absorption_rates.end(),
+            [](const auto& rate) { return rate > 0; }
+        );
+        absorption_rates = sclx::array<value_type, 1>(
+            sclx::shape_t<1>{num_layer_points},
+            absorption_rates.data()
+        );
+        for (size_t i = 0; i < bulk_points.size(); ++i) {
+            for (size_t j = 0; j < dimensions; ++j) {
+                nodes_.points(j, i) = bulk_points[i][j];
+            }
+        }
+        nodes_.num_layer_points = num_layer_points;
+        nodes_.layer_absorption = absorption_rates;
+        nodes_.num_bulk_points -= num_layer_points;
+    }
+
+    simulation_nodes<value_type> get() const final { return nodes_; }
+
+  private:
+    simulation_nodes<value_type> nodes_{};
+};
+
+}  // namespace naga::experimental::fluids::nonlocal_lbm

@@ -26,12 +26,26 @@ find_package(OpenMP REQUIRED)
 
 find_package(VTK REQUIRED COMPONENTS IOXML IOParallelXML)
 
-# naga is a header only library
+find_package(CGAL REQUIRED)
+find_package(TBB REQUIRED)
+include(CGAL_TBB_support) # Includes a module from CGAL
+find_package(GMP REQUIRED)
+find_package(MPFR REQUIRED)
+add_library(
+        naga-lib STATIC
+        source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.cpp
+)
+target_include_directories(naga-lib PUBLIC ${PROJECT_SOURCE_DIR}/.)
+target_include_directories(naga-lib PRIVATE ${CGAL_INCLUDE_DIRS})
+target_link_libraries(naga-lib PRIVATE ${GMP_LIBRARIES} ${MPFR_LIBRARIES} CGAL::TBB_support)
+target_link_libraries(naga-lib INTERFACE scalix)
+
+# naga is a mostly header only library
 add_library(naga INTERFACE)
 target_include_directories(
-  naga INTERFACE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}
+  naga INTERFACE ${EIGEN_INCLUDE_DIR}
                  ${NANOFLANN_INCLUDE_DIR})
-target_link_libraries(naga INTERFACE scalix cublas sdf OpenMP::OpenMP_CXX
+target_link_libraries(naga INTERFACE naga-lib cublas sdf OpenMP::OpenMP_CXX
                                      ${VTK_LIBRARIES})
 vtk_module_autoinit(TARGETS naga MODULES ${VTK_LIBRARIES})
 set_target_properties(naga PROPERTIES CMAKE_CUDA_FLAGS
