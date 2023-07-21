@@ -97,3 +97,6 @@ target_link_libraries(knn_validation_3d PRIVATE naga)
 
 add_executable(ranges_example examples/ranges_example.cu)
 target_link_libraries(ranges_example PRIVATE naga)
+
+add_executable(cgal_2d_mesh examples/cgal_2d_mesh.cu)
+target_link_libraries(cgal_2d_mesh PRIVATE naga)
