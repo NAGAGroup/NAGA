@@ -38,8 +38,8 @@
  */
 
 #include "../../../detail/nanoflann_utils.h"
-#include "../../../distance_functions.cuh"
-#include "../../../math.cuh"
+#include "../../../distance_functions.hpp"
+#include "../../../math.hpp"
 #include "../../../mesh/closed_surface.cuh"
 #include <sdf/sdf.hpp>
 

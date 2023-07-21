@@ -31,7 +31,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
-#include "math.cuh"
+#include "math.hpp"
 
 namespace naga::distance_functions {
 
@@ -46,7 +46,7 @@ struct euclidean_squared {
     static constexpr bool is_loopless = false;
     static constexpr bool is_squared  = true;
 
-    __host__ __device__ auto
+    NAGA_HOST NAGA_DEVICE auto
     operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions)
         const {
         using value_type = decltype(a[0] - b[0]);
@@ -65,7 +65,7 @@ struct euclidean_squared<void, void> {
     static constexpr bool is_squared  = true;
 
     template<class VectorLikeT, class VectorLikeU>
-    __host__ __device__ auto
+    NAGA_HOST NAGA_DEVICE auto
     operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions)
         const {
         using value_type = decltype(a[0] - b[0]);
@@ -83,7 +83,7 @@ struct euclidean {
     static constexpr bool is_loopless = false;
     static constexpr bool is_squared  = false;
 
-    __host__ __device__ auto
+    NAGA_HOST NAGA_DEVICE auto
     operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions)
         const {
         return math::sqrt(
@@ -98,7 +98,7 @@ struct euclidean<void, void> {
     static constexpr bool is_squared  = false;
 
     template<class VectorLikeT, class VectorLikeU>
-    __host__ __device__ auto
+    NAGA_HOST NAGA_DEVICE auto
     operator()(const VectorLikeT& a, const VectorLikeU& b, uint dimensions)
         const {
         return math::sqrt(
@@ -117,14 +117,14 @@ class euclidean_squared {
     static constexpr bool is_loopless = true;
     static constexpr bool is_squared  = true;
 
-    __host__ __device__ auto
+    NAGA_HOST NAGA_DEVICE auto
     operator()(const VectorLikeT& a, const VectorLikeU& b, uint = {}) const {
         return accumulate_pow2_diffs(a, b);
     }
 
   private:
     template<uint D = Dimensions>
-    __host__ __device__ auto
+    NAGA_HOST NAGA_DEVICE auto
     accumulate_pow2_diffs(const VectorLikeT& a, const VectorLikeU& b) const {
         if constexpr (D == 0) {
             return 0;
@@ -142,14 +142,14 @@ class euclidean_squared<Dimensions, void, void> {
     static constexpr bool is_squared  = true;
 
     template<class VectorLikeT, class VectorLikeU>
-    __host__ __device__ auto
+    NAGA_HOST NAGA_DEVICE auto
     operator()(const VectorLikeT& a, const VectorLikeU& b, uint = {}) const {
         return accumulate_pow2_diffs<Dimensions>(a, b);
     }
 
   private:
     template<uint D, class VectorLikeT, class VectorLikeU>
-    __host__ __device__ auto
+    NAGA_HOST NAGA_DEVICE auto
     accumulate_pow2_diffs(const VectorLikeT& a, const VectorLikeU& b) const {
         if constexpr (D == 0) {
             return 0;
@@ -167,7 +167,7 @@ class euclidean {
     static constexpr bool is_squared  = false;
 
     template<class VectorLikeT, class VectorLikeU>
-    __host__ __device__ auto
+    NAGA_HOST NAGA_DEVICE auto
     operator()(const VectorLikeT& a, const VectorLikeU& b, uint = {}) const {
         return math::sqrt(
             euclidean_squared<Dimensions, VectorLikeT, VectorLikeU>{}(a, b)

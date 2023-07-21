@@ -32,7 +32,7 @@
 
 #pragma once
 
-#include "../../../point.cuh"
+#include "../../../point.hpp"
 #include "../lattices.cuh"
 #include "subtask_factory.h"
 #include <scalix/execute_kernel.cuh>

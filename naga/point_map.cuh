@@ -31,7 +31,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
-#include "point.cuh"
+#include "point.hpp"
 #include <scalix/array.cuh>
 
 namespace naga {

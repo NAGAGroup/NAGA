@@ -32,7 +32,7 @@
 
 #pragma once
 
-#include "../math.cuh"
+#include "../math.hpp"
 #include "triangular_mesh.cuh"
 #include <scalix/array.cuh>
 #include <scalix/filesystem.hpp>
@@ -269,7 +269,5 @@ struct closed_contour_t {
             )};
     }
 };
-
-template struct closed_contour_t<float>;
 
 }  // namespace naga::mesh

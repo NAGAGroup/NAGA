@@ -31,43 +31,20 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
-#include "../distance_functions.hpp"
-#include <scalix/constexpr_assign_array.cuh>
 
-namespace naga::regions {
+#if !defined(NAGA_HOST) && !defined(NAGA_DEVICE)
 
-template<class T, uint Dimensions>
-class hypersphere {
-  public:
-    template<class VectorT>
-    __host__ __device__ hypersphere(const T& radius, const VectorT& center)
-        : radius_(radius) {
-        for (uint i = 0; i < Dimensions; ++i) {
-            this->center_[i] = center[i];
-        }
-    }
+#ifdef __NVCC__
+#define NAGA_DEVICE __device__
+#define NAGA_HOST __host__
+#else
+#define NAGA_DEVICE
+#define NAGA_HOST
 
-    __host__ __device__ constexpr hypersphere(
-        const T& radius,
-        const T (&center)[Dimensions]
-    )
-        : radius_(radius) {
-        sclx::constexpr_assign_array<Dimensions>(this->center_, center);
-    }
+#include <cstddef>
 
-    template<class VectorT>
-    __host__ __device__ bool contains(const VectorT& point) const {
-        distance_functions::loopless::euclidean_squared<Dimensions> dist;
-        return dist(point, center_) <= radius_ * radius_;
-    }
+using uint = unsigned int;
+using size_t = std::size_t;
+#endif
 
-    __host__ __device__ const T* center() const { return center_; }
-
-    __host__ __device__ const T& radius() const { return radius_; }
-
-  private:
-    T radius_;
-    T center_[Dimensions];
-};
-
-}  // namespace naga::regions
+#endif

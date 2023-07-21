@@ -32,7 +32,7 @@
 
 #pragma once
 
-#include "../distance_functions.cuh"
+#include "../distance_functions.hpp"
 #include "../point_map.cuh"
 #include "nd_cubic_segmentation.cuh"
 #include <thrust/random.h>

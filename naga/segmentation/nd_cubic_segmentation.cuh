@@ -32,7 +32,7 @@
 
 #pragma once
 
-#include "../point.cuh"
+#include "../point.hpp"
 #include "detail/nd_cubic_segmentation.cuh"
 #include <scalix/algorithm/inclusive_scan.cuh>
 #include <scalix/fill.cuh>

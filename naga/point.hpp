@@ -31,6 +31,8 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#include "compatability.h"
+#include <type_traits>
 
 namespace naga {
 
@@ -48,16 +50,16 @@ class point_view_t {
     static constexpr uint dimensions   = Dimensions;
     static constexpr bool is_view_type = true;
 
-    __host__ __device__ point_view_t(T* data) : data_(data) {}
+    NAGA_HOST NAGA_DEVICE point_view_t(T* data) : data_(data) {}
 
-    __host__ __device__ T& operator[](uint index) const { return data_[index]; }
+    NAGA_HOST NAGA_DEVICE T& operator[](uint index) const { return data_[index]; }
 
-    __host__ __device__ T& x() const { return data_[0]; }
+    NAGA_HOST NAGA_DEVICE T& x() const { return data_[0]; }
 
-    __host__ __device__ T& y() const { return data_[1]; }
+    NAGA_HOST NAGA_DEVICE T& y() const { return data_[1]; }
 
     template<uint D = Dimensions>
-    __host__ __device__ std::enable_if_t<D == 3 && D == Dimensions, T&>
+    NAGA_HOST NAGA_DEVICE std::enable_if_t<D == 3 && D == Dimensions, T&>
     z() const {
         return data_[2];
     }
@@ -75,19 +77,19 @@ class point_t {
 
     point_t() = default;
 
-    __host__ __device__ explicit point_t(const T (&x)[Dimensions]) {
+    NAGA_HOST NAGA_DEVICE explicit point_t(const T (&x)[Dimensions]) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = x[i];
         }
     }
 
-    __host__ __device__ point_t(const point_view_t<T, Dimensions>& other) {
+    NAGA_HOST NAGA_DEVICE point_t(const point_view_t<T, Dimensions>& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
         }
     }
 
-    __host__ __device__ point_t&
+    NAGA_HOST NAGA_DEVICE point_t&
     operator=(const point_view_t<T, Dimensions>& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
@@ -95,26 +97,26 @@ class point_t {
         return *this;
     }
 
-    __host__ __device__ point_t(point_view_t<T, Dimensions>&& other) {
+    NAGA_HOST NAGA_DEVICE point_t(point_view_t<T, Dimensions>&& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
         }
     }
 
-    __host__ __device__ point_t(point_t<T, Dimensions>&& other) {
+    NAGA_HOST NAGA_DEVICE point_t(point_t<T, Dimensions>&& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
         }
     }
 
-    __host__ __device__ point_t& operator=(point_t<T, Dimensions>&& other) {
+    NAGA_HOST NAGA_DEVICE point_t& operator=(point_t<T, Dimensions>&& other) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = other[i];
         }
         return *this;
     }
 
-    __host__ __device__ point_t(const point_t<T, Dimensions>& other) {
+    NAGA_HOST NAGA_DEVICE point_t(const point_t<T, Dimensions>& other) {
         if (this == &other) {
             return;
         }
@@ -123,7 +125,7 @@ class point_t {
         }
     }
 
-    __host__ __device__ point_t& operator=(const point_t<T, Dimensions>& other
+    NAGA_HOST NAGA_DEVICE point_t& operator=(const point_t<T, Dimensions>& other
     ) {
         if (this == &other) {
             return *this;
@@ -134,27 +136,27 @@ class point_t {
         return *this;
     }
 
-    __host__ __device__ T& operator[](uint index) { return data_[index]; }
+    NAGA_HOST NAGA_DEVICE T& operator[](uint index) { return data_[index]; }
 
-    __host__ __device__ const T& operator[](uint index) const {
+    NAGA_HOST NAGA_DEVICE const T& operator[](uint index) const {
         return data_[index];
     }
 
-    __host__ __device__ T& x() { return data_[0]; }
+    NAGA_HOST NAGA_DEVICE T& x() { return data_[0]; }
 
-    __host__ __device__ const T& x() const { return data_[0]; }
+    NAGA_HOST NAGA_DEVICE const T& x() const { return data_[0]; }
 
-    __host__ __device__ T& y() { return data_[1]; }
+    NAGA_HOST NAGA_DEVICE T& y() { return data_[1]; }
 
-    __host__ __device__ const T& y() const { return data_[1]; }
+    NAGA_HOST NAGA_DEVICE const T& y() const { return data_[1]; }
 
     template<uint D = Dimensions>
-    __host__ __device__ std::enable_if_t<D == 3 && D == Dimensions, T&> z() {
+    NAGA_HOST NAGA_DEVICE std::enable_if_t<D == 3 && D == Dimensions, T&> z() {
         return data_[2];
     }
 
     template<uint D = Dimensions>
-    __host__ __device__ std::enable_if_t<D == 3 && D == Dimensions, const T&>
+    NAGA_HOST NAGA_DEVICE std::enable_if_t<D == 3 && D == Dimensions, const T&>
     z() const {
         return data_[2];
     }

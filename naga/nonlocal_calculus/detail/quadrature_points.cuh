@@ -32,7 +32,7 @@
 
 #pragma once
 
-#include "../../math.cuh"
+#include "../../math.hpp"
 #include "../../point_map.cuh"
 
 namespace naga::nonlocal_calculus::detail {

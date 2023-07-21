@@ -30,7 +30,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
-#include "../distance_functions.cuh"
+#include "../distance_functions.hpp"
 #include "../linalg/batched_matrix_inverse.cuh"
 #include "../point_map.cuh"
 #include "detail/radial_point_method.cuh"

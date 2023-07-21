@@ -32,8 +32,8 @@
 
 #pragma once
 
-#include "../math.cuh"
-#include "../point.cuh"
+#include "../math.hpp"
+#include "../point.hpp"
 #include "scalix/index.cuh"
 #include <scalix/throw_exception.hpp>
 

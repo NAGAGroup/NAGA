@@ -33,61 +33,63 @@
 #pragma once
 #include <cmath>
 
+#include "compatability.h"
+
 namespace naga::math {
 
 template<class T, class U>
-__host__ __device__ auto min(const T& x, const U& y)
+NAGA_HOST NAGA_DEVICE auto min(const T& x, const U& y)
     -> decltype(x < y ? x : y) {
-    return x < y ? x : y;
+    return std::min(x, y);
 }
 
 template<class T, class U>
-__host__ __device__ auto max(const T& x, const U& y)
+NAGA_HOST NAGA_DEVICE auto max(const T& x, const U& y)
     -> decltype(x > y ? x : y) {
-    return x > y ? x : y;
+    return std::max(x, y);
 }
 
 template<class T>
 static constexpr T pi = static_cast<T>(M_PI);
 
 template<class T>
-__host__ __device__ T sin(const T& x) {
+NAGA_HOST NAGA_DEVICE T sin(const T& x) {
     return std::sin(x);
 }
 
 template<class T>
-__host__ __device__ T cos(const T& x) {
+NAGA_HOST NAGA_DEVICE T cos(const T& x) {
     return std::cos(x);
 }
 
 template<class T>
-__host__ __device__ T tan(const T& x) {
+NAGA_HOST NAGA_DEVICE T tan(const T& x) {
     return std::tan(x);
 }
 
 template<class T>
-__host__ __device__ T abs(const T& x) {
+NAGA_HOST NAGA_DEVICE T abs(const T& x) {
     return std::abs(x);
 }
 
 template<class T>
-__host__ __device__ T sqrt(const T& x) {
+NAGA_HOST NAGA_DEVICE T sqrt(const T& x) {
     return std::sqrt(x);
 }
 
 template<class T, class E>
-__host__ __device__ auto pow(const T& x, const E& e)
+NAGA_HOST NAGA_DEVICE auto pow(const T& x, const E& e)
     -> decltype(std::pow(x, e)) {
     return std::pow(x, e);
 }
 
 template<class T>
-__host__ __device__ auto exp(const T& x) -> decltype(std::exp(x)) {
+NAGA_HOST NAGA_DEVICE auto exp(const T& x) -> decltype(std::exp(x)) {
     return std::exp(x);
 }
 
 template<class VectorType>
-__host__ __device__ auto norm_squared(const VectorType& v, uint dims) {
+NAGA_HOST NAGA_DEVICE auto norm_squared(const VectorType& v, uint dims) {
     using T = decltype(v[0]);
     T sum   = 0;
     for (int i = 0; i < dims; ++i) {
@@ -97,12 +99,12 @@ __host__ __device__ auto norm_squared(const VectorType& v, uint dims) {
 }
 
 template<class VectorType>
-__host__ __device__ auto norm(const VectorType& v, uint dims) {
+NAGA_HOST NAGA_DEVICE auto norm(const VectorType& v, uint dims) {
     return sqrt(norm_squared(v, dims));
 }
 
 template<class VectorTypeT, class VectorTypeU>
-__host__ __device__ auto
+NAGA_HOST NAGA_DEVICE auto
 dot(const VectorTypeT& v, const VectorTypeU& u, uint dims) {
     using T = decltype(v[0]);
     T sum   = 0;
@@ -115,7 +117,7 @@ dot(const VectorTypeT& v, const VectorTypeU& u, uint dims) {
 namespace loopless {
 
 template<uint N, class T>
-__host__ __device__ auto pow(const T& x) -> decltype(x * x) {
+NAGA_HOST NAGA_DEVICE auto pow(const T& x) -> decltype(x * x) {
     if constexpr (N == 0) {
         return 1;
     } else if constexpr (N == 1) {
@@ -130,7 +132,7 @@ __host__ __device__ auto pow(const T& x) -> decltype(x * x) {
 }
 
 template<uint Dimensions, class VectorTypeT, class VectorTypeU>
-__host__ __device__ auto dot(const VectorTypeT& v, const VectorTypeU& u) {
+NAGA_HOST NAGA_DEVICE auto dot(const VectorTypeT& v, const VectorTypeU& u) {
     using T = decltype(v[0]);
     if constexpr (Dimensions == 1) {
         return v[0] * u[0];
@@ -141,12 +143,12 @@ __host__ __device__ auto dot(const VectorTypeT& v, const VectorTypeU& u) {
 }
 
 template<uint Dimensions, class VectorType>
-__host__ __device__ auto norm_squared(const VectorType& v) {
+NAGA_HOST NAGA_DEVICE auto norm_squared(const VectorType& v) {
     return dot<Dimensions, VectorType, VectorType>(v, v);
 }
 
 template<uint Dimensions, class VectorType>
-__host__ __device__ auto norm(const VectorType& v) {
+NAGA_HOST NAGA_DEVICE auto norm(const VectorType& v) {
     return sqrt(norm_squared<Dimensions, VectorType>(v));
 }
 

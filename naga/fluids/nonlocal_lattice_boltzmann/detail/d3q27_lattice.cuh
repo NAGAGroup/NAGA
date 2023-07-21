@@ -32,7 +32,7 @@
 
 #pragma once
 
-#include "../../../math.cuh"
+#include "../../../math.hpp"
 #include "lattices.cuh"
 
 namespace naga::fluids::nonlocal_lbm {
