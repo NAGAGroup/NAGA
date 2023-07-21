@@ -46,3 +46,7 @@ sclx::filesystem::path get_examples_results_dir() {
     return {NAGA_EXAMPLES_RESULTS_DIR};
 #endif
 }
+
+sclx::filesystem::path get_resources_dir() {
+    return sclx::filesystem::path(__FILE__).parent_path() / ".." / "resources";
+}
