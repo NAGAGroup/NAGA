@@ -45,7 +45,7 @@
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLPolyDataWriter.h>
 
-using value_type = double;
+using value_type = float;
 
 using lattice_t = naga::fluids::nonlocal_lbm::d3q27_lattice<value_type>;
 using sim_engine_t
