@@ -57,7 +57,7 @@ class conforming_point_cloud_impl_t<2> {
     using normal_t = point_t;
     using index_t  = size_t;
 
-    using closed_contour_t = conforming_point_cloud_t<2>::closed_contour_t;
+    using closed_contour_t = conforming_point_cloud_t<2>::input_domain_data_t;
 
     static conforming_point_cloud_impl_t create(
         const double& approx_point_spacing,
@@ -334,78 +334,6 @@ class conforming_point_cloud_impl_t<2> {
                               // boundary
     size_t num_boundary_points_;
 };
-
-template<uint Dimensions>
-conforming_point_cloud_t<Dimensions>
-conforming_point_cloud_t<Dimensions>::create(
-    const double& approximate_spacing,
-    const std::filesystem::path& domain,
-    const std::vector<std::filesystem::path>& immersed_boundaries
-) {
-    conforming_point_cloud_t point_cloud;
-    auto impl = conforming_point_cloud_impl_t<Dimensions>::create(
-        approximate_spacing,
-        domain,
-        immersed_boundaries
-    );
-    auto impl_ptr = std::make_shared<conforming_point_cloud_impl_t<Dimensions>>(
-        std::move(impl)
-    );
-    point_cloud.impl = std::move(impl_ptr);
-    return point_cloud;
-}
-
-template<uint Dimensions>
-const typename conforming_point_cloud_t<Dimensions>::closed_contour_t&
-conforming_point_cloud_t<Dimensions>::domain() const {
-    return impl->domain();
-}
-
-template<uint Dimensions>
-const std::vector<
-    typename conforming_point_cloud_t<Dimensions>::closed_contour_t>&
-conforming_point_cloud_t<Dimensions>::immersed_boundaries() const {
-    return impl->immersed_boundaries();
-}
-
-template<uint Dimensions>
-const std::vector<typename conforming_point_cloud_t<Dimensions>::point_t>&
-conforming_point_cloud_t<Dimensions>::points() const {
-    return impl->points();
-}
-
-template<uint Dimensions>
-const std::vector<typename conforming_point_cloud_t<Dimensions>::normal_t>&
-conforming_point_cloud_t<Dimensions>::normals() const {
-    return impl->normals();
-}
-
-template<uint Dimensions>
-const size_t& conforming_point_cloud_t<Dimensions>::num_bulk_points() const {
-    return impl->num_bulk_points();
-}
-
-template<uint Dimensions>
-const size_t&
-conforming_point_cloud_t<Dimensions>::num_boundary_points() const {
-    return impl->num_boundary_points();
-}
-
-template<uint Dimensions>
-size_t conforming_point_cloud_t<Dimensions>::size() const {
-    return impl->size();
-}
-
-template<uint Dimensions>
-bool conforming_point_cloud_t<Dimensions>::is_boundary(const index_t& i) const {
-    return impl->is_boundary(i);
-}
-
-template<uint Dimensions>
-typename conforming_point_cloud_t<Dimensions>::normal_t
-conforming_point_cloud_t<Dimensions>::get_normal(const index_t& i) const {
-    return impl->get_normal(i);
-}
 
 template class conforming_point_cloud_t<2>;
 

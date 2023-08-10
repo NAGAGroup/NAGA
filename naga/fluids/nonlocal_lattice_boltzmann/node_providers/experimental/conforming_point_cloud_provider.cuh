@@ -34,6 +34,7 @@
 #include "../../node_provider.cuh"
 #include "detail/conforming_point_cloud_provider.hpp"
 #include <scalix/filesystem.hpp>
+#include <scalix/fill.cuh>
 
 namespace naga::fluids::nonlocal_lbm {
 template<class T>
@@ -305,6 +306,145 @@ class conforming_point_cloud_provider<
         nodes_.num_layer_points = num_layer_points;
         nodes_.layer_absorption = absorption_rates;
         nodes_.num_bulk_points -= num_layer_points;
+    }
+
+    simulation_nodes<value_type> get() const final { return nodes_; }
+
+  private:
+    simulation_nodes<value_type> nodes_{};
+};
+
+template<class T>
+class conforming_point_cloud_provider<
+    ::naga::fluids::nonlocal_lbm::d3q27_lattice<T>>
+    : public node_provider<::naga::fluids::nonlocal_lbm::d3q27_lattice<T>> {
+  public:
+    using base = node_provider<::naga::fluids::nonlocal_lbm::d3q27_lattice<T>>;
+    static constexpr uint dimensions = base::dimensions;
+    using value_type                 = typename base::value_type;
+
+    conforming_point_cloud_provider(
+        const double& approximate_spacing,
+        const sclx::filesystem::path& domain,
+        const std::vector<sclx::filesystem::path>& immersed_boundaries = {},
+        const double& domain_absorption_layer_thickness                = 0,
+        const double& domain_boundary_absorption_rate                  = 0,
+        const std::vector<double>& immersed_boundary_layer_thicknesses = {},
+        const std::vector<double>& immersed_boundary_absorption_rates  = {}
+    ) {
+        auto conforming_point_cloud
+            = detail::conforming_point_cloud_t<3>::create(
+                approximate_spacing,
+                domain,
+                immersed_boundaries
+            );
+
+        size_t num_bulk_and_layer_points
+            = conforming_point_cloud.bulk_points().size();
+        size_t num_boundary_points
+            = conforming_point_cloud.boundary_points().size();
+        size_t num_points = num_bulk_and_layer_points + num_boundary_points;
+
+        nodes_.nodal_spacing       = approximate_spacing;
+        nodes_.num_boundary_points = num_boundary_points;
+        nodes_.points = sclx::array<value_type, 2>{dimensions, num_points};
+        nodes_.boundary_normals
+            = sclx::array<value_type, 2>{dimensions, num_boundary_points};
+
+        std::vector<double> absorption_coefficients;
+        absorption_coefficients.reserve(num_bulk_and_layer_points);
+
+        const auto& closest_boundary_indices
+            = conforming_point_cloud.closest_boundary_to_bulk();
+        const auto& distance_to_outer_boundary
+            = conforming_point_cloud.bulk_to_boundary_distances();
+        for (uint i = 0; i < num_bulk_and_layer_points; ++i) {
+            double peak_absorption_coefficient = 0.0;
+            double layer_thickness            = 0.0;
+            if (closest_boundary_indices[i] == 0) {
+                peak_absorption_coefficient = domain_boundary_absorption_rate;
+                layer_thickness             = domain_absorption_layer_thickness;
+            } else {
+                if (!immersed_boundary_layer_thicknesses.empty()
+                    && !immersed_boundary_absorption_rates.empty()) {
+                    peak_absorption_coefficient = immersed_boundary_absorption_rates
+                        [closest_boundary_indices[i] - 1];
+                    layer_thickness = immersed_boundary_layer_thicknesses
+                        [closest_boundary_indices[i] - 1];
+                }
+            }
+
+            const auto& distance_to_boundary = distance_to_outer_boundary[i];
+
+            if (distance_to_boundary > layer_thickness) {
+                absorption_coefficients.push_back(0.0);
+                continue;
+            }
+
+            double absorption_coefficient
+                = peak_absorption_coefficient
+                * naga::math::loopless::pow<2>(
+                      1.0 - distance_to_boundary / layer_thickness
+                );
+            absorption_coefficients.push_back(absorption_coefficient);
+        }
+
+        auto bulk_points = conforming_point_cloud.bulk_points();
+
+        std::stable_partition(
+            bulk_points.begin(),
+            bulk_points.end(),
+            [&](const naga::point_t<double, 3>& x) {
+                size_t i = &x - &bulk_points[0];
+                return absorption_coefficients[i] == 0.0;
+            }
+        );
+        std::stable_partition(
+            absorption_coefficients.begin(),
+            absorption_coefficients.end(),
+            [&](const double& x) {
+                size_t i = &x - &absorption_coefficients[0];
+                return absorption_coefficients[i] == 0.0;
+            }
+        );
+        size_t num_layer_points = std::count_if(
+            absorption_coefficients.begin(),
+            absorption_coefficients.end(),
+            [](const auto& rate) { return rate > 0; }
+        );
+
+        size_t num_bulk_points = num_bulk_and_layer_points - num_layer_points;
+        nodes_.num_bulk_points  = num_bulk_points;
+        nodes_.num_layer_points = num_layer_points;
+
+        if (num_layer_points > 0) {
+            nodes_.layer_absorption = sclx::array<value_type, 1>{num_layer_points};
+        }
+
+        for (size_t i = 0; i < num_bulk_points; ++i) {
+            for (size_t j = 0; j < dimensions; ++j) {
+                nodes_.points(j, i) = bulk_points[i][j];
+            }
+        }
+
+        for (size_t i = 0; i < num_layer_points; ++i) {
+            for (size_t j = 0; j < dimensions; ++j) {
+                nodes_.points(j, i + num_bulk_points)
+                    = bulk_points[i + num_bulk_points][j];
+                nodes_.layer_absorption(i)
+                    = absorption_coefficients[i + num_bulk_points];
+            }
+        }
+
+        const auto& boundary_points = conforming_point_cloud.boundary_points();
+        for (size_t i = 0; i < num_boundary_points; ++i) {
+            for (size_t j = 0; j < dimensions; ++j) {
+                nodes_.points(j, i + num_bulk_and_layer_points)
+                    = boundary_points[i][j];
+                nodes_.boundary_normals(j, i)
+                    = conforming_point_cloud.boundary_normals()[i][j];
+            }
+        }
     }
 
     simulation_nodes<value_type> get() const final { return nodes_; }
