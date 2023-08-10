@@ -31,6 +31,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#include <algorithm>
 #include <filesystem>
 
 #include <fstream>
@@ -43,6 +44,19 @@ template<class T>
 class triangular_mesh_t {
   public:
     using index_t = size_t;
+
+    triangular_mesh_t() = default;
+
+    triangular_mesh_t(
+        std::vector<T> vertices,
+        std::vector<T> normals,
+        std::vector<index_t> faces,
+        std::vector<index_t> face_normals
+    )
+        : vertices_(std::move(vertices)),
+          normals_(std::move(normals)),
+          faces_(std::move(faces)),
+          face_normals_(std::move(face_normals)) {}
 
     static triangular_mesh_t import(const std::filesystem::path& path) {
         std::ifstream file(path);
@@ -97,30 +111,22 @@ class triangular_mesh_t {
             std::move(face_normals)};
     }
 
-    const std::vector<T>& vertices() const {
-        return vertices_;
-    }
+    const std::vector<T>& vertices() const { return vertices_; }
 
-    const std::vector<T>& normals() const {
-        return normals_;
-    }
+    const std::vector<T>& normals() const { return normals_; }
 
-    const std::vector<index_t>& faces() const {
-        return faces_;
+    const std::vector<index_t>& faces() const { return faces_; }
+
+    void flip_normals() {
+        std::transform(
+            normals_.begin(),
+            normals_.end(),
+            normals_.begin(),
+            [](T n) { return -n; }
+        );
     }
 
   private:
-    triangular_mesh_t(
-        std::vector<T> vertices,
-        std::vector<T> normals,
-        std::vector<index_t> faces,
-        std::vector<index_t> face_normals
-    )
-        : vertices_(std::move(vertices)),
-          normals_(std::move(normals)),
-          faces_(std::move(faces)),
-          face_normals_(std::move(face_normals)) {}
-
     std::vector<T> vertices_;
     std::vector<T> normals_;
     std::vector<index_t> faces_;
