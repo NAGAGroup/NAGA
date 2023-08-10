@@ -112,6 +112,7 @@ class simulation_engine {
 
     void init_domain(const simulation_nodes<value_type>& domain) {
         domain_ = domain;
+        std::cout << domain_.nodal_spacing << std::endl;
         if (domain_.points.shape()[0] != dimensions) {
             sclx::throw_exception<std::invalid_argument>(
                 "The number of dimensions in the simulation domain does not "
@@ -459,7 +460,7 @@ class simulation_engine {
                             )
                             < 0) {
                             continue;
-                        } else if (math::abs(math::loopless::dot<dimensions>(normal, &lattice_velocities(0, alpha))) < 1e-4) {
+                        } else if (math::abs(math::loopless::dot<dimensions>(normal, &lattice_velocities(0, alpha))) < 1e-6) {
                             result_arrays[alpha][idx[0]]
                                 = lattice_weights(alpha);
                             continue;
