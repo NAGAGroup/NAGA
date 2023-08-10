@@ -10,3 +10,6 @@
 [submodule "extern/eigen"]
 	path = extern/eigen
 	url = https://gitlab.com/libeigen/eigen
+[submodule "extern/AudioFile"]
+	path = extern/AudioFile
+	url = https://github.com/adamstark/AudioFile
