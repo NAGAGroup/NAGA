@@ -33,20 +33,29 @@ include(CGAL_TBB_support) # Includes a module from CGAL
 find_package(GMP REQUIRED)
 find_package(MPFR REQUIRED)
 add_library(
-        naga-lib STATIC
-        source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.cpp
+        naga-lib SHARED
+        source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider_2.cpp
+        source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider_3.cpp
 )
-target_include_directories(naga-lib PUBLIC ${PROJECT_SOURCE_DIR}/.)
-target_include_directories(naga-lib PRIVATE ${CGAL_INCLUDE_DIRS})
-target_link_libraries(naga-lib PRIVATE ${GMP_LIBRARIES} ${MPFR_LIBRARIES} CGAL::TBB_support)
-target_link_libraries(naga-lib INTERFACE scalix)
+target_include_directories(
+  naga-lib PRIVATE
+        ${PROJECT_SOURCE_DIR}/.
+        ${EIGEN_INCLUDE_DIR}
+        ${NANOFLANN_INCLUDE_DIR}
+)
+target_link_libraries(naga-lib PRIVATE scalix ${GMP_LIBRARIES} ${MPFR_LIBRARIES} CGAL::CGAL CGAL::TBB_support sdf)
+set_target_properties(naga-lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(sdf PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_definitions(naga-lib PRIVATE CGAL_NO_ASSERTIONS)
 
 # naga is a mostly header only library
 add_library(naga INTERFACE)
 target_include_directories(
-  naga INTERFACE ${EIGEN_INCLUDE_DIR}
-                 ${NANOFLANN_INCLUDE_DIR})
-target_link_libraries(naga INTERFACE naga-lib cublas sdf OpenMP::OpenMP_CXX
+  naga INTERFACE
+        ${PROJECT_SOURCE_DIR}/.
+        ${EIGEN_INCLUDE_DIR}
+        ${NANOFLANN_INCLUDE_DIR})
+target_link_libraries(naga INTERFACE naga-lib scalix cublas sdf OpenMP::OpenMP_CXX
                                      ${VTK_LIBRARIES})
 vtk_module_autoinit(TARGETS naga MODULES ${VTK_LIBRARIES})
 set_target_properties(naga PROPERTIES CMAKE_CUDA_FLAGS
@@ -101,3 +110,7 @@ target_link_libraries(ranges_example PRIVATE naga)
 
 add_executable(cgal_2d_mesh examples/cgal_2d_mesh.cu)
 target_link_libraries(cgal_2d_mesh PRIVATE naga)
+
+add_executable(cgal_3d_mesh examples/cgal_3d_mesh.cu)
+target_link_libraries(cgal_3d_mesh PRIVATE naga)
+
