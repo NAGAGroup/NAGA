@@ -13,6 +13,7 @@ if(NAGA_EXAMPLES_RESULTS_DIR)
   add_compile_definitions(
     NAGA_EXAMPLES_RESULTS_DIR=${NAGA_EXAMPLES_RESULTS_DIR})
 endif()
+add_compile_definitions(NAGA_RESOURCES_DIR="${PROJECT_SOURCE_DIR}/resources")
 
 set(EIGEN_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/extern/eigen)
 set(NANOFLANN_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/extern/nanoflann/include)
