@@ -1,7 +1,7 @@
 
 // BSD 3-Clause License
 //
-// Copyright (c) 2023 Jack Myers
+// Copyright (c) 2023
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -31,23 +31,26 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#include "lattices.cuh"
+#include "simulation_nodes.cuh"
+#include "simulation_variables.cuh"
 
 namespace naga::fluids::nonlocal_lbm {
 
-template<class T>
-struct boundary_specification;
+template<class Lattice>
+class simulation_observer {
+  public:
+    using value_type          = typename lattice_traits<Lattice>::value_type;
+    using simulation_domain_t = simulation_nodes<const value_type>;
+    using problem_parameters_t = problem_parameters<value_type>;
+    using solution_t = state_variables<Lattice>;
 
-template<class T>
-struct simulation_nodes;
-
-namespace detail {
-
-template<class T>
-simulation_nodes<T> hycaps3d_load_domain(
-    const boundary_specification<T>& outer_boundary,
-    const std::vector<boundary_specification<T>>& inner_boundaries
-);
-
-}
+    virtual void update(
+        const value_type& time,
+        const simulation_domain_t&,
+        const problem_parameters_t&,
+        const solution_t& solution
+    ) = 0;
+};
 
 }  // namespace naga::fluids::nonlocal_lbm
