@@ -17,6 +17,7 @@ add_compile_definitions(NAGA_RESOURCES_DIR="${PROJECT_SOURCE_DIR}/resources")
 
 set(EIGEN_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/extern/eigen)
 set(NANOFLANN_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/extern/nanoflann/include)
+set(AUDIOFILE_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/extern/AudioFile)
 
 add_subdirectory(extern/Scalix)
 
@@ -25,7 +26,7 @@ add_subdirectory(extern/sdf)
 
 find_package(OpenMP REQUIRED)
 
-find_package(VTK REQUIRED COMPONENTS IOXML IOParallelXML)
+find_package(VTK REQUIRED COMPONENTS IOXML)
 
 find_package(CGAL REQUIRED)
 find_package(TBB REQUIRED)
@@ -54,7 +55,8 @@ target_include_directories(
   naga INTERFACE
         ${PROJECT_SOURCE_DIR}/.
         ${EIGEN_INCLUDE_DIR}
-        ${NANOFLANN_INCLUDE_DIR})
+        ${NANOFLANN_INCLUDE_DIR}
+        ${AUDIOFILE_INCLUDE_DIR})
 target_link_libraries(naga INTERFACE naga-lib scalix cublas sdf OpenMP::OpenMP_CXX
                                      ${VTK_LIBRARIES})
 vtk_module_autoinit(TARGETS naga MODULES ${VTK_LIBRARIES})
