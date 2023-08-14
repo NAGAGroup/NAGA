@@ -34,6 +34,10 @@
 
 #include <fstream>
 #include <scalix/filesystem.hpp>
+#include <thread>
+#include <mutex>
+#include <iostream>
+#include <atomic>
 
 sclx::filesystem::path get_examples_dir() {
     return sclx::filesystem::path(__FILE__).parent_path();
@@ -50,3 +54,47 @@ sclx::filesystem::path get_examples_results_dir() {
 sclx::filesystem::path get_resources_dir() {
     return sclx::filesystem::path(NAGA_RESOURCES_DIR);
 }
+
+class async_time_printer {
+  public:
+    using value_type = double;
+    async_time_printer() {
+        thread_ = std::thread([&]() {
+            is_running_ = true;
+            while (!is_finished_) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (is_next_value_) {
+                    std::cout << "\rTime: " << next_value_ << " s"
+                              << std::flush;
+                    is_next_value_ = false;
+                } else {
+                    std::this_thread::yield();
+                }
+            }
+            is_running_ = false;
+        });
+    }
+
+    void print_next_value(const value_type& value) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        next_value_    = value;
+        is_next_value_ = true;
+    }
+
+    ~async_time_printer() {
+        is_finished_ = true;
+        while (is_running_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        std::cout << "\n";
+        thread_.join();
+    }
+
+  private:
+    std::thread thread_;
+    bool is_next_value_ = false;
+    std::mutex mutex_;
+    std::atomic<bool> is_running_  = false;
+    std::atomic<bool> is_finished_ = false;
+    value_type next_value_{};
+};
