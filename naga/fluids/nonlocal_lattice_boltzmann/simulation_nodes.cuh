@@ -32,39 +32,10 @@
 
 #pragma once
 
-#include "detail/hycaps2d_load_domain.cuh"
-#include "detail/hycaps3d_load_domain.cuh"
 #include <scalix/array.cuh>
 #include <scalix/filesystem.hpp>
 
 namespace naga::fluids::nonlocal_lbm {
-
-template<class T>
-struct boundary_specification {
-    sclx::filesystem::path obj_file_path;
-    uint node_layer_count;
-    uint absorption_layer_count;
-    T absorption_coefficient;
-
-    boundary_specification(
-        sclx::filesystem::path obj_file_path,
-        uint node_layer_count,
-        uint absorption_layer_count,
-        T absorption_coefficient
-    )
-        : obj_file_path(std::move(obj_file_path)),
-          node_layer_count(node_layer_count),
-          absorption_layer_count(absorption_layer_count),
-          absorption_coefficient(absorption_coefficient) {
-        if (absorption_layer_count > node_layer_count) {
-            sclx::throw_exception<std::runtime_error>(
-                "Absorption layer count must be less than or equal to node "
-                "layer count",
-                "naga::fluids::nonlocal_lbm::"
-            );
-        }
-    }
-};
 
 template<class T>
 struct simulation_nodes {
@@ -77,38 +48,6 @@ struct simulation_nodes {
     size_t num_boundary_points{};
 
     T nodal_spacing{};
-
-    template<uint Dimensions>
-    static simulation_nodes import(
-        const boundary_specification<T>& outer_boundary,
-        const std::vector<boundary_specification<T>>& inner_boundaries,
-        const T& particle_spacing = T(0)
-    ) {
-        static_assert(
-            Dimensions == 2 || Dimensions == 3,
-            "Dimensions must be 2 or 3"
-        );
-
-        if constexpr (Dimensions == 3) {
-            if (particle_spacing != T(0)) {
-                sclx::throw_exception<std::runtime_error>(
-                    "Particle spacing must be 0 for 3D simulations as "
-                    "subdivision is not supported",
-                    "naga::fluids::nonlocal_lbm::"
-                );
-            }
-            return detail::hycaps3d_load_domain<T>(
-                outer_boundary,
-                inner_boundaries
-            );
-        } else {
-            return detail::hycaps2d_load_domain<T>(
-                outer_boundary,
-                inner_boundaries,
-                particle_spacing
-            );
-        }
-    }
 
     template<class T_ = const T>
     operator simulation_nodes<T_>(
@@ -125,6 +64,3 @@ struct simulation_nodes {
 };
 
 }  // namespace naga::fluids::nonlocal_lbm
-
-#include "detail/hycaps2d_load_domain.inl"
-#include "detail/hycaps3d_load_domain.inl"
