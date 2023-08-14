@@ -125,7 +125,7 @@ class operator_builder {
         );
 
         quadrature_interpolating_weights_
-            = interpolation::radial_point_method<>::compute_weights(
+            = interpolation::radial_point_method<T>::compute_weights(
                 domain_,
                 support_indices_,
                 quadrature_points_map,

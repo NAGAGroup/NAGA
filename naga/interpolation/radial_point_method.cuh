@@ -67,7 +67,7 @@ template<class PointMapType>
 using default_shape_function
     = mq_shape_function<typename point_map_traits<PointMapType>::point_type>;
 
-template<class T = float>
+template<class T>
 class radial_point_method {
   public:
     static size_t get_scratchpad_size(
@@ -92,14 +92,13 @@ class radial_point_method {
     }
 
     template<
-        class T_,
         class PointMapType,
         class ShapeFunctionType = default_shape_function<PointMapType>>
-    static sclx::array<T_, 2> compute_weights(
-        sclx::array<T_, 2>& source_points,
-        sclx::array<size_t, 2>& interpolating_indices,
+    static sclx::array<T, 2> compute_weights(
+        sclx::array<const T, 2> source_points,
+        sclx::array<const size_t, 2> interpolating_indices,
         const PointMapType& query_points,
-        const T_& approx_particle_spacing,
+        const T& approx_particle_spacing,
         uint group_size                         = 1,
         const ShapeFunctionType& shape_function = ShapeFunctionType{},
         const std::vector<int>& devices         = {}
@@ -116,19 +115,18 @@ class radial_point_method {
     }
 
     template<
-        class T_,
         class PointMapType,
         class ShapeFunctionType = default_shape_function<PointMapType>>
-    static radial_point_method<T_> create_interpolator(
-        sclx::array<T_, 2>& source_points,
-        sclx::array<size_t, 2>& interpolating_indices,
+    static radial_point_method<T> create_interpolator(
+        sclx::array<const T, 2> source_points,
+        sclx::array<const size_t, 2> interpolating_indices,
         const PointMapType& query_points,
         const T& approx_particle_spacing,
         uint group_size                         = 1,
         const ShapeFunctionType& shape_function = ShapeFunctionType{},
         const std::vector<int>& devices         = {}
     ) {
-        radial_point_method<T_> interpolator{};
+        radial_point_method<T> interpolator{};
         auto weights = compute_weights(
             source_points,
             interpolating_indices,
@@ -147,7 +145,7 @@ class radial_point_method {
     }
 
     std::future<void> interpolate(
-        const sclx::array<T, 2>& field,
+        sclx::array<const T, 2> field,
         sclx::array<T, 2>& destination,
         T centering_offset = T{0}
     ) const {
@@ -188,7 +186,7 @@ class radial_point_method {
     }
 
     std::future<void> interpolate(
-        const sclx::array<T, 1>& field,
+        sclx::array<const T, 1> field,
         sclx::array<T, 1>& destination,
         T centering_offset = T{0}
     ) const {
@@ -228,9 +226,6 @@ class radial_point_method {
         });
     }
 
-    template<class T_>
-    friend class radial_point_method;
-
   private:
     radial_point_method() = default;
 
@@ -242,7 +237,7 @@ class radial_point_method {
     uint group_size_{};
     size_t source_points_size_{};
     sclx::array<T, 2> weights_{};
-    sclx::array<size_t, 2> indices_{};
+    sclx::array<const size_t, 2> indices_{};
     T approx_particle_spacing_{};
 };
 
