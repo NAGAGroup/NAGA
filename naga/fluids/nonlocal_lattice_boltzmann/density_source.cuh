@@ -46,6 +46,7 @@ class density_source {
     virtual std::future<void> add_density_source(
         const simulation_nodes<const value_type>& domain,
         const problem_parameters<value_type>& params,
+        const state_variables<Lattice>& state,
         const value_type& time,
         sclx::array<value_type, 1>& source_terms
     ) = 0;
