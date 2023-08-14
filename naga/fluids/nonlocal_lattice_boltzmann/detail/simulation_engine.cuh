@@ -38,9 +38,10 @@
 #include "../lattices.cuh"
 #include "../node_provider.cuh"
 #include "../simulation_nodes.cuh"
+#include "../simulation_observer.cuh"
 #include "../simulation_variables.cuh"
 #include "equilibrium_distribution.cuh"
-#include "pml_absorption_2d.cuh"
+#include "pml_absorption.cuh"
 #include "subtask_factory.h"
 #include <scalix/fill.cuh>
 
@@ -112,7 +113,6 @@ class simulation_engine {
 
     void init_domain(const simulation_nodes<value_type>& domain) {
         domain_ = domain;
-        std::cout << domain_.nodal_spacing << std::endl;
         if (domain_.points.shape()[0] != dimensions) {
             sclx::throw_exception<std::invalid_argument>(
                 "The number of dimensions in the simulation domain does not "
@@ -195,7 +195,6 @@ class simulation_engine {
         }
         temporary_distribution_
             = sclx::array<value_type, 1>{domain_.points.shape()[1]};
-        init_distribution();
 
         solution_.macroscopic_values.fluid_velocity
             = sclx::zeros<value_type, 2>(domain_.points.shape());
@@ -209,31 +208,42 @@ class simulation_engine {
         density_source_term_
             = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
 
-        pml_absorption_operator_ = pml_absorption_operator<Lattice>{
-            this
-        };
+        pml_absorption_operator_ = pml_absorption_operator<Lattice>{this};
+
+        reset();
     }
 
     void init_domain(const node_provider<Lattice>& nodes) {
         this->init_domain(nodes.get());
     }
 
-    std::future<void> compute_density_source_terms() {
+    value_type speed_of_sound() const {
+        return lattice_traits<lattice_type>::lattice_speed_of_sound
+             * parameters_.nondim_factors.velocity_scale;
+    }
+
+    static value_type speed_of_sound(
+        const value_type& characteristic_velocity,
+        const value_type& lattice_characteristic_velocity
+    ) {
+        return lattice_traits<lattice_type>::lattice_speed_of_sound
+             * characteristic_velocity / lattice_characteristic_velocity;
+    }
+
+    void compute_density_source_terms() {
         sclx::fill(density_source_term_, value_type{0});
-        std::future<void> fut = std::async(std::launch::async, []() {});
 
         for (density_source<Lattice>* source : density_sources_) {
-            fut.get();
-            auto fut_new = source->add_density_source(
-                domain_,
-                parameters_,
-                static_cast<value_type>(frame_number_) * parameters_.time_step,
-                density_source_term_
-            );
-            fut = std::move(fut_new);
+            source
+                ->add_density_source(
+                    domain_,
+                    parameters_,
+                    solution_,
+                    time(),
+                    density_source_term_
+                )
+                .get();
         }
-
-        return fut;
     }
 
     void compute_macroscopic_values() {
@@ -474,9 +484,7 @@ class simulation_engine {
         }).get();
     }
 
-    void apply_density_source_terms(std::future<void>&& source_future) {
-        source_future.get();
-
+    void apply_density_source_terms() {
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             sclx::local_array<value_type, 1> lattice_weights(
                 handler,
@@ -487,6 +495,7 @@ class simulation_engine {
             );
             auto& density_source_term = density_source_term_;
             auto& density_scale = parameters_.nondim_factors.density_scale;
+            auto& densities     = solution_.macroscopic_values.fluid_density;
 
             handler.launch(
                 sclx::md_range_t<2>{lattice_size, domain_.points.shape()[1]},
@@ -509,6 +518,9 @@ class simulation_engine {
                     f_alpha[idx[1]] += lattice_weights[idx[0]]
                                      * density_source_term[idx[1]]
                                      / density_scale;
+                    if (idx[0] == 0) {
+                        densities[idx[1]] += density_source_term[idx[1]] / 2.f;
+                    }
                 }
             );
         });
@@ -548,14 +560,16 @@ class simulation_engine {
     }
 
     void step_forward() {
-        auto source_future = compute_density_source_terms();
-        source_future.wait();
         compute_macroscopic_values();
+        update_observers(
+            time()
+        );
+
+        compute_density_source_terms();
+        apply_density_source_terms();
 
         collision_step();
         bounce_back_step();
-
-        apply_density_source_terms(std::move(source_future));
 
         streaming_step();
 
@@ -565,6 +579,11 @@ class simulation_engine {
     void reset() {
         frame_number_ = 0;
         init_distribution();
+        compute_macroscopic_values();
+    }
+
+    value_type time() const {
+        return parameters_.time_step * frame_number_;
     }
 
     void register_density_source(density_source<Lattice>& source) {
@@ -605,6 +624,23 @@ class simulation_engine {
         });
     }
 
+    void attach_observer(simulation_observer<Lattice>& observer) {
+        observers_.push_back(&observer);
+    }
+
+    void detach_observer(simulation_observer<Lattice>& observer) {
+        observers_.erase(
+            std::remove(observers_.begin(), observers_.end(), &observer),
+            observers_.end()
+        );
+    }
+
+    void update_observers(const value_type& time) {
+        for (auto& observer : observers_) {
+            observer->update(time, domain_, parameters_, solution_);
+        }
+    }
+
     ~simulation_engine() {
         for (auto& source : density_sources_) {
             source->registered_engine_ = nullptr;
@@ -628,6 +664,8 @@ class simulation_engine {
 
     std::vector<density_source<Lattice>*> density_sources_{};
 
+    std::vector<simulation_observer<Lattice>*> observers_{};
+
     pml_absorption_operator<Lattice> pml_absorption_operator_{};
 };
 
@@ -647,4 +685,4 @@ void unregister_density_source(
 }  // namespace naga::fluids::nonlocal_lbm::detail
 
 #include "equilibrium_distribution.inl"
-#include "pml_absorption_2d.inl"
+#include "pml_absorption.inl"

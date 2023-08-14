@@ -43,6 +43,9 @@ class simulation_engine {
     static constexpr uint lattice_size = lattice_traits<Lattice>::size;
     static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
     using lattice_type                 = Lattice;
+    using simulation_domain_t = simulation_nodes<const value_type>;
+    using problem_parameters_t = problem_parameters<value_type>;
+    using solution_t = state_variables<Lattice>;
 
     simulation_engine() = default;
 
@@ -78,6 +81,38 @@ class simulation_engine {
 
     void register_density_source(density_source<Lattice>& source) {
         engine_ptr_->register_density_source(source);
+    }
+
+    value_type time() const { return engine_ptr_->time(); }
+
+    void attach_observer(simulation_observer<Lattice>& observer) {
+        engine_ptr_->attach_observer(observer);
+    }
+
+    void detach_observer(simulation_observer<Lattice>& observer) {
+        engine_ptr_->detach_observer(observer);
+    }
+
+    simulation_domain_t domain() const { return engine_ptr_->domain_; }
+
+    const solution_t& solution() const { return engine_ptr_->solution_; }
+
+    const problem_parameters_t& problem_parameters() const {
+        return engine_ptr_->parameters_;
+    }
+
+    value_type speed_of_sound() const {
+        return engine_ptr_->speed_of_sound();
+    }
+
+    static value_type speed_of_sound(
+        const value_type& characteristic_velocity,
+        const value_type& lattice_characteristic_velocity
+    ) {
+        return detail::simulation_engine<Lattice>::speed_of_sound(
+            characteristic_velocity,
+            lattice_characteristic_velocity
+        );
     }
 
   private:

@@ -33,3 +33,7 @@
 #pragma once
 
 #include "nonlocal_lattice_boltzmann/simulation_engine.cuh"
+#include "nonlocal_lattice_boltzmann/simulation_observers/vtk_observer.cuh"
+#include "nonlocal_lattice_boltzmann/simulation_observers/audio_sink_observer.cuh"
+#include "nonlocal_lattice_boltzmann/node_providers/uniform_grid_provider.cuh"
+#include "nonlocal_lattice_boltzmann/node_providers/experimental/conforming_point_cloud_provider.cuh"
