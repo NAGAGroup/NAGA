@@ -32,11 +32,12 @@
 
 #pragma once
 
-#include "../../../../../point.hpp"
 #include "../../../../../mesh/experimental/closed_contour.hpp"
-#include <vector>
+#include "../../../../../point.hpp"
+#include "../../../../../compatability.h"
 #include <filesystem>
 #include <memory>
+#include <vector>
 
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
@@ -62,73 +63,46 @@ class conforming_point_cloud_t {
         Dimensions == 2 || Dimensions == 3,
         "Dimensions must be 2 or 3"
     );
+};
 
+template <>
+class conforming_point_cloud_t<2> {
   public:
-    using point_t  = ::naga::point_t<double, Dimensions>;
+    using point_t  = ::naga::point_t<double, 2>;
     using normal_t = point_t;
     using index_t  = size_t;
 
     conforming_point_cloud_t() = default;
 
-    using input_domain_data_t = typename input_domain_data_t<Dimensions>::type;
+    using input_domain_data_t = typename input_domain_data_t<2>::type;
 
     static conforming_point_cloud_t create(
         const double& approximate_spacing,
         const std::filesystem::path& domain,
         const std::vector<std::filesystem::path>& immersed_boundaries = {}
-    ) {
-        conforming_point_cloud_t point_cloud;
-        auto impl = conforming_point_cloud_impl_t<Dimensions>::create(
-            approximate_spacing,
-            domain,
-            immersed_boundaries
-        );
-        auto impl_ptr = std::make_shared<conforming_point_cloud_impl_t<Dimensions>>(
-            std::move(impl)
-        );
-        point_cloud.impl = std::move(impl_ptr);
-        return point_cloud;
-    }
+    );
 
-    const input_domain_data_t& domain() const {
-        return impl->domain();
-    }
+    const input_domain_data_t& domain() const;
 
-    const std::vector<input_domain_data_t>& immersed_boundaries() const {
-        return impl->immersed_boundaries();
-    }
+    const std::vector<input_domain_data_t>& immersed_boundaries() const;
 
-    const std::vector<point_t>& points() const {
-        return impl->points();
-    }
+    const std::vector<point_t>& points() const;
 
-    const std::vector<normal_t>& normals() const {
-        return impl->normals();
-    }
+    const std::vector<normal_t>& normals() const;
 
-    const size_t& num_bulk_points() const {
-        return impl->num_bulk_points();
-    }
+    const size_t& num_bulk_points() const;
 
-    const size_t& num_boundary_points() const {
-        return impl->num_boundary_points();
-    }
+    const size_t& num_boundary_points() const;
 
-    size_t size() const {
-        return impl->size();
-    }
+    size_t size() const;
 
-    bool is_boundary(const index_t &i) const {
-        return impl->is_boundary(i);
-    }
+    bool is_boundary(const index_t &i) const;
 
-    normal_t get_normal(const index_t &i) const {
-        return impl->get_normal(i);
-    }
+    normal_t get_normal(const index_t &i) const;
 
   private:
-    friend class conforming_point_cloud_impl_t<Dimensions>;
-    std::shared_ptr<conforming_point_cloud_impl_t<Dimensions>> impl{};
+    friend class conforming_point_cloud_impl_t<2>;
+    std::shared_ptr<conforming_point_cloud_impl_t<2>> impl{};
 };
 
 // this specialization sucks because it's interface is different

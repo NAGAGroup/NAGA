@@ -118,8 +118,7 @@ class conforming_point_cloud_impl_t<2> {
             }
         }
 
-        closed_contour_t domain_contour
-            = closed_contour_t::import(domain);
+        closed_contour_t domain_contour = closed_contour_t::import(domain);
         std::vector<point_t> points;
         std::vector<normal_t> normals;
         uint num_boundaries;
@@ -334,6 +333,68 @@ class conforming_point_cloud_impl_t<2> {
                               // boundary
     size_t num_boundary_points_;
 };
+
+conforming_point_cloud_t<2> conforming_point_cloud_t<2>::create(
+    const double& approximate_spacing,
+    const std::filesystem::path& domain,
+    const std::vector<std::filesystem::path>& immersed_boundaries
+) {
+    conforming_point_cloud_t point_cloud;
+    auto impl = conforming_point_cloud_impl_t<2>::create(
+        approximate_spacing,
+        domain,
+        immersed_boundaries
+    );
+    auto impl_ptr
+        = std::make_shared<conforming_point_cloud_impl_t<2>>(std::move(impl));
+    point_cloud.impl = std::move(impl_ptr);
+    return point_cloud;
+}
+
+const typename conforming_point_cloud_t<2>::input_domain_data_t&
+conforming_point_cloud_t<2>::domain() const {
+    return impl->domain();
+}
+
+const std::vector<typename conforming_point_cloud_t<2>::input_domain_data_t>&
+conforming_point_cloud_t<2>::immersed_boundaries() const {
+    return impl->immersed_boundaries();
+}
+
+const std::vector<typename conforming_point_cloud_t<2>::point_t>&
+conforming_point_cloud_t<2>::points() const {
+    return impl->points();
+}
+
+const std::vector<typename conforming_point_cloud_t<2>::normal_t>&
+conforming_point_cloud_t<2>::normals() const {
+    return impl->normals();
+}
+
+const size_t& conforming_point_cloud_t<2>::num_bulk_points() const {
+    return impl->num_bulk_points();
+}
+
+const size_t& conforming_point_cloud_t<2>::num_boundary_points() const {
+    return impl->num_boundary_points();
+}
+
+size_t conforming_point_cloud_t<2>::size() const {
+    return impl->num_boundary_points();
+}
+
+bool conforming_point_cloud_t<2>::is_boundary(
+    const conforming_point_cloud_t::index_t& i
+) const {
+    return impl->is_boundary(i);
+}
+
+typename conforming_point_cloud_t<2>::normal_t
+conforming_point_cloud_t<2>::get_normal(
+    const conforming_point_cloud_t::index_t& i
+) const {
+    return impl->get_normal(i);
+}
 
 template class conforming_point_cloud_t<2>;
 

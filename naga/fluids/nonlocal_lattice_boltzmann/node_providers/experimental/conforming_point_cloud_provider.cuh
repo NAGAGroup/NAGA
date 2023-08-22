@@ -210,7 +210,7 @@ class conforming_point_cloud_provider<
         );
 
         using closed_contour_t = typename detail::conforming_point_cloud_t<
-            dimensions>::closed_contour_t;
+            dimensions>::input_domain_data_t;
 
         if (domain_absorption_layer_thickness > 0) {
             closed_contour_t domain_contour = conforming_point_cloud.domain();
