@@ -149,10 +149,11 @@ int main() {
     // audio source parameters
     auto wav_resource_dir        = get_resources_dir() / "wav_files";
     auto wav_file                = wav_resource_dir / "sample1.wav";
-    uint node_resolution         = 4;
+    uint node_resolution         = 8;
     value_type max_wav_frequency = 2000;
-    value_type audio_amplitude   = 1e-2;
+    value_type audio_amplitude   = 5e-4;
     value_type source_radius     = 0.04;
+    uint audio_sink_history_size = 1000;
     size_t frame_offset          = 0;
     auto wav_save_file           = "sample1_sim.wav";
 
@@ -301,7 +302,8 @@ int main() {
             sink_location,
             fluid_density,
             engine.domain(),
-            time_multiplier
+            time_multiplier,
+            audio_sink_history_size
         );
     if (enable_wav_observer) {
         engine.attach_observer(audio_sink);
