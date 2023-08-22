@@ -144,11 +144,15 @@ class vtk_observer : public simulation_observer<Lattice> {
         cells->Allocate(domain.points.shape()[1]);
 
         for (vtkIdType i = 0; i < domain.points.shape()[1]; ++i) {
+            value_type point[3]{0, 0, 0};
+            for (int d = 0; d < Lattice::dimensions; ++d) {
+                point[d] = domain.points(d, i);
+            }
             points->SetPoint(
                 i,
-                domain.points(0, i),
-                domain.points(1, i),
-                domain.points(2, i)
+                point[0],
+                point[1],
+                point[2]
             );
 
             value_type f_i[Lattice::size];
@@ -162,11 +166,16 @@ class vtk_observer : public simulation_observer<Lattice> {
 
             density->SetTuple1(i, solution.macroscopic_values.fluid_density(i));
 
+
+            value_type fluid_velocity[3]{0, 0, 0};
+            for (int d = 0; d < Lattice::dimensions; ++d) {
+                point[d] = solution.macroscopic_values.fluid_velocity(d, i);
+            }
             velocity->SetTuple3(
                 i,
-                solution.macroscopic_values.fluid_velocity(0, i),
-                solution.macroscopic_values.fluid_velocity(1, i),
-                solution.macroscopic_values.fluid_velocity(2, i)
+                fluid_velocity[0],
+                fluid_velocity[1],
+                fluid_velocity[2]
             );
 
             int type_i = 0;
@@ -174,18 +183,12 @@ class vtk_observer : public simulation_observer<Lattice> {
             value_type absorption_i = 0;
             if (i >= domain.num_bulk_points + domain.num_layer_points) {
                 type_i      = 2;
-                normal_i[0] = domain.boundary_normals(
-                    0,
-                    i - domain.num_bulk_points - domain.num_layer_points
-                );
-                normal_i[1] = domain.boundary_normals(
-                    1,
-                    i - domain.num_bulk_points - domain.num_layer_points
-                );
-                normal_i[2] = domain.boundary_normals(
-                    2,
-                    i - domain.num_bulk_points - domain.num_layer_points
-                );
+                for (int d = 0; d < Lattice::dimensions; ++d) {
+                    normal_i[d] = domain.boundary_normals(
+                        d,
+                        i - domain.num_bulk_points - domain.num_layer_points
+                    );
+                }
             } else if (i >= domain.num_bulk_points) {
                 type_i = 1;
                 absorption_i

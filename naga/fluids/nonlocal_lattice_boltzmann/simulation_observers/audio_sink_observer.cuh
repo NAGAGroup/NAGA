@@ -127,7 +127,7 @@ class audio_sink_observer : public simulation_observer<Lattice> {
             domain.points,
             32
         );
-        naga::default_point_map<value_type, 3> location_map{sink_locations_};
+        naga::default_point_map<value_type, dimensions> location_map{sink_locations_};
         auto [distances_squared, indices]
             = batched_nearest_neighbors(32, location_map, domain_segmentation);
 
