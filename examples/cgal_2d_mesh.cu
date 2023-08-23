@@ -153,7 +153,7 @@ int main() {
     value_type max_wav_frequency = 2000;
     value_type audio_amplitude   = 5e-4;
     value_type source_radius     = 0.04;
-    uint audio_sink_history_size = 1000;
+    uint audio_sink_history_size = 50;
     size_t frame_offset          = 0;
     auto wav_save_file           = "sample1_sim.wav";
 
@@ -161,7 +161,7 @@ int main() {
     value_type desired_characteristic_length = 0.;
 
     // visualization parameters
-    value_type simulation_length    = 1.;
+    value_type simulation_length    = 2.;
     value_type visualization_length = 10.;
     value_type visualization_fps    = 60.;
 
@@ -176,7 +176,7 @@ int main() {
     sclx::filesystem::create_directories(results_path);
 
     // observer types
-    bool enable_vtk_observer = true;
+    bool enable_vtk_observer = false;
     bool enable_wav_observer = true;
 
     // ----------------- Simulation Code Below, Don't Touch ----------------- //

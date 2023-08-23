@@ -109,15 +109,13 @@ struct problem_traits {
         ) final {
             region_t source_region{source_radius_, (*path_)(time)};
 
-            auto frame_number = static_cast<size_t>(
-                time * time_multiplier_ * static_cast<value_type>(sample_rate_)
-            );
-            if (frame_number < sample_frame_) {
-                return std::async(std::launch::deferred, []() {});
-            }
-            sample_frame_ = frame_number + 1;
+            auto lower_frame_number = std::floor(time * time_multiplier_ * static_cast<value_type>(sample_rate_));
+            auto upper_frame_number = std::ceil(time * time_multiplier_ * static_cast<value_type>(sample_rate_));
+            auto fractional_frame_number = time * time_multiplier_ * static_cast<value_type>(sample_rate_);
+            auto lower_weight = 1.0 - (fractional_frame_number - lower_frame_number);
+            auto upper_weight = 1.0 - (upper_frame_number - fractional_frame_number);
 
-            frame_number += frame_offset_;
+            auto frame_number = static_cast<size_t>(lower_frame_number) + frame_offset_;
             const auto& amplitude       = amplitude_;
             const auto& audio_samples   = audio_samples_;
             const auto& density         = solution.macroscopic_values.fluid_density;
@@ -150,7 +148,9 @@ struct problem_traits {
                             local_points(i, info.local_thread_linear_id())
                                 = points(i, idx[0]);
                         }
-                        auto audio_sample = amplitude * audio_samples(frame_number);
+                        auto audio_sample_upper = amplitude * audio_samples(frame_number + 1);
+                        auto audio_sample_lower = amplitude * audio_samples(frame_number);
+                        auto audio_sample = upper_weight * audio_sample_upper + lower_weight * audio_sample_lower;
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
                             )) {
@@ -197,7 +197,6 @@ struct problem_traits {
         value_type source_radius_;
         value_type time_multiplier_;
         size_t sample_rate_;
-        size_t sample_frame_ = 0;
         size_t frame_offset_;
         bool has_finished_ = false;
         std::shared_ptr<path_t> path_;
