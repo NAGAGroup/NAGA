@@ -127,7 +127,7 @@ int main() {
         = get_resources_dir() / "lbm_example_domains" / "ball_in_cube";
     sclx::filesystem::path domain_obj       = obj_resources_dir / "cube.obj";
     double outer_absorption_layer_thickness = 0.1;
-    double outer_absorption_coefficient     = 0.01;
+    double outer_absorption_coefficient     = 0.1;
     //    double outer_absorption_layer_thickness = 0.0;
     //    double outer_absorption_coefficient     = 0.0;
 
@@ -151,14 +151,14 @@ int main() {
     // audio source parameters
     uint node_resolution       = 20;
     value_type audio_amplitude = 5e-4;
-    value_type source_radius   = 0.16;
+    value_type source_radius   = 0.06;
 
     // simulation-space to real-space conversion, zero maximum allowed
     value_type desired_characteristic_length = 0.;
 
     // visualization parameters
-    value_type simulation_length    = 2.;
-    value_type visualization_length = 2.;
+    value_type simulation_length    = 10.;
+    value_type visualization_length = 10.;
     value_type visualization_fps    = 60;
 
     // results directory
