@@ -116,3 +116,6 @@ target_link_libraries(cgal_2d_mesh PRIVATE naga)
 add_executable(cgal_3d_mesh examples/cgal_3d_mesh.cu)
 target_link_libraries(cgal_3d_mesh PRIVATE naga)
 
+add_executable(nonlocal_lbm_pulse_3d examples/nonlocal_lbm_pulse_3d.cu)
+target_link_libraries(nonlocal_lbm_pulse_3d PRIVATE naga)
+
