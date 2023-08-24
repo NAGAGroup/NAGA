@@ -162,7 +162,7 @@ int main() {
     value_type visualization_fps    = 60;
 
     // results directory
-    static auto results_path = get_examples_results_dir() / "cgal_3d_mesh";
+    static auto results_path = get_examples_results_dir() / "pulse_3d";
 
     // observer types
     bool enable_vtk_observer = true;
