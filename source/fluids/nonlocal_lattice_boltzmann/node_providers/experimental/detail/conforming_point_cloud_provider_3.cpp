@@ -292,12 +292,12 @@ class conforming_point_cloud_impl_t<3> {
 
         // Mesh criteria
         Mesh_criteria criteria(
-            edge_size              = nodal_spacing,
+            edge_size              = nodal_spacing / 3.,
             facet_angle            = 25,
-            facet_size             = nodal_spacing * 2.,
-            facet_distance         = nodal_spacing / 5.,
+            facet_size             = nodal_spacing,
+            facet_distance         = nodal_spacing / 10.,
             cell_radius_edge_ratio = 3,
-            cell_size              = nodal_spacing * 2.
+            cell_size              = nodal_spacing
         );
 
         std::unique_ptr<Mesh_domain> immersed_boundaries_domain_ptr;
@@ -462,7 +462,7 @@ class conforming_point_cloud_impl_t<3> {
 
         for (uint i = 0; i < potential_bulk_points.rows(); i++) {
             const auto& distance_to_boundary = min_distance_to_boundary[i];
-            if (distance_to_boundary < 0.73 * nodal_spacing) {
+            if (distance_to_boundary < 0.1f * nodal_spacing) {
                 continue;
             }
 
