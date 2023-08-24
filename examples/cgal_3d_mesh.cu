@@ -126,8 +126,8 @@ int main() {
     auto obj_resources_dir
         = get_resources_dir() / "lbm_example_domains" / "ball_in_cube";
     sclx::filesystem::path domain_obj       = obj_resources_dir / "cube.obj";
-    double outer_absorption_layer_thickness = 0.1;
-    double outer_absorption_coefficient     = 0.01;
+    double outer_absorption_layer_thickness = 0.2;
+    double outer_absorption_coefficient     = 0.1;
 
     // immersed boundary obj files and absorption parameters
     //    std::vector<sclx::filesystem::path> immersed_boundary_objs
@@ -142,20 +142,18 @@ int main() {
     value_type nodal_spacing                   = 0.04;
     value_type fluid_viscosity                 = 1e-5f;
     value_type fluid_density                   = 1.0;
-    value_type characteristic_velocity         = 0.4;
+    value_type characteristic_velocity         = 4.;
     value_type lattice_characteristic_velocity = 0.2;
     value_type characteristic_length           = 2.;
 
     // audio source parameters
     auto wav_resource_dir        = get_resources_dir() / "wav_files";
-    auto wav_file                = wav_resource_dir / "sample1.wav";
-    uint node_resolution         = 8;
-    value_type max_wav_frequency = 2000;
+    auto wav_file                = wav_resource_dir / "sample1_low_freq.wav";
+    uint node_resolution         = 16;
+    value_type max_wav_frequency = 800;
     value_type audio_amplitude   = 5e-4;
     value_type source_radius     = 0.08;
-    uint audio_sink_history_size = 50;
     size_t frame_offset          = 0;
-    auto wav_save_file           = "sample1_sim.wav";
 
     // simulation-space to real-space conversion, zero maximum allowed
     value_type desired_characteristic_length = 0.;
@@ -169,6 +167,8 @@ int main() {
     constexpr auto channel_config
         = naga::fluids::nonlocal_lbm::channel_configuration::mono;
     naga::point_t<value_type, 3> sink_location({-0.5, 0, 0});
+    uint audio_sink_history_size = 50;
+    auto wav_save_file           = "sample1_sim.wav";
 
     // results directory
     static auto results_path = get_examples_results_dir() / "cgal_3d_mesh";
@@ -232,10 +232,7 @@ int main() {
 
     // this ensures that the time step of the simulation will be stable
     // and is an integer multiple of the audio source sample rate
-    value_type max_allowed_time_step = 0.5f * nodal_spacing * nodal_spacing;
-    if (max_allowed_time_step * speed_of_sound > 0.1f * nodal_spacing) {
-        max_allowed_time_step = 0.1f * nodal_spacing / speed_of_sound;
-    }
+    value_type max_allowed_time_step = 4.f * nodal_spacing * nodal_spacing / speed_of_sound / speed_of_sound;
     value_type unscaled_time_step    = 1.f / sample_rate;
     if (unscaled_time_step > max_allowed_time_step) {
         unscaled_time_step
@@ -248,7 +245,7 @@ int main() {
 
     std::cout << "Simulation parameters scaled such that the speed of sound is "
                  "300 and \n"
-                 "minimum wavelength is at least ~4 nodes: \n";
+                 "minimum wavelength is at least ~" << node_resolution << " nodes.\n";
     std::cout << "    Max resolved frequency: " << max_resolved_frequency
               << " Hz\n";
     std::cout << "    Speed of sound: " << 300 << " m/s\n";
