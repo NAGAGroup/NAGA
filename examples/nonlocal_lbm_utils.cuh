@@ -238,9 +238,10 @@ struct problem_traits {
             const value_type& time_multiplier = 1.0
         )
             : amplitude_(amplitude),
-              time_multiplier_(time_multiplier) {
+              time_multiplier_(time_multiplier),
+              source_region_(source_radius, source_center)
+        {
             frequency_ = speed_of_sound / pulse_width;
-            source_region_ = region_t{source_radius, source_center};
         }
 
         std::future<void> add_density_source(
@@ -250,7 +251,6 @@ struct problem_traits {
             const value_type& time,
             sclx::array<value_type, 1>& source_terms
         ) final {
-            constexpr value_type phase_offset = -naga::math::pi<value_type> / 2.f;
             value_type scaled_time = time * time_multiplier_;
             value_type radians = 2 * naga::math::pi<value_type> * frequency_
                                  * scaled_time;
@@ -259,9 +259,7 @@ struct problem_traits {
                 return std::async(std::launch::deferred, []() {});
             }
 
-            radians += phase_offset;
-            auto perturbation = amplitude_
-                                * (naga::math::sin(radians) + 1) / 2.f;
+            auto perturbation = amplitude_ * naga::math::sin(radians);
 
             const auto& density = solution.macroscopic_values.fluid_density;
             const auto& nominal_density = params.nondim_factors.density_scale;
@@ -291,16 +289,6 @@ struct problem_traits {
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
                             )) {
-                            auto distance
-                                = naga::distance_functions::loopless::euclidean<
-                                    3>{}(
-                                    &local_points(
-                                        0,
-                                        info.local_thread_linear_id()
-                                    ),
-                                    source_region.center()
-                                );
-
                             auto current_density = density(idx[0]);
                             perturbation += nominal_density - current_density;
                             source_terms(idx[0]) += perturbation;
