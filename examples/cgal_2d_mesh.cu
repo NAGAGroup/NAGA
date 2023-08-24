@@ -139,10 +139,10 @@ int main() {
     std::vector<double> immersed_absorption_coefficients       = {};
 
     // raw simulation parameters
-    value_type nodal_spacing                   = 0.02;
+    value_type nodal_spacing                   = 0.04;
     value_type fluid_viscosity                 = 1e-5f;
     value_type fluid_density                   = 1.0;
-    value_type characteristic_velocity         = 0.4;
+    value_type characteristic_velocity         = 100;
     value_type lattice_characteristic_velocity = 0.2;
     value_type characteristic_length           = 4.;
 
@@ -172,11 +172,9 @@ int main() {
 
     // results directory
     static auto results_path = get_examples_results_dir() / "cgal_2d_mesh";
-    sclx::filesystem::remove_all(results_path);
-    sclx::filesystem::create_directories(results_path);
 
     // observer types
-    bool enable_vtk_observer = false;
+    bool enable_vtk_observer = true;
     bool enable_wav_observer = true;
 
     // ----------------- Simulation Code Below, Don't Touch ----------------- //
@@ -234,7 +232,7 @@ int main() {
 
     // this ensures that the time step of the simulation will be stable
     // and is an integer multiple of the audio source sample rate
-    value_type max_allowed_time_step = 0.5f * nodal_spacing * nodal_spacing;
+    value_type max_allowed_time_step = 0.5f * nodal_spacing * nodal_spacing / speed_of_sound;
     value_type unscaled_time_step    = 1.f / sample_rate;
     if (unscaled_time_step > max_allowed_time_step) {
         unscaled_time_step
@@ -293,6 +291,9 @@ int main() {
     value_type visualization_time_multiplier
         = visualization_length / simulation_length;
     async_time_printer printer;
+
+    sclx::filesystem::remove_all(results_path);
+    sclx::filesystem::create_directories(results_path);
 
     auto full_wav_save_path = results_path / wav_save_file;
     naga::fluids::nonlocal_lbm::audio_sink_observer<lattice_t, channel_config>
