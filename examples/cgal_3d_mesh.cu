@@ -142,18 +142,18 @@ int main() {
     value_type nodal_spacing                   = 0.04;
     value_type fluid_viscosity                 = 1e-5f;
     value_type fluid_density                   = 1.0;
-    value_type characteristic_velocity         = 100;
+    value_type characteristic_velocity         = 0.4;
     value_type lattice_characteristic_velocity = 0.2;
     value_type characteristic_length           = 2.;
 
     // audio source parameters
     auto wav_resource_dir        = get_resources_dir() / "wav_files";
     auto wav_file                = wav_resource_dir / "sample1.wav";
-    uint node_resolution         = 4;
+    uint node_resolution         = 8;
     value_type max_wav_frequency = 2000;
     value_type audio_amplitude   = 5e-4;
-    value_type source_radius     = 0.04;
-    uint audio_sink_history_size = 1000;
+    value_type source_radius     = 0.08;
+    uint audio_sink_history_size = 50;
     size_t frame_offset          = 0;
     auto wav_save_file           = "sample1_sim.wav";
 
@@ -232,7 +232,10 @@ int main() {
 
     // this ensures that the time step of the simulation will be stable
     // and is an integer multiple of the audio source sample rate
-    value_type max_allowed_time_step = 0.5f * nodal_spacing * nodal_spacing / speed_of_sound;
+    value_type max_allowed_time_step = 0.5f * nodal_spacing * nodal_spacing;
+    if (max_allowed_time_step * speed_of_sound > 0.1f * nodal_spacing) {
+        max_allowed_time_step = 0.1f * nodal_spacing / speed_of_sound;
+    }
     value_type unscaled_time_step    = 1.f / sample_rate;
     if (unscaled_time_step > max_allowed_time_step) {
         unscaled_time_step

@@ -232,7 +232,10 @@ int main() {
 
     // this ensures that the time step of the simulation will be stable
     // and is an integer multiple of the audio source sample rate
-    value_type max_allowed_time_step = 0.5f * nodal_spacing * nodal_spacing / speed_of_sound;
+    value_type max_allowed_time_step = 0.5f * nodal_spacing * nodal_spacing;
+    if (max_allowed_time_step * speed_of_sound > 0.1f * nodal_spacing) {
+        max_allowed_time_step = 0.1f * nodal_spacing / speed_of_sound;
+    }
     value_type unscaled_time_step    = 1.f / sample_rate;
     if (unscaled_time_step > max_allowed_time_step) {
         unscaled_time_step
