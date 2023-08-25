@@ -802,6 +802,14 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             );
         }
 
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            auto& Q1
+                = lattice_Q1_values_[alpha];
+
+            auto& Q2 = lattice_Q2_values_[alpha];
+            sclx::assign_array(Q1, Q2).get();
+        }
+
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             auto subtask
                 = subtask_factory<compute_equilibrium_subtask<lattice>>::create(
