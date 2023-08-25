@@ -139,18 +139,18 @@ int main() {
     std::vector<double> immersed_absorption_coefficients       = {};
 
     // raw simulation parameters
-    value_type nodal_spacing                   = 0.04;
+    value_type nodal_spacing                   = 0.03;
     value_type fluid_viscosity                 = 1e-5f;
     value_type fluid_density                   = 1.0;
-    value_type characteristic_velocity         = 4.;
+    value_type characteristic_velocity         = 2.;
     value_type lattice_characteristic_velocity = 0.2;
     value_type characteristic_length           = 2.;
 
     // audio source parameters
     auto wav_resource_dir        = get_resources_dir() / "wav_files";
     auto wav_file                = wav_resource_dir / "sample1_low_freq.wav";
-    uint node_resolution         = 16;
-    value_type max_wav_frequency = 800;
+    uint node_resolution         = 8;
+    value_type max_wav_frequency = 850;
     value_type audio_amplitude   = 5e-4;
     value_type source_radius     = 0.08;
     size_t frame_offset          = 0;
