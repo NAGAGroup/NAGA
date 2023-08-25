@@ -39,11 +39,11 @@
 #include <iostream>
 #include <atomic>
 
-sclx::filesystem::path get_examples_dir() {
+inline sclx::filesystem::path get_examples_dir() {
     return sclx::filesystem::path(__FILE__).parent_path();
 }
 
-sclx::filesystem::path get_examples_results_dir() {
+inline sclx::filesystem::path get_examples_results_dir() {
 #ifndef NAGA_EXAMPLES_RESULTS_DIR
     return get_examples_dir() / "results";
 #else
@@ -51,7 +51,7 @@ sclx::filesystem::path get_examples_results_dir() {
 #endif
 }
 
-sclx::filesystem::path get_resources_dir() {
+inline sclx::filesystem::path get_resources_dir() {
     return sclx::filesystem::path(NAGA_RESOURCES_DIR);
 }
 
