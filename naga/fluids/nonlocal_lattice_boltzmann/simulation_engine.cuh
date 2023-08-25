@@ -43,9 +43,9 @@ class simulation_engine {
     static constexpr uint lattice_size = lattice_traits<Lattice>::size;
     static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
     using lattice_type                 = Lattice;
-    using simulation_domain_t = simulation_nodes<const value_type>;
-    using problem_parameters_t = problem_parameters<value_type>;
-    using solution_t = state_variables<Lattice>;
+    using simulation_domain_t          = simulation_nodes<const value_type>;
+    using problem_parameters_t         = problem_parameters<value_type>;
+    using solution_t                   = state_variables<Lattice>;
 
     simulation_engine() = default;
 
@@ -101,9 +101,7 @@ class simulation_engine {
         return engine_ptr_->parameters_;
     }
 
-    value_type speed_of_sound() const {
-        return engine_ptr_->speed_of_sound();
-    }
+    value_type speed_of_sound() const { return engine_ptr_->speed_of_sound(); }
 
     static value_type speed_of_sound(
         const value_type& characteristic_velocity,

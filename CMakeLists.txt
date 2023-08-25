@@ -34,17 +34,16 @@ include(CGAL_TBB_support) # Includes a module from CGAL
 find_package(GMP REQUIRED)
 find_package(MPFR REQUIRED)
 add_library(
-        naga-lib SHARED
-        source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider_2.cpp
-        source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider_3.cpp
+  naga-lib SHARED
+  source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider_2.cpp
+  source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider_3.cpp
 )
 target_include_directories(
-  naga-lib PRIVATE
-        ${PROJECT_SOURCE_DIR}/.
-        ${EIGEN_INCLUDE_DIR}
-        ${NANOFLANN_INCLUDE_DIR}
-)
-target_link_libraries(naga-lib PRIVATE scalix ${GMP_LIBRARIES} ${MPFR_LIBRARIES} CGAL::CGAL CGAL::TBB_support sdf)
+  naga-lib PRIVATE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}
+                   ${NANOFLANN_INCLUDE_DIR})
+target_link_libraries(
+  naga-lib PRIVATE scalix ${GMP_LIBRARIES} ${MPFR_LIBRARIES} CGAL::CGAL
+                   CGAL::TBB_support sdf)
 set_target_properties(naga-lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(sdf PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(naga-lib PRIVATE CGAL_NO_ASSERTIONS)
@@ -52,13 +51,10 @@ target_compile_definitions(naga-lib PRIVATE CGAL_NO_ASSERTIONS)
 # naga is a mostly header only library
 add_library(naga INTERFACE)
 target_include_directories(
-  naga INTERFACE
-        ${PROJECT_SOURCE_DIR}/.
-        ${EIGEN_INCLUDE_DIR}
-        ${NANOFLANN_INCLUDE_DIR}
-        ${AUDIOFILE_INCLUDE_DIR})
-target_link_libraries(naga INTERFACE naga-lib scalix cublas sdf OpenMP::OpenMP_CXX
-                                     ${VTK_LIBRARIES})
+  naga INTERFACE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}
+                 ${NANOFLANN_INCLUDE_DIR} ${AUDIOFILE_INCLUDE_DIR})
+target_link_libraries(naga INTERFACE naga-lib scalix cublas sdf
+                                     OpenMP::OpenMP_CXX ${VTK_LIBRARIES})
 vtk_module_autoinit(TARGETS naga MODULES ${VTK_LIBRARIES})
 set_target_properties(naga PROPERTIES CMAKE_CUDA_FLAGS
                                       "${CMAKE_CUDA_FLAGS} -Xcompiler -fopenmp")
@@ -118,4 +114,3 @@ target_link_libraries(cgal_3d_mesh PRIVATE naga)
 
 add_executable(nonlocal_lbm_pulse_3d examples/nonlocal_lbm_pulse_3d.cu)
 target_link_libraries(nonlocal_lbm_pulse_3d PRIVATE naga)
-

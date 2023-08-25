@@ -360,15 +360,16 @@ class conforming_point_cloud_provider<
             = conforming_point_cloud.bulk_to_boundary_distances();
         for (uint i = 0; i < num_bulk_and_layer_points; ++i) {
             double peak_absorption_coefficient = 0.0;
-            double layer_thickness            = 0.0;
+            double layer_thickness             = 0.0;
             if (closest_boundary_indices[i] == 0) {
                 peak_absorption_coefficient = domain_boundary_absorption_rate;
                 layer_thickness             = domain_absorption_layer_thickness;
             } else {
                 if (!immersed_boundary_layer_thicknesses.empty()
                     && !immersed_boundary_absorption_rates.empty()) {
-                    peak_absorption_coefficient = immersed_boundary_absorption_rates
-                        [closest_boundary_indices[i] - 1];
+                    peak_absorption_coefficient
+                        = immersed_boundary_absorption_rates
+                            [closest_boundary_indices[i] - 1];
                     layer_thickness = immersed_boundary_layer_thicknesses
                         [closest_boundary_indices[i] - 1];
                 }
@@ -413,12 +414,13 @@ class conforming_point_cloud_provider<
             [](const auto& rate) { return rate > 0; }
         );
 
-        size_t num_bulk_points = num_bulk_and_layer_points - num_layer_points;
+        size_t num_bulk_points  = num_bulk_and_layer_points - num_layer_points;
         nodes_.num_bulk_points  = num_bulk_points;
         nodes_.num_layer_points = num_layer_points;
 
         if (num_layer_points > 0) {
-            nodes_.layer_absorption = sclx::array<value_type, 1>{num_layer_points};
+            nodes_.layer_absorption
+                = sclx::array<value_type, 1>{num_layer_points};
         }
 
         for (size_t i = 0; i < num_bulk_points; ++i) {

@@ -94,9 +94,8 @@ class audio_sink_observer : public simulation_observer<Lattice> {
           save_frequency_(save_frequency),
           time_multiplier_(time_multiplier) {
 
-        std::vector<const naga::point_t<value_type, dimensions>*> sink_locations(
-            channel_count
-        );
+        std::vector<const naga::point_t<value_type, dimensions>*>
+            sink_locations(channel_count);
         if constexpr (channel_config == channel_configuration::mono) {
             const typename audio_sink_traits<
                 value_type,
@@ -127,7 +126,8 @@ class audio_sink_observer : public simulation_observer<Lattice> {
             domain.points,
             32
         );
-        naga::default_point_map<value_type, dimensions> location_map{sink_locations_};
+        naga::default_point_map<value_type, dimensions> location_map{
+            sink_locations_};
         auto [distances_squared, indices]
             = batched_nearest_neighbors(32, location_map, domain_segmentation);
 

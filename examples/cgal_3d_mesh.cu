@@ -37,8 +37,8 @@ using value_type = float;
 using lattice_t    = naga::fluids::nonlocal_lbm::d3q27_lattice<value_type>;
 using sim_engine_t = problem_traits<lattice_t>::sim_engine_t;
 using simulation_domain_t = problem_traits<lattice_t>::simulation_domain_t;
-using node_provider_t = problem_traits<lattice_t>::node_provider_t;
-using audio_source_t = problem_traits<lattice_t>::spherical_audio_source;
+using node_provider_t     = problem_traits<lattice_t>::node_provider_t;
+using audio_source_t      = problem_traits<lattice_t>::spherical_audio_source;
 
 // The time scaling done after the user-defined simulation parameters
 // are to ensure that the desired audio frequency can be resolved.
@@ -232,8 +232,9 @@ int main() {
 
     // this ensures that the time step of the simulation will be stable
     // and is an integer multiple of the audio source sample rate
-    value_type max_allowed_time_step = 4.f * nodal_spacing * nodal_spacing / speed_of_sound / speed_of_sound;
-    value_type unscaled_time_step    = 1.f / sample_rate;
+    value_type max_allowed_time_step
+        = 4.f * nodal_spacing * nodal_spacing / speed_of_sound / speed_of_sound;
+    value_type unscaled_time_step = 1.f / sample_rate;
     if (unscaled_time_step > max_allowed_time_step) {
         unscaled_time_step
             /= std::ceil(unscaled_time_step / max_allowed_time_step);
@@ -245,7 +246,8 @@ int main() {
 
     std::cout << "Simulation parameters scaled such that the speed of sound is "
                  "300 and \n"
-                 "minimum wavelength is at least ~" << node_resolution << " nodes.\n";
+                 "minimum wavelength is at least ~"
+              << node_resolution << " nodes.\n";
     std::cout << "    Max resolved frequency: " << max_resolved_frequency
               << " Hz\n";
     std::cout << "    Speed of sound: " << 300 << " m/s\n";

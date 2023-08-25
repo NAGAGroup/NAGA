@@ -52,7 +52,9 @@ class point_view_t {
 
     NAGA_HOST NAGA_DEVICE point_view_t(T* data) : data_(data) {}
 
-    NAGA_HOST NAGA_DEVICE T& operator[](uint index) const { return data_[index]; }
+    NAGA_HOST NAGA_DEVICE T& operator[](uint index) const {
+        return data_[index];
+    }
 
     NAGA_HOST NAGA_DEVICE T& x() const { return data_[0]; }
 

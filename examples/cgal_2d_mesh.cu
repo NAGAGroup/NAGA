@@ -37,8 +37,8 @@ using value_type = float;
 using lattice_t    = naga::fluids::nonlocal_lbm::d2q9_lattice<value_type>;
 using sim_engine_t = problem_traits<lattice_t>::sim_engine_t;
 using simulation_domain_t = problem_traits<lattice_t>::simulation_domain_t;
-using node_provider_t = problem_traits<lattice_t>::node_provider_t;
-using audio_source_t = problem_traits<lattice_t>::spherical_audio_source;
+using node_provider_t     = problem_traits<lattice_t>::node_provider_t;
+using audio_source_t      = problem_traits<lattice_t>::spherical_audio_source;
 
 // The time scaling done after the user-defined simulation parameters
 // are to ensure that the desired audio frequency can be resolved.
@@ -236,7 +236,7 @@ int main() {
     if (max_allowed_time_step * speed_of_sound > 0.1f * nodal_spacing) {
         max_allowed_time_step = 0.1f * nodal_spacing / speed_of_sound;
     }
-    value_type unscaled_time_step    = 1.f / sample_rate;
+    value_type unscaled_time_step = 1.f / sample_rate;
     if (unscaled_time_step > max_allowed_time_step) {
         unscaled_time_step
             /= std::ceil(unscaled_time_step / max_allowed_time_step);

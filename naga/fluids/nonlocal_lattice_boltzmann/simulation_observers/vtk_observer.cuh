@@ -148,12 +148,7 @@ class vtk_observer : public simulation_observer<Lattice> {
             for (int d = 0; d < Lattice::dimensions; ++d) {
                 point[d] = domain.points(d, i);
             }
-            points->SetPoint(
-                i,
-                point[0],
-                point[1],
-                point[2]
-            );
+            points->SetPoint(i, point[0], point[1], point[2]);
 
             value_type f_i[Lattice::size];
             auto lat_weights
@@ -165,7 +160,6 @@ class vtk_observer : public simulation_observer<Lattice> {
             f->SetTuple(i, f_i);
 
             density->SetTuple1(i, solution.macroscopic_values.fluid_density(i));
-
 
             value_type fluid_velocity[3]{0, 0, 0};
             for (int d = 0; d < Lattice::dimensions; ++d) {
@@ -182,7 +176,7 @@ class vtk_observer : public simulation_observer<Lattice> {
             value_type normal_i[3]{0, 0, 0};
             value_type absorption_i = 0;
             if (i >= domain.num_bulk_points + domain.num_layer_points) {
-                type_i      = 2;
+                type_i = 2;
                 for (int d = 0; d < Lattice::dimensions; ++d) {
                     normal_i[d] = domain.boundary_normals(
                         d,

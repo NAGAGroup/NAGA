@@ -33,9 +33,9 @@
 #pragma once
 
 #include "triangular_mesh.hpp"
-#include <naga/point.hpp>
-#include <naga/math.hpp>
 #include <algorithm>
+#include <naga/math.hpp>
+#include <naga/point.hpp>
 
 namespace naga::experimental::mesh {
 
@@ -45,7 +45,8 @@ bool is_edge_shared(
     const int* face_edge,
     const triangular_mesh_t<T>& mesh
 ) {
-    for (size_t face_check = 0; face_check < mesh.faces().size(); face_check += 3) {
+    for (size_t face_check = 0; face_check < mesh.faces().size();
+         face_check += 3) {
         if (face_check == face) {
             continue;
         }
@@ -252,12 +253,12 @@ class closed_contour_t {
             approx_edge_length
         );
 
-        point_t<T, 2> lower_bound({
-            std::numeric_limits<T>::max(),
-            std::numeric_limits<T>::max()});
-        point_t<T, 2> upper_bound({
-            std::numeric_limits<T>::lowest(),
-            std::numeric_limits<T>::lowest()});
+        point_t<T, 2> lower_bound(
+            {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}
+        );
+        point_t<T, 2> upper_bound(
+            {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()}
+        );
 
         for (size_t i = 0; i < contour_vertices.size(); i += 2) {
             lower_bound[0] = std::min(lower_bound[0], contour_vertices[i]);

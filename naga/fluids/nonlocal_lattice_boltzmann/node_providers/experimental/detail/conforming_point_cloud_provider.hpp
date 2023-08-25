@@ -32,9 +32,9 @@
 
 #pragma once
 
+#include "../../../../../compatability.h"
 #include "../../../../../mesh/experimental/closed_contour.hpp"
 #include "../../../../../point.hpp"
-#include "../../../../../compatability.h"
 #include <filesystem>
 #include <memory>
 #include <vector>
@@ -44,15 +44,15 @@ namespace naga::experimental::fluids::nonlocal_lbm::detail {
 template<uint Dimensions>
 class conforming_point_cloud_impl_t;
 
-template <uint Dimensions>
-struct input_domain_data_t{};
+template<uint Dimensions>
+struct input_domain_data_t {};
 
-template <>
+template<>
 struct input_domain_data_t<2> {
     using type = naga::experimental::mesh::closed_contour_t<double>;
 };
 
-template <>
+template<>
 struct input_domain_data_t<3> {
     using type = naga::experimental::mesh::triangular_mesh_t<double>;
 };
@@ -65,7 +65,7 @@ class conforming_point_cloud_t {
     );
 };
 
-template <>
+template<>
 class conforming_point_cloud_t<2> {
   public:
     using point_t  = ::naga::point_t<double, 2>;
@@ -96,9 +96,9 @@ class conforming_point_cloud_t<2> {
 
     size_t size() const;
 
-    bool is_boundary(const index_t &i) const;
+    bool is_boundary(const index_t& i) const;
 
-    normal_t get_normal(const index_t &i) const;
+    normal_t get_normal(const index_t& i) const;
 
   private:
     friend class conforming_point_cloud_impl_t<2>;
@@ -120,9 +120,9 @@ class conforming_point_cloud_t<3> {
 
   public:
     static constexpr uint dimensions = 3;
-    using point_t  = ::naga::point_t<double, dimensions>;
-    using normal_t = point_t;
-    using index_t  = size_t;
+    using point_t                    = ::naga::point_t<double, dimensions>;
+    using normal_t                   = point_t;
+    using index_t                    = size_t;
 
     conforming_point_cloud_t() = default;
 
@@ -134,15 +134,15 @@ class conforming_point_cloud_t<3> {
         const std::vector<std::filesystem::path>& immersed_boundaries = {}
     );
 
-    const std::vector<point_t> &bulk_points() const;
+    const std::vector<point_t>& bulk_points() const;
 
-    const std::vector<double> &bulk_to_boundary_distances() const;
+    const std::vector<double>& bulk_to_boundary_distances() const;
 
-    const std::vector<point_t> &boundary_points() const;
+    const std::vector<point_t>& boundary_points() const;
 
-    const std::vector<normal_t> &boundary_normals() const;
+    const std::vector<normal_t>& boundary_normals() const;
 
-    const std::vector<index_t> &closest_boundary_to_bulk() const;
+    const std::vector<index_t>& closest_boundary_to_bulk() const;
 
   private:
     friend class conforming_point_cloud_impl_t<dimensions>;
@@ -152,4 +152,4 @@ class conforming_point_cloud_t<3> {
 extern template class conforming_point_cloud_t<2>;
 extern template class conforming_point_cloud_t<3>;
 
-}
+}  // namespace naga::experimental::fluids::nonlocal_lbm::detail

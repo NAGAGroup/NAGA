@@ -43,7 +43,7 @@
 
 #include <cstddef>
 
-using uint = unsigned int;
+using uint   = unsigned int;
 using size_t = std::size_t;
 #endif
 

@@ -32,12 +32,12 @@
 
 #pragma once
 
+#include <atomic>
 #include <fstream>
+#include <iostream>
+#include <mutex>
 #include <scalix/filesystem.hpp>
 #include <thread>
-#include <mutex>
-#include <iostream>
-#include <atomic>
 
 inline sclx::filesystem::path get_examples_dir() {
     return sclx::filesystem::path(__FILE__).parent_path();

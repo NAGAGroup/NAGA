@@ -44,10 +44,10 @@ class compute_equilibrium_subtask {
     __host__ compute_equilibrium_subtask(
         const simulation_engine<Lattice>& engine,
         sclx::kernel_handler& handler,
-        const sclx::
-            array_list<typename Lattice::value_type, 1, Lattice::size>&
-                lattice_equilibrium_values
-    ) : lattice_equilibrium_distributions_(lattice_equilibrium_values) {
+        const sclx::array_list<typename Lattice::value_type, 1, Lattice::size>&
+            lattice_equilibrium_values
+    )
+        : lattice_equilibrium_distributions_(lattice_equilibrium_values) {
 
         lattice_distributions_ = sclx::array_list<value_type, 1, lattice_size>(
             engine.solution_.lattice_distributions
@@ -142,9 +142,8 @@ compute_equilibrium_subtask<Lattice>
 subtask_factory<compute_equilibrium_subtask<Lattice>>::create(
     const simulation_engine<Lattice>& engine,
     sclx::kernel_handler& handler,
-    const sclx::
-        array_list<typename Lattice::value_type, 1, Lattice::size>&
-            lattice_equilibrium_values
+    const sclx::array_list<typename Lattice::value_type, 1, Lattice::size>&
+        lattice_equilibrium_values
 ) {
     return {engine, handler, lattice_equilibrium_values};
 }

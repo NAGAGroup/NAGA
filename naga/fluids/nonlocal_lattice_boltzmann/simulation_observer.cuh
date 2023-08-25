@@ -40,10 +40,10 @@ namespace naga::fluids::nonlocal_lbm {
 template<class Lattice>
 class simulation_observer {
   public:
-    using value_type          = typename lattice_traits<Lattice>::value_type;
-    using simulation_domain_t = simulation_nodes<const value_type>;
+    using value_type           = typename lattice_traits<Lattice>::value_type;
+    using simulation_domain_t  = simulation_nodes<const value_type>;
     using problem_parameters_t = problem_parameters<value_type>;
-    using solution_t = state_variables<Lattice>;
+    using solution_t           = state_variables<Lattice>;
 
     virtual void update(
         const value_type& time,

@@ -114,17 +114,17 @@ dot(const VectorTypeT& v, const VectorTypeU& u, uint dims) {
     return sum;
 }
 
-template <class VectorTypeR, class VectorTypeT>
+template<class VectorTypeR, class VectorTypeT>
 struct cross_return_type {
     using type = VectorTypeR;
 };
 
-template <class VectorTypeT>
+template<class VectorTypeT>
 struct cross_return_type<void, VectorTypeT> {
     using type = VectorTypeT;
 };
 
-template <class VectorTypeR, class VectorTypeT, class VectorTypeU>
+template<class VectorTypeR, class VectorTypeT, class VectorTypeU>
 NAGA_HOST NAGA_DEVICE void
 cross(VectorTypeR& result, const VectorTypeT& v, const VectorTypeU& u) {
     result[0] = v[1] * u[2] - v[2] * u[1];
@@ -132,19 +132,24 @@ cross(VectorTypeR& result, const VectorTypeT& v, const VectorTypeU& u) {
     result[2] = v[0] * u[1] - v[1] * u[0];
 }
 
-template <class VectorTypeR = void, class VectorTypeT, class VectorTypeU>
+template<class VectorTypeR = void, class VectorTypeT, class VectorTypeU>
 NAGA_HOST NAGA_DEVICE typename cross_return_type<VectorTypeR, VectorTypeT>::type
-    cross(const VectorTypeT& v, const VectorTypeU& u) {
-    constexpr bool valid_types = !std::is_same_v<VectorTypeR, void> ||
-                                 std::is_same_v<VectorTypeT, VectorTypeU>;
-    static_assert(valid_types, "Invalid types for cross product. If return type is void, the input types must be the same.");
-    using return_type = typename cross_return_type<VectorTypeR, VectorTypeT>::type;
+cross(const VectorTypeT& v, const VectorTypeU& u) {
+    constexpr bool valid_types = !std::is_same_v<VectorTypeR, void>
+                              || std::is_same_v<VectorTypeT, VectorTypeU>;
+    static_assert(
+        valid_types,
+        "Invalid types for cross product. If return type is void, the input "
+        "types must be the same."
+    );
+    using return_type =
+        typename cross_return_type<VectorTypeR, VectorTypeT>::type;
     return_type result;
     cross(result, v, u);
     return result;
 }
 
-template <class VectorType>
+template<class VectorType>
 NAGA_HOST NAGA_DEVICE void normalize(VectorType& v, uint dims) {
     using T = decltype(v[0]);
     T norm  = math::norm(v, dims);
@@ -191,7 +196,7 @@ NAGA_HOST NAGA_DEVICE auto norm(const VectorType& v) {
     return sqrt(norm_squared<Dimensions, VectorType>(v));
 }
 
-template <uint Dimensions, class VectorType, class NT>
+template<uint Dimensions, class VectorType, class NT>
 NAGA_HOST NAGA_DEVICE void normalize(VectorType& v, const NT& norm) {
     if constexpr (Dimensions == 1) {
         v[0] /= norm;
@@ -201,7 +206,7 @@ NAGA_HOST NAGA_DEVICE void normalize(VectorType& v, const NT& norm) {
     }
 }
 
-template <uint Dimensions, class VectorType>
+template<uint Dimensions, class VectorType>
 NAGA_HOST NAGA_DEVICE void normalize(VectorType& v) {
     using T = std::decay_t<decltype(v[0])>;
     T norm  = math::loopless::norm<Dimensions, VectorType>(v);

@@ -37,7 +37,7 @@ template<class Lattice>
 class pml_div_Q1_field_map {
   public:
     using value_type = typename lattice_traits<Lattice>::value_type;
-    static constexpr uint dimensions = lattice_traits<Lattice>::dimensions;
+    static constexpr uint dimensions   = lattice_traits<Lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<Lattice>::size;
 
     using point_type = point_t<value_type, dimensions>;
@@ -53,20 +53,20 @@ class partial_pml_subtask {
 
 // ------------------ D2Q9 Lattice Specialization ------------------
 
-template <class T>
+template<class T>
 class pml_div_Q1_field_map<d2q9_lattice<T>> {
   public:
-    using lattice = d2q9_lattice<T>;
+    using lattice    = d2q9_lattice<T>;
     using value_type = typename lattice_traits<lattice>::value_type;
-    static constexpr uint dimensions = lattice_traits<lattice>::dimensions;
+    static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
 
     using point_type = point_t<value_type, dimensions>;
 
     __host__ __device__ pml_div_Q1_field_map(
-        const value_type * c0,
-        const sclx::array<const value_type , 1>& absorption_coeff,
-        const sclx::array<const value_type , 1>& Q1,
+        const value_type* c0,
+        const sclx::array<const value_type, 1>& absorption_coeff,
+        const sclx::array<const value_type, 1>& Q1,
         size_t pml_start_index,
         size_t pml_end_index
     )
@@ -88,7 +88,7 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
             }
         } else {
             size_t pml_index = i - pml_start_index;
-            value_type sigma          = absorption_coeff[pml_index];
+            value_type sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
                 c[d] = -c0[d] * sigma * Q1[pml_index];
             }
@@ -108,16 +108,16 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
 
   private:
     value_type c0[dimensions];
-    sclx::array<const value_type , 1> absorption_coeff;
-    sclx::array<const value_type , 1> Q1;
+    sclx::array<const value_type, 1> absorption_coeff;
+    sclx::array<const value_type, 1> Q1;
     size_t pml_start_index;
     size_t pml_end_index;
 };
 
-template <class T>
+template<class T>
 class partial_pml_subtask<d2q9_lattice<T>> {
   public:
-    using lattice = d2q9_lattice<T>;
+    using lattice    = d2q9_lattice<T>;
     using value_type = typename lattice_traits<lattice>::value_type;
     static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
@@ -286,18 +286,17 @@ struct subtask_factory<partial_pml_subtask<d2q9_lattice<T>>> {
     static partial_pml_subtask<lattice> create(
         const simulation_engine<lattice>& engine,
         sclx::kernel_handler& handler,
-        const sclx::
-            array_list<typename lattice::value_type, 1, lattice::size>&
-                lattice_Q1_values
+        const sclx::array_list<typename lattice::value_type, 1, lattice::size>&
+            lattice_Q1_values
     ) {
         return {engine, handler, lattice_Q1_values};
     }
 };
 
-template <class T>
+template<class T>
 class pml_absorption_operator<d2q9_lattice<T>> {
   public:
-    using lattice = d2q9_lattice<T>;
+    using lattice    = d2q9_lattice<T>;
     using value_type = typename lattice_traits<lattice>::value_type;
     static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
@@ -308,15 +307,17 @@ class pml_absorption_operator<d2q9_lattice<T>> {
         : engine_(engine) {
         std::vector<sclx::array<value_type, 1>> lattice_Q1_values_raw;
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            sclx::array<value_type, 1> Q1_alpha{engine_->domain_.points.shape()[1]};
+            sclx::array<value_type, 1> Q1_alpha{
+                engine_->domain_.points.shape()[1]};
             sclx::fill(
                 Q1_alpha,
                 lattice_interface<lattice>::lattice_weights().vals[alpha]
             );
             lattice_Q1_values_raw.push_back(Q1_alpha);
         }
-        lattice_Q1_values_
-            = sclx::array_list<value_type, 1, lattice_size>(lattice_Q1_values_raw);
+        lattice_Q1_values_ = sclx::array_list<value_type, 1, lattice_size>(
+            lattice_Q1_values_raw
+        );
     }
 
     void apply() {
@@ -336,15 +337,15 @@ class pml_absorption_operator<d2q9_lattice<T>> {
         }).get();
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            const auto& Q1
-                = lattice_Q1_values_[alpha];
+            const auto& Q1 = lattice_Q1_values_[alpha];
 
             pml_div_Q1_field_map<lattice> field_map{
                 lattice_interface<lattice>::lattice_velocities().vals[alpha],
                 Q1,
                 engine_->domain_.layer_absorption,
                 engine_->domain_.num_bulk_points,
-                engine_->domain_.num_bulk_points + engine_->domain_.num_layer_points};
+                engine_->domain_.num_bulk_points
+                    + engine_->domain_.num_layer_points};
 
             engine_->advection_operator_ptr_->divergence_op().apply(
                 field_map,
@@ -375,26 +376,26 @@ class pml_absorption_operator<d2q9_lattice<T>> {
     }
 
   private:
-    simulation_engine<lattice> *engine_;
+    simulation_engine<lattice>* engine_;
     sclx::array_list<value_type, 1, lattice_size> lattice_Q1_values_;
 };
 
 // ------------------------ D3Q27 Specialization ------------------------------
 
-template <class T>
+template<class T>
 class pml_div_Q1_field_map<d3q27_lattice<T>> {
   public:
-    using lattice = d3q27_lattice<T>;
+    using lattice    = d3q27_lattice<T>;
     using value_type = typename lattice_traits<lattice>::value_type;
-    static constexpr uint dimensions = lattice_traits<lattice>::dimensions;
+    static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
 
     using point_type = point_t<value_type, dimensions>;
 
     __host__ __device__ pml_div_Q1_field_map(
-        const value_type * c0,
-        const sclx::array<const value_type , 1>& absorption_coeff,
-        const sclx::array<const value_type , 1>& Q1,
+        const value_type* c0,
+        const sclx::array<const value_type, 1>& absorption_coeff,
+        const sclx::array<const value_type, 1>& Q1,
         size_t pml_start_index,
         size_t pml_end_index
     )
@@ -416,7 +417,7 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
             }
         } else {
             size_t pml_index = i - pml_start_index;
-            value_type sigma          = absorption_coeff[pml_index];
+            value_type sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
                 c[d] = -2.f * c0[d] * sigma * Q1[pml_index];
             }
@@ -436,26 +437,26 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
 
   private:
     value_type c0[dimensions];
-    sclx::array<const value_type , 1> absorption_coeff;
-    sclx::array<const value_type , 1> Q1;
+    sclx::array<const value_type, 1> absorption_coeff;
+    sclx::array<const value_type, 1> Q1;
     size_t pml_start_index;
     size_t pml_end_index;
 };
 
-template <class T>
+template<class T>
 class pml_div_Q2_field_map {
   public:
-    using lattice = d3q27_lattice<T>;
+    using lattice    = d3q27_lattice<T>;
     using value_type = typename lattice_traits<lattice>::value_type;
-    static constexpr uint dimensions = lattice_traits<lattice>::dimensions;
+    static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
 
     using point_type = point_t<value_type, dimensions>;
 
     __host__ __device__ pml_div_Q2_field_map(
-        const value_type * c0,
-        const sclx::array<const value_type , 1>& absorption_coeff,
-        const sclx::array<const value_type , 1>& Q2,
+        const value_type* c0,
+        const sclx::array<const value_type, 1>& absorption_coeff,
+        const sclx::array<const value_type, 1>& Q2,
         size_t pml_start_index,
         size_t pml_end_index
     )
@@ -477,7 +478,7 @@ class pml_div_Q2_field_map {
             }
         } else {
             size_t pml_index = i - pml_start_index;
-            value_type sigma          = absorption_coeff[pml_index];
+            value_type sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
                 c[d] = c0[d] * sigma * sigma * Q2[pml_index];
             }
@@ -497,16 +498,16 @@ class pml_div_Q2_field_map {
 
   private:
     value_type c0[dimensions];
-    sclx::array<const value_type , 1> absorption_coeff;
-    sclx::array<const value_type , 1> Q2;
+    sclx::array<const value_type, 1> absorption_coeff;
+    sclx::array<const value_type, 1> Q2;
     size_t pml_start_index;
     size_t pml_end_index;
 };
 
-template <class T>
+template<class T>
 class partial_pml_subtask<d3q27_lattice<T>> {
   public:
-    using lattice = d3q27_lattice<T>;
+    using lattice    = d3q27_lattice<T>;
     using value_type = typename lattice_traits<lattice>::value_type;
     static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
@@ -519,8 +520,8 @@ class partial_pml_subtask<d3q27_lattice<T>> {
     ) {
         params_local_ = sclx::local_array<parameters, 1>(handler, {1});
         params_       = sclx::detail::make_unified_ptr(parameters{});
-        *params_      = parameters(engine, handler, lattice_Q1_values,
-                                   lattice_Q2_values);
+        *params_
+            = parameters(engine, handler, lattice_Q1_values, lattice_Q2_values);
     }
 
     __device__ void operator()(
@@ -599,7 +600,9 @@ class partial_pml_subtask<d3q27_lattice<T>> {
             using namespace math::loopless;
 
             params.lattice_distributions[alpha][idx[0]]
-                -= sigma * (3.f * f_tilde_eq + 3.f * sigma * Q1_value + pow<2>(sigma) * Q2_value);
+                -= sigma
+                 * (3.f * f_tilde_eq + 3.f * sigma * Q1_value
+                    + pow<2>(sigma) * Q2_value);
         }
     }
 
@@ -628,7 +631,8 @@ class partial_pml_subtask<d3q27_lattice<T>> {
             sclx::kernel_handler& handler,
             const sclx::array_list<value_type, 1, lattice_size>&
                 lattice_Q1_values,
-            const sclx::array_list<value_type, 1, lattice_size>& lattice_Q2_values
+            const sclx::array_list<value_type, 1, lattice_size>&
+                lattice_Q2_values
         ) {
             absorption_layer_start = engine.domain_.num_bulk_points;
             absorption_layer_end   = engine.domain_.num_bulk_points
@@ -641,7 +645,6 @@ class partial_pml_subtask<d3q27_lattice<T>> {
 
             this->lattice_Q1_values = lattice_Q1_values;
             this->lattice_Q2_values = lattice_Q2_values;
-
 
             absorption_coefficients = engine.domain_.layer_absorption;
             fluid_density  = engine.solution_.macroscopic_values.fluid_density;
@@ -693,21 +696,19 @@ struct subtask_factory<partial_pml_subtask<d3q27_lattice<T>>> {
     static partial_pml_subtask<lattice> create(
         const simulation_engine<lattice>& engine,
         sclx::kernel_handler& handler,
-        const sclx::
-            array_list<typename lattice::value_type, 1, lattice::size>&
-                lattice_Q1_values,
-        const sclx::
-            array_list<typename lattice::value_type, 1, lattice::size>&
-                lattice_Q2_values
+        const sclx::array_list<typename lattice::value_type, 1, lattice::size>&
+            lattice_Q1_values,
+        const sclx::array_list<typename lattice::value_type, 1, lattice::size>&
+            lattice_Q2_values
     ) {
         return {engine, handler, lattice_Q1_values, lattice_Q2_values};
     }
 };
 
-template <class T>
+template<class T>
 class pml_absorption_operator<d3q27_lattice<T>> {
   public:
-    using lattice = d3q27_lattice<T>;
+    using lattice    = d3q27_lattice<T>;
     using value_type = typename lattice_traits<lattice>::value_type;
     static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
@@ -719,24 +720,25 @@ class pml_absorption_operator<d3q27_lattice<T>> {
         std::vector<sclx::array<value_type, 1>> lattice_Q1_values_raw;
         std::vector<sclx::array<value_type, 1>> lattice_Q2_values_raw;
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            sclx::array<value_type, 1> Q1_alpha{engine_->domain_.points.shape()[1]};
+            sclx::array<value_type, 1> Q1_alpha{
+                engine_->domain_.points.shape()[1]};
             sclx::fill(
                 Q1_alpha,
                 lattice_interface<lattice>::lattice_weights().vals[alpha]
             );
             lattice_Q1_values_raw.push_back(Q1_alpha);
 
-            sclx::array<value_type, 1> Q2_alpha{engine_->domain_.points.shape()[1]};
-            sclx::fill(
-                Q2_alpha,
-                value_type{0}
-            );
+            sclx::array<value_type, 1> Q2_alpha{
+                engine_->domain_.points.shape()[1]};
+            sclx::fill(Q2_alpha, value_type{0});
             lattice_Q2_values_raw.push_back(Q2_alpha);
         }
-        lattice_Q1_values_
-            = sclx::array_list<value_type, 1, lattice_size>(lattice_Q1_values_raw);
-        lattice_Q2_values_
-            = sclx::array_list<value_type, 1, lattice_size>(lattice_Q2_values_raw);
+        lattice_Q1_values_ = sclx::array_list<value_type, 1, lattice_size>(
+            lattice_Q1_values_raw
+        );
+        lattice_Q2_values_ = sclx::array_list<value_type, 1, lattice_size>(
+            lattice_Q2_values_raw
+        );
     }
 
     void apply() {
@@ -757,15 +759,15 @@ class pml_absorption_operator<d3q27_lattice<T>> {
         }).get();
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            const auto& Q1
-                = lattice_Q1_values_[alpha];
+            const auto& Q1 = lattice_Q1_values_[alpha];
 
             pml_div_Q1_field_map<lattice> field_map_Q1{
                 lattice_interface<lattice>::lattice_velocities().vals[alpha],
                 Q1,
                 engine_->domain_.layer_absorption,
                 engine_->domain_.num_bulk_points,
-                engine_->domain_.num_bulk_points + engine_->domain_.num_layer_points};
+                engine_->domain_.num_bulk_points
+                    + engine_->domain_.num_layer_points};
 
             engine_->advection_operator_ptr_->divergence_op().apply(
                 field_map_Q1,
@@ -779,15 +781,15 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                 engine_->temporary_distribution_
             );
 
-            const auto& Q2
-                = lattice_Q2_values_[alpha];
+            const auto& Q2 = lattice_Q2_values_[alpha];
 
             pml_div_Q2_field_map<value_type> field_map_Q2{
                 lattice_interface<lattice>::lattice_velocities().vals[alpha],
                 Q2,
                 engine_->domain_.layer_absorption,
                 engine_->domain_.num_bulk_points,
-                engine_->domain_.num_bulk_points + engine_->domain_.num_layer_points};
+                engine_->domain_.num_bulk_points
+                    + engine_->domain_.num_layer_points};
 
             engine_->advection_operator_ptr_->divergence_op().apply(
                 field_map_Q2,
@@ -803,8 +805,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
         }
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            auto& Q1
-                = lattice_Q1_values_[alpha];
+            auto& Q1 = lattice_Q1_values_[alpha];
 
             auto& Q2 = lattice_Q2_values_[alpha];
             sclx::assign_array(Q1, Q2).get();
@@ -826,7 +827,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
     }
 
   private:
-    simulation_engine<lattice> *engine_;
+    simulation_engine<lattice>* engine_;
     sclx::array_list<value_type, 1, lattice_size> lattice_Q1_values_;
     sclx::array_list<value_type, 1, lattice_size> lattice_Q2_values_;
 };

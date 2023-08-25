@@ -561,9 +561,7 @@ class simulation_engine {
 
     void step_forward() {
         compute_macroscopic_values();
-        update_observers(
-            time()
-        );
+        update_observers(time());
 
         compute_density_source_terms();
         apply_density_source_terms();
@@ -582,9 +580,7 @@ class simulation_engine {
         compute_macroscopic_values();
     }
 
-    value_type time() const {
-        return parameters_.time_step * frame_number_;
-    }
+    value_type time() const { return parameters_.time_step * frame_number_; }
 
     void register_density_source(density_source<Lattice>& source) {
         density_sources_.push_back(&source);

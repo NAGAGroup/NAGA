@@ -239,8 +239,7 @@ struct problem_traits {
         )
             : amplitude_(amplitude),
               time_multiplier_(time_multiplier),
-              source_region_(source_radius, source_center)
-        {
+              source_region_(source_radius, source_center) {
             frequency_ = speed_of_sound / pulse_width;
         }
 
@@ -252,8 +251,8 @@ struct problem_traits {
             sclx::array<value_type, 1>& source_terms
         ) final {
             value_type scaled_time = time * time_multiplier_;
-            value_type radians = 2 * naga::math::pi<value_type> * frequency_
-                                 * scaled_time;
+            value_type radians
+                = 2 * naga::math::pi<value_type> * frequency_ * scaled_time;
 
             if (radians >= 2 * naga::math::pi<value_type>) {
                 return std::async(std::launch::deferred, []() {});
@@ -265,7 +264,6 @@ struct problem_traits {
             const auto& nominal_density = params.nondim_factors.density_scale;
             const auto& points          = domain.points;
             const auto& source_region   = source_region_;
-
 
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {

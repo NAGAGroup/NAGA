@@ -39,10 +39,10 @@
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
-template <class Lattice>
+template<class Lattice>
 class simulation_engine;
 
-template <class Lattice>
+template<class Lattice>
 class pml_absorption_operator {
   public:
     using value_type = typename lattice_traits<Lattice>::value_type;
@@ -51,9 +51,9 @@ class pml_absorption_operator {
 
     pml_absorption_operator() = default;
 
-    explicit pml_absorption_operator(simulation_engine<Lattice>* engine){}
+    explicit pml_absorption_operator(simulation_engine<Lattice>* engine) {}
 
-    void apply(){}
+    void apply() {}
 };
 
 }  // namespace naga::fluids::nonlocal_lbm::detail
