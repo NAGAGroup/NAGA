@@ -124,10 +124,10 @@ int main() {
     // user-defined parameters
     // outer domain obj file and absorption parameters
     auto obj_resources_dir
-        = get_resources_dir() / "lbm_example_domains" / "rectangle";
+        = get_resources_dir() / "lbm_example_domains" / "square";
     sclx::filesystem::path domain_obj       = obj_resources_dir / "domain.obj";
-    double outer_absorption_layer_thickness = 0.1;
-    double outer_absorption_coefficient     = 0.01;
+    double outer_absorption_layer_thickness = 0.2;
+    double outer_absorption_coefficient     = 0.1;
 
     // immersed boundary obj files and absorption parameters
     //    std::vector<sclx::filesystem::path> immersed_boundary_objs
@@ -139,23 +139,21 @@ int main() {
     std::vector<double> immersed_absorption_coefficients       = {};
 
     // raw simulation parameters
-    value_type nodal_spacing                   = 0.04;
+    value_type nodal_spacing                   = 0.03;
     value_type fluid_viscosity                 = 1e-5f;
     value_type fluid_density                   = 1.0;
-    value_type characteristic_velocity         = 100;
+    value_type characteristic_velocity         = 2.;
     value_type lattice_characteristic_velocity = 0.2;
-    value_type characteristic_length           = 4.;
+    value_type characteristic_length           = 2.;
 
     // audio source parameters
     auto wav_resource_dir        = get_resources_dir() / "wav_files";
-    auto wav_file                = wav_resource_dir / "sample1.wav";
+    auto wav_file                = wav_resource_dir / "sample1_low_freq.wav";
     uint node_resolution         = 8;
-    value_type max_wav_frequency = 2000;
+    value_type max_wav_frequency = 850;
     value_type audio_amplitude   = 5e-4;
-    value_type source_radius     = 0.04;
-    uint audio_sink_history_size = 50;
+    value_type source_radius     = 0.08;
     size_t frame_offset          = 0;
-    auto wav_save_file           = "sample1_sim.wav";
 
     // simulation-space to real-space conversion, zero maximum allowed
     value_type desired_characteristic_length = 0.;
@@ -168,7 +166,9 @@ int main() {
     // audio sink parameters
     constexpr auto channel_config
         = naga::fluids::nonlocal_lbm::channel_configuration::mono;
-    naga::point_t<value_type, 2> sink_location({-2.0, 0});
+    naga::point_t<value_type, 2> sink_location({-0.5, 0});
+    uint audio_sink_history_size = 50;
+    auto wav_save_file           = "sample1_sim.wav";
 
     // results directory
     static auto results_path = get_examples_results_dir() / "cgal_2d_mesh";
