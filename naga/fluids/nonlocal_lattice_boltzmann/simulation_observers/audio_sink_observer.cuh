@@ -33,6 +33,8 @@
 #pragma once
 
 #include "../simulation_observer.cuh"
+#include "../../../interpolation/radial_point_method.cuh"
+#include "../../../segmentation/nd_cubic_segmentation.cuh"
 
 #include <AudioFile.h>
 #include <numeric>

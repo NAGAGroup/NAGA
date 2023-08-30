@@ -37,6 +37,8 @@
 #include "detail/uniform_grid_provider.cuh"
 #include <scalix/algorithm/count_if.cuh>
 #include <scalix/iota.cuh>
+#include <scalix/algorithm/transform.cuh>
+#include <scalix/assign_array.cuh>
 
 namespace naga::fluids::nonlocal_lbm {
 
