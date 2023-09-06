@@ -155,7 +155,7 @@ class audio_sink_observer : public simulation_observer<Lattice> {
     void update(
         const value_type& time,
         const simulation_domain_t&,
-        const problem_parameters_t&,
+        const problem_parameters_t& params,
         const solution_t& solution
     ) {
         auto frame
@@ -178,7 +178,8 @@ class audio_sink_observer : public simulation_observer<Lattice> {
             signal_history_.pop_front();
             signal_history_.push_back(sink_signal_[0]);
 
-            sink_signal_[0] -= moving_avg;
+//            sink_signal_[0] -= moving_avg;
+            sink_signal_[0] -= params.nondim_factors.density_scale;
 
             audio_buffer_[0].push_back(sink_signal_[0]);
         } else {
@@ -207,8 +208,11 @@ class audio_sink_observer : public simulation_observer<Lattice> {
             signal_history_.pop_front();
             signal_history_.push_back({sink_signal_[0], sink_signal_[1]});
 
-            sink_signal_[0] -= moving_avg[0];
-            sink_signal_[1] -= moving_avg[1];
+//            sink_signal_[0] -= moving_avg[0];
+//            sink_signal_[1] -= moving_avg[1];
+
+            sink_signal_[0] -= params.nondim_factors.density_scale;
+            sink_signal_[1] -= params.nondim_factors.density_scale;
 
             audio_buffer_[0].push_back(sink_signal_[0]);
             audio_buffer_[1].push_back(sink_signal_[1]);

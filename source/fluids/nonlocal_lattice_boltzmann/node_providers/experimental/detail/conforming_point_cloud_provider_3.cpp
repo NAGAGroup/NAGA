@@ -292,8 +292,8 @@ class conforming_point_cloud_impl_t<3> {
 
         // Mesh criteria
         Mesh_criteria criteria(
-            edge_size              = nodal_spacing / 3.,
-            facet_angle            = 25,
+            edge_size              = nodal_spacing,
+            facet_angle            = 30,
             facet_size             = nodal_spacing,
             facet_distance         = nodal_spacing / 10.,
             cell_radius_edge_ratio = 3,
@@ -316,11 +316,11 @@ class conforming_point_cloud_impl_t<3> {
                 no_perturb(),
                 no_exude()
             );
-            CGAL::refine_mesh_3(
-                immersed_c3t3,
-                immersed_boundaries_domain,
-                criteria
-            );
+//            CGAL::refine_mesh_3(
+//                immersed_c3t3,
+//                immersed_boundaries_domain,
+//                criteria
+//            );
 
             immersed_boundaries_subdomain_mesh
                 = extract_surface_mesh(immersed_c3t3);
@@ -354,7 +354,7 @@ class conforming_point_cloud_impl_t<3> {
             no_perturb(),
             no_exude()
         );
-        CGAL::refine_mesh_3(c3t3, domain, criteria);
+//        CGAL::refine_mesh_3(c3t3, domain, criteria);
 
         triangular_mesh_t domain_boundary_mesh = extract_surface_mesh(c3t3);
 
