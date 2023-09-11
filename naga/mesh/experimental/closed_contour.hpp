@@ -79,7 +79,7 @@ std::vector<T> calc_edge_normal_of_face(
 
     T v1[2]
         = {mesh.vertices()[3 * mesh.faces()[face + face_edge[0]] + 0],
-           mesh.vertices()[2 * mesh.faces()[face + face_edge[0]] + 1]};
+           mesh.vertices()[3 * mesh.faces()[face + face_edge[0]] + 1]};
     T v2[2]
         = {mesh.vertices()[3 * mesh.faces()[face + face_edge[1]] + 0],
            mesh.vertices()[3 * mesh.faces()[face + face_edge[1]] + 1]};
