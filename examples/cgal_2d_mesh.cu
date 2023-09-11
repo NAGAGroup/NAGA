@@ -130,13 +130,14 @@ int main() {
     double outer_absorption_coefficient     = 0.1;
 
     // immersed boundary obj files and absorption parameters
-        std::vector<sclx::filesystem::path> immersed_boundary_objs
-            = {obj_resources_dir / "circle1.obj", obj_resources_dir / "circle2.obj"};
-        std::vector<double> immersed_absorption_layer_thicknesses = {0.08, 0.};
-        std::vector<double> immersed_absorption_coefficients      = {0.01, 0.};
-//    std::vector<sclx::filesystem::path> immersed_boundary_objs = {};
-//    std::vector<double> immersed_absorption_layer_thicknesses  = {};
-//    std::vector<double> immersed_absorption_coefficients       = {};
+    std::vector<sclx::filesystem::path> immersed_boundary_objs
+        = {obj_resources_dir / "circle1.obj",
+           obj_resources_dir / "circle2.obj"};
+    std::vector<double> immersed_absorption_layer_thicknesses = {0.08, 0.};
+    std::vector<double> immersed_absorption_coefficients      = {0.01, 0.};
+    //    std::vector<sclx::filesystem::path> immersed_boundary_objs = {};
+    //    std::vector<double> immersed_absorption_layer_thicknesses  = {};
+    //    std::vector<double> immersed_absorption_coefficients       = {};
 
     // raw simulation parameters
     value_type nodal_spacing                   = 0.03;
