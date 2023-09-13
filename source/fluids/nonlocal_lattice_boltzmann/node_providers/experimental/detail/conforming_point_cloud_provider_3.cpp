@@ -71,14 +71,15 @@ typedef Polyhedron::HalfedgeDS HalfedgeDS;
 
 using triangular_mesh_t = naga::experimental::mesh::triangular_mesh_t<double>;
 
-triangular_mesh_t extract_surface_mesh(const C3t3& c3t3) {
+triangular_mesh_t
+extract_surface_mesh(const Mesh_domain& domain, const C3t3& c3t3) {
     size_t number_of_surface_verts = 0;
 
     std::vector<double> surface_verts;
     surface_verts.reserve(c3t3.triangulation().number_of_vertices() * 3);
 
     std::vector<double> vertex_normals;
-    surface_verts.reserve(c3t3.triangulation().number_of_vertices() * 3);
+    vertex_normals.reserve(c3t3.triangulation().number_of_vertices() * 3);
 
     std::vector<size_t> surface_faces;
     surface_faces.reserve(c3t3.triangulation().number_of_vertices() * 3);
@@ -180,8 +181,8 @@ class Poly_builder : public CGAL::Modifier_base<HDS> {
     Poly_builder(std::vector<triangular_mesh_t> mesh)
         : mesh_(std::move(mesh)) {}
 
-    Poly_builder(const C3t3& c3t3) {
-        mesh_.push_back(extract_surface_mesh(c3t3));
+    Poly_builder(const Mesh_domain& domain, const C3t3& c3t3) {
+        mesh_.push_back(extract_surface_mesh(domain, c3t3));
     }
 
     void operator()(HDS& hds) {
@@ -273,9 +274,9 @@ class conforming_point_cloud_impl_t<3> {
                 triangular_mesh_t::import(immersed_boundary_obj)
             );
         }
-
         sdf_metadata domain_sdf
             = build_sdf(domain_mesh.vertices(), domain_mesh.faces());
+
         std::vector<sdf_metadata> immersed_boundary_sdfs;
         for (const auto& immersed_boundary_mesh : immersed_boundary_meshes) {
             immersed_boundary_sdfs.push_back(build_sdf(
@@ -295,7 +296,7 @@ class conforming_point_cloud_impl_t<3> {
             edge_size              = nodal_spacing,
             facet_angle            = 30,
             facet_size             = nodal_spacing,
-            facet_distance         = nodal_spacing / 10.,
+            facet_distance         = nodal_spacing / 2.,
             cell_radius_edge_ratio = 3,
             cell_size              = nodal_spacing
         );
@@ -316,37 +317,24 @@ class conforming_point_cloud_impl_t<3> {
                 no_perturb(),
                 no_exude()
             );
-//            CGAL::refine_mesh_3(
-//                immersed_c3t3,
-//                immersed_boundaries_domain,
-//                criteria
-//            );
+            //            CGAL::refine_mesh_3(
+            //                immersed_c3t3,
+            //                immersed_boundaries_domain,
+            //                criteria
+            //            );
 
-            immersed_boundaries_subdomain_mesh
-                = extract_surface_mesh(immersed_c3t3);
+            immersed_boundaries_subdomain_mesh = extract_surface_mesh(
+                immersed_boundaries_domain,
+                immersed_c3t3
+            );
         }
-
-        Polyhedron immersed_boundaries_subdomain_poly;
-        Poly_builder<HalfedgeDS> immersed_boundaries_subdomain_poly_builder(
-            {immersed_boundaries_subdomain_mesh}
-        );
-        immersed_boundaries_subdomain_poly.delegate(
-            immersed_boundaries_subdomain_poly_builder
-        );
 
         Polyhedron domain_poly;
         Poly_builder<HalfedgeDS> domain_poly_builder({domain_mesh});
         domain_poly.delegate(domain_poly_builder);
 
         std::unique_ptr<Mesh_domain> domain_ptr;
-        if (!immersed_boundary_objs.empty()) {
-            domain_ptr = std::move(std::make_unique<Mesh_domain>(
-                immersed_boundaries_subdomain_poly,
-                domain_poly
-            ));
-        } else {
-            domain_ptr = std::move(std::make_unique<Mesh_domain>(domain_poly));
-        }
+        domain_ptr = std::move(std::make_unique<Mesh_domain>(domain_poly));
         Mesh_domain& domain = *domain_ptr;
         C3t3 c3t3           = CGAL::make_mesh_3<C3t3>(
             domain,
@@ -354,65 +342,120 @@ class conforming_point_cloud_impl_t<3> {
             no_perturb(),
             no_exude()
         );
-//        CGAL::refine_mesh_3(c3t3, domain, criteria);
+        triangular_mesh_t domain_boundary_mesh
+            = extract_surface_mesh(domain, c3t3);
 
-        triangular_mesh_t domain_boundary_mesh = extract_surface_mesh(c3t3);
-
+        point_t lower_bound{
+            {domain_boundary_mesh.vertices()[0],
+             domain_boundary_mesh.vertices()[1],
+             domain_boundary_mesh.vertices()[2]}};
+        point_t upper_bound{
+            {domain_boundary_mesh.vertices()[0],
+             domain_boundary_mesh.vertices()[1],
+             domain_boundary_mesh.vertices()[2]}};
+        for (size_t i = 0; i < domain_boundary_mesh.vertices().size(); i += 3) {
+            lower_bound[0] = std::min(
+                lower_bound[0],
+                domain_boundary_mesh.vertices()[i + 0]
+            );
+            lower_bound[1] = std::min(
+                lower_bound[1],
+                domain_boundary_mesh.vertices()[i + 1]
+            );
+            lower_bound[2] = std::min(
+                lower_bound[2],
+                domain_boundary_mesh.vertices()[i + 2]
+            );
+            upper_bound[0] = std::max(
+                upper_bound[0],
+                domain_boundary_mesh.vertices()[i + 0]
+            );
+            upper_bound[1] = std::max(
+                upper_bound[1],
+                domain_boundary_mesh.vertices()[i + 1]
+            );
+            upper_bound[2] = std::max(
+                upper_bound[2],
+                domain_boundary_mesh.vertices()[i + 2]
+            );
+        }
+        size_t approx_grid_size[3]{
+            static_cast<size_t>(
+                std::ceil((upper_bound[0] - lower_bound[0]) / nodal_spacing)
+            ),
+            static_cast<size_t>(
+                std::ceil((upper_bound[1] - lower_bound[1]) / nodal_spacing)
+            ),
+            static_cast<size_t>(
+                std::ceil((upper_bound[2] - lower_bound[2]) / nodal_spacing)
+            )};
         sdf::Points potential_bulk_points;
         {
-            std::unordered_map<void*, index_t> vertex_to_index;
-            size_t vertex_count = 0;
-            std::vector<double> potential_bulk_points_flat;
-            potential_bulk_points_flat.reserve(
-                c3t3.triangulation().number_of_vertices() * 3
+            std::vector<point_t> fill_points(
+                2 * approx_grid_size[0] * approx_grid_size[1]
+                * approx_grid_size[2]
             );
-            for (const auto& c : c3t3.triangulation().finite_cell_handles()) {
-                if (!c3t3.is_in_complex(c)) {
-                    continue;
+            std::transform(
+                fill_points.begin(),
+                fill_points.begin() + fill_points.size() / 2,
+                fill_points.begin(),
+                [&](const point_t& p) {
+                    size_t linear_id = &p - &fill_points[0];
+                    size_t i         = linear_id % approx_grid_size[0];
+                    size_t j         = (linear_id / approx_grid_size[0])
+                             % approx_grid_size[1];
+                    size_t k = (linear_id
+                                / (approx_grid_size[0] * approx_grid_size[1]))
+                             % (approx_grid_size[2]);
+                    point_t new_point{
+                        {lower_bound[0]
+                             + static_cast<double>(i) * nodal_spacing,
+                         lower_bound[1]
+                             + static_cast<double>(j) * nodal_spacing,
+                         lower_bound[2]
+                             + static_cast<double>(k) * nodal_spacing}};
+                    return new_point;
                 }
-                for (int i = 0; i < 4; ++i) {
-                    auto v = c->vertex(i);
-                    void* v_ptr = static_cast<void*>(&*v);
-                    if (vertex_to_index.count(v_ptr)) {
-                        continue;
-                    }
-                    if (!immersed_boundary_objs.empty()
-                        && immersed_boundaries_domain_ptr
-                               ->is_in_domain_object()(
-                                   {v->point().x(),
-                                    v->point().y(),
-                                    v->point().z()}
-                               )) {
-                        continue;
-                    }
-                    potential_bulk_points_flat.push_back(v->point().x());
-                    potential_bulk_points_flat.push_back(v->point().y());
-                    potential_bulk_points_flat.push_back(v->point().z());
-                    vertex_to_index[v_ptr] = vertex_count++;
+            );
+            std::transform(
+                fill_points.begin() + fill_points.size() / 2,
+                fill_points.end(),
+                fill_points.begin() + fill_points.size() / 2,
+                [&](const point_t& p) {
+                    size_t linear_id
+                        = &p - &fill_points[fill_points.size() / 2];
+                    size_t i = linear_id % approx_grid_size[0];
+                    size_t j = (linear_id / approx_grid_size[0])
+                             % approx_grid_size[1];
+                    size_t k = (linear_id
+                                / (approx_grid_size[0] * approx_grid_size[1]))
+                             % (approx_grid_size[2]);
+                    point_t new_point{
+                        {lower_bound[0]
+                             + static_cast<double>(i) * nodal_spacing,
+                         lower_bound[1]
+                             + static_cast<double>(j) * nodal_spacing,
+                         lower_bound[2]
+                             + static_cast<double>(k) * nodal_spacing}};
+                    new_point[0] += nodal_spacing / 2.0;
+                    new_point[1] += nodal_spacing / 2.0;
+                    new_point[2] += naga::math::sqrt(2) * nodal_spacing / 2.0;
+                    return new_point;
                 }
-            }
-
-            potential_bulk_points
-                = sdf::Points(potential_bulk_points_flat.size() / 3, 3);
-            for (u_int32_t p = 0; p < potential_bulk_points_flat.size() / 3;
-                 p++) {
-                potential_bulk_points(p, 0)
-                    = static_cast<float>(potential_bulk_points_flat[p * 3 + 0]);
-                potential_bulk_points(p, 1)
-                    = static_cast<float>(potential_bulk_points_flat[p * 3 + 1]);
-                potential_bulk_points(p, 2)
-                    = static_cast<float>(potential_bulk_points_flat[p * 3 + 2]);
+            );
+            potential_bulk_points = sdf::Points(fill_points.size(), 3);
+            for (uint i = 0; i < fill_points.size(); ++i) {
+                potential_bulk_points(i, 0)
+                    = static_cast<float>(fill_points[i][0]);
+                potential_bulk_points(i, 1)
+                    = static_cast<float>(fill_points[i][1]);
+                potential_bulk_points(i, 2)
+                    = static_cast<float>(fill_points[i][2]);
             }
         }
 
         std::vector<double> min_distance_to_boundary
             = get_sdf_to_points(potential_bulk_points, *domain_sdf.sdf);
-        std::transform(
-            min_distance_to_boundary.begin(),
-            min_distance_to_boundary.end(),
-            min_distance_to_boundary.begin(),
-            [](const double& d) { return std::abs(d); }
-        );
         std::vector<uint> closest_boundary_indices(
             potential_bulk_points.rows(),
             0
@@ -426,7 +469,7 @@ class conforming_point_cloud_impl_t<3> {
                 distance_to_boundary.begin(),
                 distance_to_boundary.end(),
                 distance_to_boundary.begin(),
-                [](const double& d) { return std::abs(d); }
+                [](const double& d) { return -d; }
             );
             std::transform(
                 closest_boundary_indices.begin(),
@@ -435,19 +478,29 @@ class conforming_point_cloud_impl_t<3> {
                 [&](const uint& closest_boundary_index) {
                     size_t i = &closest_boundary_index
                              - &closest_boundary_indices[0];
-                    if (distance_to_boundary[i] < min_distance_to_boundary[i]) {
+                    constexpr double epsilon = 1e-6;
+                    const auto& distance     = distance_to_boundary[i];
+                    const auto& min_distance = min_distance_to_boundary[i];
+                    if (std::abs(std::abs(distance) - std::abs(min_distance))
+                        < epsilon) {
+                        return distance < min_distance ? boundary_index
+                                                       : closest_boundary_index;
+                    } else if (std::abs(distance) < std::abs(min_distance)) {
                         return boundary_index;
+                    } else {
+                        return closest_boundary_index;
                     }
-                    return closest_boundary_index;
                 }
             );
             std::transform(
-                min_distance_to_boundary.begin(),
-                min_distance_to_boundary.end(),
+                distance_to_boundary.begin(),
+                distance_to_boundary.end(),
                 min_distance_to_boundary.begin(),
                 [&](const double& distance) {
-                    size_t i = &distance - &min_distance_to_boundary[0];
-                    return std::min(distance, distance_to_boundary[i]);
+                    size_t i = &distance - &distance_to_boundary[0];
+                    return closest_boundary_indices[i] == boundary_index
+                             ? distance
+                             : min_distance_to_boundary[i];
                 }
             );
             boundary_index++;
@@ -476,14 +529,15 @@ class conforming_point_cloud_impl_t<3> {
         }
 
         size_t approx_num_boundary_points
-            = domain_boundary_mesh.vertices().size() + immersed_boundaries_subdomain_mesh.vertices().size();
+            = domain_boundary_mesh.vertices().size()
+            + immersed_boundaries_subdomain_mesh.vertices().size();
         std::vector<point_t> boundary_points;
         boundary_points.reserve(approx_num_boundary_points);
         std::vector<normal_t> boundary_normals;
         boundary_normals.reserve(approx_num_boundary_points);
 
         domain_boundary_mesh.flip_normals();
-        for (size_t i = 0; i < domain_boundary_mesh.vertices().size(); i+=3) {
+        for (size_t i = 0; i < domain_boundary_mesh.vertices().size(); i += 3) {
             boundary_points.emplace_back();
             boundary_points.back()[0] = domain_boundary_mesh.vertices()[i + 0];
             boundary_points.back()[1] = domain_boundary_mesh.vertices()[i + 1];
@@ -495,16 +549,24 @@ class conforming_point_cloud_impl_t<3> {
             boundary_normals.back()[2] = domain_boundary_mesh.normals()[i + 2];
         }
 
-        for (size_t i = 0; i < immersed_boundaries_subdomain_mesh.vertices().size(); i+=3) {
+        for (size_t i = 0;
+             i < immersed_boundaries_subdomain_mesh.vertices().size();
+             i += 3) {
             boundary_points.emplace_back();
-            boundary_points.back()[0] = immersed_boundaries_subdomain_mesh.vertices()[i + 0];
-            boundary_points.back()[1] = immersed_boundaries_subdomain_mesh.vertices()[i + 1];
-            boundary_points.back()[2] = immersed_boundaries_subdomain_mesh.vertices()[i + 2];
+            boundary_points.back()[0]
+                = immersed_boundaries_subdomain_mesh.vertices()[i + 0];
+            boundary_points.back()[1]
+                = immersed_boundaries_subdomain_mesh.vertices()[i + 1];
+            boundary_points.back()[2]
+                = immersed_boundaries_subdomain_mesh.vertices()[i + 2];
 
             boundary_normals.emplace_back();
-            boundary_normals.back()[0] = immersed_boundaries_subdomain_mesh.normals()[i + 0];
-            boundary_normals.back()[1] = immersed_boundaries_subdomain_mesh.normals()[i + 1];
-            boundary_normals.back()[2] = immersed_boundaries_subdomain_mesh.normals()[i + 2];
+            boundary_normals.back()[0]
+                = immersed_boundaries_subdomain_mesh.normals()[i + 0];
+            boundary_normals.back()[1]
+                = immersed_boundaries_subdomain_mesh.normals()[i + 1];
+            boundary_normals.back()[2]
+                = immersed_boundaries_subdomain_mesh.normals()[i + 2];
         }
 
         return {
@@ -512,8 +574,7 @@ class conforming_point_cloud_impl_t<3> {
             std::move(bulk_to_boundary_distances),
             std::move(closest_boundary_to_bulk),
             std::move(boundary_points),
-            std::move(boundary_normals)
-        };
+            std::move(boundary_normals)};
     }
 
     const std::vector<point_t>& bulk_points() const { return bulk_points_; }
