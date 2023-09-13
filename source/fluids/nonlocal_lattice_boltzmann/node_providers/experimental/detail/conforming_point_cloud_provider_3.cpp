@@ -296,7 +296,7 @@ class conforming_point_cloud_impl_t<3> {
             edge_size              = nodal_spacing,
             facet_angle            = 30,
             facet_size             = nodal_spacing,
-            facet_distance         = nodal_spacing / 2.,
+            facet_distance         = nodal_spacing,
             cell_radius_edge_ratio = 3,
             cell_size              = nodal_spacing
         );
