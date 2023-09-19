@@ -33,6 +33,31 @@
 #include <naga/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.hpp>
 #include <numeric>
 #include <utility>
+#include <iostream>
+
+namespace naga::experimental::fluids::nonlocal_lbm::detail {
+
+struct hashable_edge {
+    size_t i;
+    size_t j;
+};
+
+bool operator==(const hashable_edge& lhs, const hashable_edge& rhs) {
+    return lhs.i == rhs.i && lhs.j == rhs.j;
+}
+
+}
+
+namespace std {
+template<>
+struct hash<naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge> {
+    using hashable_edge
+        = naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge;
+    size_t operator()(const hashable_edge& e) const {
+        return std::hash<size_t>()(e.i) ^ std::hash<size_t>()(e.j) << 1;
+    }
+};
+}
 
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
@@ -117,7 +142,7 @@ void subdivide_edges_and_cache_edge_info(
         }
         size_t num_nodes_to_add
             = static_cast<size_t>(std::ceil(edge_len2target_len)) - 1;
-        double actual_length = edge_info.length / (num_nodes_to_add + 1);
+        double actual_length = edge_info.length / static_cast<double>(num_nodes_to_add + 1);
 
         size_t old_edge_end = edges_copy[e + 1];
         naga::point_t<double, 2> new_vertex{
@@ -235,9 +260,11 @@ std::pair<size_t, double> distance_to_boundary(
 #pragma omp parallel for
     for (size_t e = 0; e < edge_info.size(); ++e) {
         double distance = distance_to_edge(xi, edge_info[e]);
-        double diff_from_min = std::abs(std::abs(distance) - std::abs(min_distance));
+        double diff_from_min
+            = std::abs(std::abs(distance) - std::abs(min_distance));
         std::lock_guard<std::mutex> lock(min_distance_mutex);
-        if (std::abs(distance) < std::abs(min_distance) || (diff_from_min < 1e-6 && distance < 0)) {
+        if (std::abs(distance) < std::abs(min_distance)
+            || (diff_from_min < 1e-6 && distance < 0)) {
             min_distance = distance;
             edge_index   = e;
         }
@@ -252,6 +279,12 @@ std::vector<point_t<double, 2>> generate_2d_hexagonal_grid(
 ) {
     std::vector<naga::point_t<double, 2>> potential_bulk_points;
 
+    double acceptable_epsilon = 0.1;
+    if ((upper_bound[0] - lower_bound[0]) / approx_point_spacing < 1 + acceptable_epsilon
+        || (upper_bound[1] - lower_bound[1]) / approx_point_spacing < 1 + acceptable_epsilon) {
+        return potential_bulk_points;
+    }
+
     size_t approx_grid_size[2]{
         static_cast<size_t>(std::ceil(
             (upper_bound[0] - lower_bound[0]) / approx_point_spacing + 1
@@ -259,10 +292,14 @@ std::vector<point_t<double, 2>> generate_2d_hexagonal_grid(
         static_cast<size_t>(std::ceil(
             (upper_bound[1] - lower_bound[1]) / approx_point_spacing + 1
         ))};
-    const double l = approx_point_spacing;
+    potential_bulk_points.reserve(approx_grid_size[0] * approx_grid_size[1]);
+
+    const double l = 0.5 * ((upper_bound[0] - lower_bound[0])
+                               / (static_cast<double>(approx_grid_size[0]) - 1)) +
+                     0.5 * ((upper_bound[1] - lower_bound[1])
+                               / (static_cast<double>(approx_grid_size[1]) - 1));
     const double w = l * naga::math::sin(naga::math::pi<double> / 6.);
     const double h = l * naga::math::cos(naga::math::pi<double> / 6.);
-    potential_bulk_points.reserve(approx_grid_size[0] * approx_grid_size[1]);
     // first hexagonal grid
     double x_offset  = 0;
     double y         = lower_bound[1];
@@ -834,11 +871,14 @@ get_sdf_to_points(const sdf::Points& points, const sdf::SDF& surface) {
 }
 
 // returns points and normals
-std::tuple<std::vector<point_t<double, 3>>, std::vector<point_t<double, 3>>>
+std::tuple<
+    std::vector<point_t<double, 3>>,
+    std::vector<point_t<double, 3>>>
 fill_face_with_nodes(
     double nodal_spacing,
     size_t f,
-    const triangular_mesh_t& boundary_mesh
+    const triangular_mesh_t& boundary_mesh,
+    std::vector<int> excluded_edges = {}
 ) {
     using vector3_t = point_t<double, 3>;
     using normal3_t = point_t<double, 3>;
@@ -946,17 +986,65 @@ fill_face_with_nodes(
     point2_t v3_normal2d{{edge_vert_normals2d[4], edge_vert_normals2d[5]}};
 
     using index_t = size_t;
-    std::vector<index_t> edges{0, 1, 1, 2, 2, 0};
+    std::vector<index_t> edge1{0, 1};
+    std::vector<index_t> edge2{1, 2};
+    std::vector<index_t> edge3{2, 0};
+
+    auto edge1_verts2d = edge_verts2d;
+    auto edge1_vert_normals2d = edge_vert_normals2d;
+    auto edge2_verts2d = edge_verts2d;
+    auto edge2_vert_normals2d = edge_vert_normals2d;
+    auto edge3_verts2d = edge_verts2d;
+    auto edge3_vert_normals2d = edge_vert_normals2d;
 
     std::vector<edge_info_t> edge_metadata;
 
-    subdivide_edges_and_cache_edge_info(
-        nodal_spacing,
-        edge_verts2d,
-        edge_vert_normals2d,
-        edges,
-        edge_metadata
-    );
+    {
+        std::vector<edge_info_t> edge1_metadata;
+        subdivide_edges_and_cache_edge_info(
+            nodal_spacing,
+            edge1_verts2d,
+            edge1_vert_normals2d,  // we dont really care about the normals here
+            edge1,
+            edge1_metadata
+        );
+        edge_metadata.insert(
+            edge_metadata.end(),
+            edge1_metadata.begin(),
+            edge1_metadata.end()
+        );
+    }
+    {
+        std::vector<edge_info_t> edge2_metadata;
+        subdivide_edges_and_cache_edge_info(
+            nodal_spacing,
+            edge2_verts2d,
+            edge2_vert_normals2d,  // we dont really care about the normals here
+            edge2,
+            edge2_metadata
+        );
+        edge_metadata.insert(
+            edge_metadata.end(),
+            edge2_metadata.begin(),
+            edge2_metadata.end()
+        );
+    }
+    {
+        std::vector<edge_info_t> edge3_metadata;
+        subdivide_edges_and_cache_edge_info(
+            nodal_spacing,
+            edge3_verts2d,
+            edge3_vert_normals2d,  // we dont really care about the normals here
+            edge3,
+            edge3_metadata
+        );
+        edge_metadata.insert(
+            edge_metadata.end(),
+            edge3_metadata.begin(),
+            edge3_metadata.end()
+        );
+    }
+
     edge_metadata[0].edge_normal[0] = -v12_edge_normal[0];
     edge_metadata[0].edge_normal[1] = -v12_edge_normal[1];
     edge_metadata[1].edge_normal[0] = -v23_edge_normal[0];
@@ -988,71 +1076,10 @@ fill_face_with_nodes(
                         + (v3_2d.y() - v1_2d.y()) * p.x()
                         + (v1_2d.x() - v3_2d.x()) * p.y());
             double t = 1. / (2. * area)
-                        * ((v1_2d.x() * v2_2d.y() - v1_2d.y() * v2_2d.x())
-                            + (v1_2d.y() - v2_2d.y()) * p.x()
-                            + (v2_2d.x() - v1_2d.x()) * p.y());
+                     * ((v1_2d.x() * v2_2d.y() - v1_2d.y() * v2_2d.x())
+                        + (v1_2d.y() - v2_2d.y()) * p.x()
+                        + (v2_2d.x() - v1_2d.x()) * p.y());
             double u = 1. - s - t;
-            if (0 > s || s > 1) {
-                std::stringstream ss;
-                ss << "s out of bounds for face " << f << ": " << s;
-                ss << "\n    v1_2d = "
-                   << "[" << v1_2d[0] << ", " << v1_2d[1] << "]";
-                ss << "\n    v2_2d = "
-                   << "[" << v2_2d[0] << ", " << v2_2d[1] << "]";
-                ss << "\n    v3_2d = "
-                   << "[" << v3_2d[0] << ", " << v3_2d[1] << "]";
-                ss << "\n    p = "
-                   << "[" << p[0] << ", " << p[1] << "]";
-                ss << "\n    edge 1 normal: " << edge_metadata[0].edge_normal[0]
-                   << ", " << edge_metadata[0].edge_normal[1];
-                ss << "\n    edge 2 normal: " << edge_metadata[1].edge_normal[0]
-                   << ", " << edge_metadata[1].edge_normal[1];
-                ss << "\n    edge 3 normal: " << edge_metadata[2].edge_normal[0]
-                   << ", " << edge_metadata[2].edge_normal[1];
-                ss << "\n    v12 edge normal: " << v12_edge_normal[0] << ", "
-                   << v12_edge_normal[1];
-                ss << "\n    v23 edge normal: " << v23_edge_normal[0] << ", "
-                   << v23_edge_normal[1];
-                ss << "\n    v31 edge normal: " << v31_edge_normal[0] << ", "
-                   << v31_edge_normal[1];
-                ss << "\n    v1 2D normal: " << v1_normal2d[0] << ", "
-                   << v1_normal2d[1];
-                ss << "\n    v2 2D normal: " << v2_normal2d[0] << ", "
-                   << v2_normal2d[1];
-                ss << "\n    v3 2D normal: " << v3_normal2d[0] << ", "
-                   << v3_normal2d[1];
-                size_t index = &p - &potential_face_points2d[0];
-                ss << "\n    distance to edge, edge index: "
-                   << distance_to_edges[index].first << ", "
-                   << distance_to_edges[index].second;
-                throw std::runtime_error(ss.str());
-            }
-            if (0 > t || t > 1) {
-                std::stringstream ss;
-                ss << "t out of bounds for face " << f << ": " << s;
-                ss << "\n    v1_2d = "
-                   << "(" << v1_2d[0] << ", " << v1_2d[1] << ")";
-                ss << "\n    v2_2d = "
-                   << "(" << v2_2d[0] << ", " << v2_2d[1] << ")";
-                ss << "\n    v3_2d = "
-                   << "(" << v3_2d[0] << ", " << v3_2d[1] << ")";
-                ss << "\n    p = "
-                   << "(" << p[0] << ", " << p[1] << ")";
-                throw std::runtime_error(ss.str());
-            }
-            if (0 > u || u > 1) {
-                std::stringstream ss;
-                ss << "u out of bounds for face " << f << ": " << s;
-                ss << "\n    v1_2d = "
-                   << "(" << v1_2d[0] << ", " << v1_2d[1] << ")";
-                ss << "\n    v2_2d = "
-                   << "(" << v2_2d[0] << ", " << v2_2d[1] << ")";
-                ss << "\n    v3_2d = "
-                   << "(" << v3_2d[0] << ", " << v3_2d[1] << ")";
-                ss << "\n    p = "
-                   << "(" << p[0] << ", " << p[1] << ")";
-                throw std::runtime_error(ss.str());
-            }
             return point3_t{{s, t, u}};
         }
     );
@@ -1065,25 +1092,60 @@ fill_face_with_nodes(
         std::back_inserter(points3d),
         [&](const auto& b) {
             return point3_t{
-                {b[0] * v1[0] + b[1] * v2[0] + b[2] * v3[0],
-                 b[0] * v1[1] + b[1] * v2[1] + b[2] * v3[1],
-                 b[0] * v1[2] + b[1] * v2[2] + b[2] * v3[2]}};
+                {v1[0] + b[0] * v12[0] + b[1] * v13[0],
+                 v1[1] + b[0] * v12[1] + b[1] * v13[1],
+                 v1[2] + b[0] * v12[2] + b[1] * v13[2]}};
         }
     );
     std::vector<normal3_t> normals3d(points3d.size(), normal);
 
-    size_t num_face_points = points3d.size();
-    points3d.reserve(edge_verts2d.size() / 2 + num_face_points);
-    for (size_t i = 0; i < edge_verts2d.size(); i += 2) {
-        points3d.push_back(point3_t{
-            {edge_verts2d[i + 0], edge_verts2d[i + 1], 0.}});
+    std::vector<point3_t> edge_points3d;
+    edge_points3d.reserve(edge_verts2d.size() / 2);
+    for (size_t i = 6; i < edge1_verts2d.size(); i += 2) {
+        if (std::find(excluded_edges.begin(), excluded_edges.end(), 0)
+            != excluded_edges.end()) {
+            break;
+        }
+        point2_t p{{edge1_verts2d[i + 0], edge1_verts2d[i + 1]}};
+        auto distance_p_to_edge2 = distance_to_edge(p, edge_metadata[1]);
+        if (std::abs(distance_p_to_edge2) < 0.3 * nodal_spacing) {
+            continue;
+        }
+        edge_points3d.push_back(point3_t{
+            {p[0], p[1], 0.}});
+    }
+    for (size_t i = 6; i < edge2_verts2d.size(); i += 2) {
+        if (std::find(excluded_edges.begin(), excluded_edges.end(), 1)
+            != excluded_edges.end()) {
+            break;
+        }
+        point2_t p{{edge2_verts2d[i + 0], edge2_verts2d[i + 1]}};
+        auto distance_p_to_edge3 = distance_to_edge(p, edge_metadata[2]);
+        if (std::abs(distance_p_to_edge3) < 0.3 * nodal_spacing) {
+            continue;
+        }
+        edge_points3d.push_back(point3_t{
+            {p[0], p[1], 0.}});
+    }
+    for (size_t i = 6; i < edge3_verts2d.size(); i += 2) {
+        if (std::find(excluded_edges.begin(), excluded_edges.end(), 2)
+            != excluded_edges.end()) {
+            break;
+        }
+        point2_t p{{edge3_verts2d[i + 0], edge3_verts2d[i + 1]}};
+        auto distance_p_to_edge1 = distance_to_edge(p, edge_metadata[0]);
+        if (std::abs(distance_p_to_edge1) < 0.3 * nodal_spacing) {
+            continue;
+        }
+        edge_points3d.push_back(point3_t{
+            {p[0], p[1], 0.}});
     }
 
     barycentric_coordinates.clear();
-    barycentric_coordinates.reserve(points3d.size() - num_face_points);
+    barycentric_coordinates.reserve(edge_points3d.size());
     std::transform(
-        points3d.begin() + num_face_points,
-        points3d.end(),
+        edge_points3d.begin(),
+        edge_points3d.end(),
         std::back_inserter(barycentric_coordinates),
         [&](const auto& p) {
             // barycentric coordinates
@@ -1101,22 +1163,22 @@ fill_face_with_nodes(
     );
 
     std::transform(
-        barycentric_coordinates.begin(),
-        barycentric_coordinates.end(),
-        points3d.begin() + num_face_points,
-        [&](const auto& b) {
+        edge_points3d.begin(),
+        edge_points3d.end(),
+        edge_points3d.begin(),
+        [&](const auto& p) {
             return point3_t{
-                {b[0] * v1[0] + b[1] * v2[0] + b[2] * v3[0],
-                 b[0] * v1[1] + b[1] * v2[1] + b[2] * v3[1],
-                 b[0] * v1[2] + b[1] * v2[2] + b[2] * v3[2]}};
+                {p[0] * x[0] + p[1] * y[0] + v1[0],
+                 p[0] * x[1] + p[1] * y[1] + v1[1],
+                 p[0] * x[2] + p[1] * y[2] + v1[2]}};
         }
     );
 
-    normals3d.reserve(points3d.size());
+    std::vector<point3_t> edge_normals3d;
     std::transform(
         barycentric_coordinates.begin(),
         barycentric_coordinates.end(),
-        std::back_inserter(normals3d),
+        std::back_inserter(edge_normals3d),
         [&](const auto& b) {
             int closest_verts[2]{0, 1};
             if (b[1] < b[0]) {
@@ -1146,10 +1208,14 @@ fill_face_with_nodes(
                     average_normal[2] += v3_normal[2];
                 }
             }
-            naga::math::loopless::normalize<3>(average_normal, 2.0);
+            naga::math::loopless::normalize<3>(average_normal);
             return average_normal;
         }
     );
+
+    points3d.insert(points3d.end(), edge_points3d.begin(), edge_points3d.end());
+    normals3d.insert(
+        normals3d.end(), edge_normals3d.begin(), edge_normals3d.end());
 
     return {points3d, normals3d};
 }
@@ -1161,12 +1227,32 @@ void fill_surface_with_nodes(
     const triangular_mesh_t& boundary_mesh
 ) {
     using point_t = point_t<double, 3>;
+    std::unordered_map<hashable_edge, int> edge_count;
     std::mutex points_mutex;
+    std::mutex edge_count_mutex;
 #pragma omp parallel for
     for (size_t f = 0; f < boundary_mesh.faces().size() / 3; f++) {
+        std::vector<int> excluded_edges;
+        {
+            std::lock_guard<std::mutex> lock(edge_count_mutex);
+            for (int e = 0; e < 3; ++e) {
+                auto edge = hashable_edge{
+                    boundary_mesh.faces()[f * 3 + e],
+                    boundary_mesh.faces()[f * 3 + (e + 1) % 3]};
+                auto edge_reverse = hashable_edge{
+                    boundary_mesh.faces()[f * 3 + (e + 1) % 3],
+                    boundary_mesh.faces()[f * 3 + e]};
+                if (edge_count.count(edge) > 0 || edge_count.count(edge_reverse) > 0) {
+                    excluded_edges.push_back(e);
+                } else {
+                    edge_count[edge] = 1;
+                }
+            }
+        }
         auto [face_points, face_normals]
-            = fill_face_with_nodes(nodal_spacing, f, boundary_mesh);
+            = fill_face_with_nodes(nodal_spacing, f, boundary_mesh, excluded_edges);
         std::lock_guard<std::mutex> lock(points_mutex);
+
         points.insert(points.end(), face_points.begin(), face_points.end());
         normals.insert(normals.end(), face_normals.begin(), face_normals.end());
     }
