@@ -35,6 +35,7 @@
 #include "../interpolation/radial_point_method.cuh"
 #include "../segmentation/nearest_neighbors.cuh"
 #include "detail/quadrature_points.cuh"
+#include <scalix/algorithm/extrema.cuh>
 #include <scalix/algorithm/reduce.cuh>
 #include <scalix/algorithm/transform.cuh>
 
@@ -100,13 +101,9 @@ class operator_builder {
                 distances_squared,
                 closest_neighbor_distances
             );
-            approx_particle_spacing = sclx::algorithm::reduce(
-                closest_neighbor_distances,
-                T(0),
-                sclx::algorithm::plus<>{}
+            approx_particle_spacing = sclx::algorithm::max_element(
+                closest_neighbor_distances
             );
-            approx_particle_spacing
-                /= static_cast<T>(closest_neighbor_distances.elements());
 
             interaction_radii_ = closest_neighbor_distances;
             sclx::algorithm::transform(
