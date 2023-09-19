@@ -29,27 +29,12 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include <CGAL/Constrained_Delaunay_triangulation_2.h>
-#include <CGAL/Delaunay_mesh_face_base_2.h>
-#include <CGAL/Delaunay_mesh_size_criteria_2.h>
-#include <CGAL/Delaunay_mesh_vertex_base_2.h>
-#include <CGAL/Delaunay_mesher_2.h>
-#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
-#include <CGAL/lloyd_optimize_mesh_2.h>
 #include <naga/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.hpp>
 #include <utility>
+#include <mutex>
+#include <numeric>
 
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
-
-typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
-typedef CGAL::Delaunay_mesh_vertex_base_2<K> Vb;
-typedef CGAL::Delaunay_mesh_face_base_2<K> Fb;
-typedef CGAL::Triangulation_data_structure_2<Vb, Fb> Tds;
-typedef CGAL::Constrained_Delaunay_triangulation_2<K, Tds> CDT;
-typedef CGAL::Delaunay_mesh_size_criteria_2<CDT> Criteria;
-
-typedef CDT::Vertex_handle Vertex_handle;
-typedef CDT::Point Point;
 
 struct edge_info_t {
     using point_t  = naga::point_t<double, 2>;
