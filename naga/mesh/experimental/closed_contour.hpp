@@ -70,23 +70,12 @@ bool is_edge_shared(
 }
 
 template<class T>
-std::vector<T> calc_edge_normal_of_face(
-    size_t face,
-    const int* face_edge,
-    const triangular_mesh_t<T>& mesh
-) {
+std::vector<T> calc_v12_edge_normal_of_tri(
+    const T* v1,
+    const T* v2,
+    const T* v3
+    ) {
     std::vector<T> edge_normal(2);
-
-    T v1[2]
-        = {mesh.vertices()[3 * mesh.faces()[face + face_edge[0]] + 0],
-           mesh.vertices()[3 * mesh.faces()[face + face_edge[0]] + 1]};
-    T v2[2]
-        = {mesh.vertices()[3 * mesh.faces()[face + face_edge[1]] + 0],
-           mesh.vertices()[3 * mesh.faces()[face + face_edge[1]] + 1]};
-    int v3_id = (face_edge[1] + 1) % 3;
-    T v3[2]
-        = {mesh.vertices()[3 * mesh.faces()[face + v3_id] + 0],
-           mesh.vertices()[3 * mesh.faces()[face + v3_id] + 1]};
 
     // perpendicular vector to edge v1-v2
     edge_normal[0] = v2[1] - v1[1];
@@ -104,6 +93,27 @@ std::vector<T> calc_edge_normal_of_face(
     edge_normal[1] /= normal_norm;
 
     return edge_normal;
+}
+
+template<class T>
+std::vector<T> calc_edge_normal_of_face(
+    size_t face,
+    const int* face_edge,
+    const triangular_mesh_t<T>& mesh
+) {
+
+    T v1[2]
+        = {mesh.vertices()[3 * mesh.faces()[face + face_edge[0]] + 0],
+           mesh.vertices()[3 * mesh.faces()[face + face_edge[0]] + 1]};
+    T v2[2]
+        = {mesh.vertices()[3 * mesh.faces()[face + face_edge[1]] + 0],
+           mesh.vertices()[3 * mesh.faces()[face + face_edge[1]] + 1]};
+    int v3_id = (face_edge[1] + 1) % 3;
+    T v3[2]
+        = {mesh.vertices()[3 * mesh.faces()[face + v3_id] + 0],
+           mesh.vertices()[3 * mesh.faces()[face + v3_id] + 1]};
+
+    return calc_v12_edge_normal_of_tri(v1, v2, v3);
 }
 
 template<class T>
@@ -214,6 +224,19 @@ class closed_contour_t {
   public:
     using index_t = size_t;
 
+    closed_contour_t(
+        std::vector<T> vertices,
+        std::vector<T> vertex_normals,
+        std::vector<index_t> edges,
+        point_t<T, 2> lower_bound,
+        point_t<T, 2> upper_bound
+    )
+        : vertices_(std::move(vertices)),
+          vertex_normals_(std::move(vertex_normals)),
+          edges_(std::move(edges)),
+          lower_bound_(std::move(lower_bound)),
+          upper_bound_(std::move(upper_bound)) {}
+
     static closed_contour_t import(
         const std::filesystem::path& path,
         bool subdivide       = false,
@@ -286,18 +309,6 @@ class closed_contour_t {
     const point_t<T, 2>& upper_bound() const { return upper_bound_; }
 
   private:
-    closed_contour_t(
-        std::vector<T> vertices,
-        std::vector<T> vertex_normals,
-        std::vector<index_t> edges,
-        point_t<T, 2> lower_bound,
-        point_t<T, 2> upper_bound
-    )
-        : vertices_(std::move(vertices)),
-          vertex_normals_(std::move(vertex_normals)),
-          edges_(std::move(edges)),
-          lower_bound_(std::move(lower_bound)),
-          upper_bound_(std::move(upper_bound)) {}
 
     std::vector<T> vertices_;
     std::vector<T> vertex_normals_;

@@ -35,8 +35,7 @@ find_package(GMP REQUIRED)
 find_package(MPFR REQUIRED)
 add_library(
   naga-lib SHARED
-  source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider_2.cpp
-  source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider_3.cpp
+        source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.cpp
 )
 target_include_directories(
   naga-lib PRIVATE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}

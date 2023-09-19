@@ -117,6 +117,8 @@ class triangular_mesh_t {
 
     const std::vector<index_t>& faces() const { return faces_; }
 
+    const std::vector<index_t>& face_normals() const { return face_normals_; }
+
     void flip_normals() {
         std::transform(
             normals_.begin(),
