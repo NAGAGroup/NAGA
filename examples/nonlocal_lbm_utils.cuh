@@ -225,21 +225,23 @@ struct problem_traits {
         std::shared_ptr<path_t> path_;
     };
 
-    class pulse_density_source : public density_source_t {
+    class sine_wav_density_source : public density_source_t {
       public:
         using point_t = naga::point_t<value_type, dimensions>;
 
-        pulse_density_source(
+        sine_wav_density_source(
             const value_type& amplitude,
             const value_type& pulse_width,
             const value_type& speed_of_sound,
             const value_type& source_radius,
             const point_t& source_center,
+            const value_type& periods         = 0.0,
             const value_type& time_multiplier = 1.0
         )
             : amplitude_(amplitude),
               time_multiplier_(time_multiplier),
-              source_region_(source_radius, source_center) {
+              source_region_(source_radius, source_center),
+              periods_(periods) {
             frequency_ = speed_of_sound / pulse_width;
         }
 
@@ -254,7 +256,8 @@ struct problem_traits {
             value_type radians
                 = 2 * naga::math::pi<value_type> * frequency_ * scaled_time;
 
-            if (radians >= 2 * naga::math::pi<value_type>) {
+            if (radians >= 2 * naga::math::pi<value_type> * periods_
+                && periods_ != 0.0) {
                 return std::async(std::launch::deferred, []() {});
             }
 
@@ -300,6 +303,30 @@ struct problem_traits {
         value_type amplitude_;
         value_type time_multiplier_;
         value_type frequency_;
+        value_type periods_;
         region_t source_region_;
+    };
+
+    class pulse_density_source : public sine_wav_density_source {
+      public:
+        using point_t = typename sine_wav_density_source::point_t;
+
+        pulse_density_source(
+            const value_type& amplitude,
+            const value_type& pulse_width,
+            const value_type& speed_of_sound,
+            const value_type& source_radius,
+            const point_t& source_center,
+            const value_type& time_multiplier = 1.0
+        )
+            : sine_wav_density_source(
+                amplitude,
+                pulse_width,
+                speed_of_sound,
+                source_radius,
+                source_center,
+                1.0,
+                time_multiplier
+            ) {}
     };
 };
