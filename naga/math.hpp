@@ -68,6 +68,26 @@ NAGA_HOST NAGA_DEVICE T tan(const T& x) {
 }
 
 template<class T>
+NAGA_HOST NAGA_DEVICE T asin(const T& x) {
+    return std::asin(x);
+}
+
+template<class T>
+NAGA_HOST NAGA_DEVICE T acos(const T& x) {
+    return std::acos(x);
+}
+
+template<class T>
+NAGA_HOST NAGA_DEVICE T atan(const T& x) {
+    return std::atan(x);
+}
+
+template<class T>
+NAGA_HOST NAGA_DEVICE T atan2(const T& y, const T& x) {
+    return std::atan2(y, x);
+}
+
+template<class T>
 NAGA_HOST NAGA_DEVICE T abs(const T& x) {
     return std::abs(x);
 }
