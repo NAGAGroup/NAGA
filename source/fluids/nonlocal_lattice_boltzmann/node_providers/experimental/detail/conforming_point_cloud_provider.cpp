@@ -209,7 +209,7 @@ class line_t {
 
 int sgn(double x) { return static_cast<int>(x > 0) - static_cast<int>(x < 0); }
 
-double distance_to_edge(
+std::tuple<double, double> distance_to_edge(
     const naga::point_t<double, 2>& xi,
     const edge_info_t& edge_info
 ) {
@@ -235,19 +235,25 @@ double distance_to_edge(
 
     if (signed_v1_intersection_distance < 0) {
         vector_t v1_to_xi{{xi[0] - edge_info.v1[0], xi[1] - edge_info.v1[1]}};
+        auto v1_to_xi_dot_normal = naga::math::loopless::dot<2>(v1_to_xi, edge_info.edge_normal);
+        double incident_angle = naga::math::asin(
+            naga::math::abs(v1_to_xi_dot_normal) / naga::math::loopless::norm<2>(v1_to_xi));
         auto signed_distance_to_v1
-            = sgn(naga::math::loopless::dot<2>(v1_to_xi, edge_info.edge_normal))
+            = sgn(v1_to_xi_dot_normal)
             * naga::math::loopless::norm<2>(v1_to_xi);
-        return signed_distance_to_v1;
+        return {signed_distance_to_v1, incident_angle};
     }
     if (signed_v1_intersection_distance > edge_info.length) {
         vector_t v2_to_xi{{xi[0] - edge_info.v2[0], xi[1] - edge_info.v2[1]}};
+        auto v2_to_xi_dot_normal = naga::math::loopless::dot<2>(v2_to_xi, edge_info.edge_normal);
+        double angle_from_perp_line = naga::math::asin(
+            naga::math::abs(v2_to_xi_dot_normal) / naga::math::loopless::norm<2>(v2_to_xi));
         auto signed_distance_to_v2
-            = sgn(naga::math::loopless::dot<2>(v2_to_xi, edge_info.edge_normal))
+            = sgn(v2_to_xi_dot_normal)
             * naga::math::loopless::norm<2>(v2_to_xi);
-        return signed_distance_to_v2;
+        return {signed_distance_to_v2, angle_from_perp_line};
     }
-    return signed_distance_to_line;
+    return {signed_distance_to_line, naga::math::pi<double> / 2.};
 }
 
 std::pair<size_t, double> distance_to_boundary(
@@ -255,16 +261,17 @@ std::pair<size_t, double> distance_to_boundary(
     const std::vector<edge_info_t>& edge_info
 ) {
     double min_distance = std::numeric_limits<double>::max();
+    double associated_incident_angle = 0;
     size_t edge_index   = 0;
     std::mutex min_distance_mutex;
 #pragma omp parallel for
     for (size_t e = 0; e < edge_info.size(); ++e) {
-        double distance = distance_to_edge(xi, edge_info[e]);
+        auto [distance, incident_angle] = distance_to_edge(xi, edge_info[e]);
         double diff_from_min
             = std::abs(std::abs(distance) - std::abs(min_distance));
         std::lock_guard<std::mutex> lock(min_distance_mutex);
         if (std::abs(distance) < std::abs(min_distance)
-            || (diff_from_min < 1e-6 && distance < 0)) {
+            || (diff_from_min < 1e-6 && incident_angle > associated_incident_angle)) {
             min_distance = distance;
             edge_index   = e;
         }
@@ -927,7 +934,7 @@ fill_face_with_nodes(
             break;
         }
         point2_t p{{edge1_verts2d[i + 0], edge1_verts2d[i + 1]}};
-        auto distance_p_to_edge2 = distance_to_edge(p, edge_metadata[1]);
+        auto [distance_p_to_edge2, unused1] = distance_to_edge(p, edge_metadata[1]);
         if (std::abs(distance_p_to_edge2) < 0.3 * nodal_spacing) {
             continue;
         }
@@ -940,7 +947,7 @@ fill_face_with_nodes(
             break;
         }
         point2_t p{{edge2_verts2d[i + 0], edge2_verts2d[i + 1]}};
-        auto distance_p_to_edge3 = distance_to_edge(p, edge_metadata[2]);
+        auto [distance_p_to_edge3, unused2] = distance_to_edge(p, edge_metadata[2]);
         if (std::abs(distance_p_to_edge3) < 0.3 * nodal_spacing) {
             continue;
         }
@@ -953,7 +960,7 @@ fill_face_with_nodes(
             break;
         }
         point2_t p{{edge3_verts2d[i + 0], edge3_verts2d[i + 1]}};
-        auto distance_p_to_edge1 = distance_to_edge(p, edge_metadata[0]);
+        auto [distance_p_to_edge1, unused3] = distance_to_edge(p, edge_metadata[0]);
         if (std::abs(distance_p_to_edge1) < 0.3 * nodal_spacing) {
             continue;
         }
