@@ -17,7 +17,8 @@ struct problem_traits {
     using simulation_domain_t  = typename sim_engine_t::simulation_domain_t;
     using problem_parameters_t = typename sim_engine_t::problem_parameters_t;
     using solution_t           = typename sim_engine_t::solution_t;
-    using region_t = naga::regions::nd_rectangular_prism<value_type, dimensions>;
+    using region_t
+        = naga::regions::nd_rectangular_prism<value_type, dimensions>;
 
     using node_provider_t = naga::experimental::fluids::nonlocal_lbm::
         conforming_point_cloud_provider<lattice_type>;
@@ -225,10 +226,10 @@ struct problem_traits {
         std::shared_ptr<path_t> path_;
     };
 
-    template <class SourceRegion>
+    template<class SourceRegion>
     class sine_wav_density_source : public density_source_t {
       public:
-        using point_t = naga::point_t<value_type, dimensions>;
+        using point_t     = naga::point_t<value_type, dimensions>;
         using region_type = SourceRegion;
 
         sine_wav_density_source(
@@ -308,7 +309,7 @@ struct problem_traits {
         region_type source_region_;
     };
 
-    class pulse_density_source : public sine_wav_density_source<region_t>{
+    class pulse_density_source : public sine_wav_density_source<region_t> {
       public:
         using point_t = typename sine_wav_density_source<region_t>::point_t;
 

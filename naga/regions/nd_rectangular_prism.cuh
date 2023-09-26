@@ -40,9 +40,10 @@ template<class T, uint Dimensions>
 class nd_rectangular_prism {
   public:
     template<class VectorT, class VectorU>
-    __host__ __device__ nd_rectangular_prism(const VectorT& origin, const VectorU& side_lengths) {
+    __host__ __device__
+    nd_rectangular_prism(const VectorT& origin, const VectorU& side_lengths) {
         for (uint i = 0; i < Dimensions; ++i) {
-            origin_[i] = origin[i];
+            origin_[i]       = origin[i];
             side_lengths_[i] = side_lengths[i];
         }
     }
@@ -58,7 +59,8 @@ class nd_rectangular_prism {
     template<class VectorT>
     __host__ __device__ bool contains(const VectorT& point) const {
         for (uint i = 0; i < Dimensions; ++i) {
-            if (point[i] < origin_[i] || point[i] > origin_[i] + side_lengths_[i]) {
+            if (point[i] < origin_[i]
+                || point[i] > origin_[i] + side_lengths_[i]) {
                 return false;
             }
         }
@@ -69,4 +71,4 @@ class nd_rectangular_prism {
     T origin_[Dimensions];
     T side_lengths_[Dimensions];
 };
-}
+}  // namespace naga::regions

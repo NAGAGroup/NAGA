@@ -70,11 +70,8 @@ bool is_edge_shared(
 }
 
 template<class T>
-std::vector<T> calc_v12_edge_normal_of_tri(
-    const T* v1,
-    const T* v2,
-    const T* v3
-    ) {
+std::vector<T>
+calc_v12_edge_normal_of_tri(const T* v1, const T* v2, const T* v3) {
     std::vector<T> edge_normal(2);
 
     // perpendicular vector to edge v1-v2
@@ -309,7 +306,6 @@ class closed_contour_t {
     const point_t<T, 2>& upper_bound() const { return upper_bound_; }
 
   private:
-
     std::vector<T> vertices_;
     std::vector<T> vertex_normals_;
     std::vector<index_t> edges_;
