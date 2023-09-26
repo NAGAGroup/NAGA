@@ -33,7 +33,7 @@
 #include <naga/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.hpp>
 #include <numeric>
 #include <utility>
-#include <iostream>
+#include <random>
 
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
@@ -273,6 +273,7 @@ std::pair<size_t, double> distance_to_boundary(
         if (std::abs(distance) < std::abs(min_distance)
             || (diff_from_min < 1e-6 && incident_angle > associated_incident_angle)) {
             min_distance = distance;
+            associated_incident_angle = incident_angle;
             edge_index   = e;
         }
     }
@@ -370,7 +371,7 @@ std::vector<std::pair<size_t, double>> remove_points_outside_2d_contours(
         distances_to_edges.end(),
         valid_bulk_points.begin(),
         [&](const auto& d) {
-            return d.second > 0.3 * approx_point_spacing ? 1 : 0;
+            return d.second > 0.5 * approx_point_spacing ? 1 : 0;
         }
     );
 
@@ -463,14 +464,26 @@ class conforming_point_cloud_impl_t<2> {
             boundary_edge_info
         );
 
-        auto domain_lower_bound = domain_contour.lower_bound();
-        auto domain_upper_bound = domain_contour.upper_bound();
+        const auto& domain_lower_bound = domain_contour.lower_bound();
+        const auto& domain_upper_bound = domain_contour.upper_bound();
 
         auto potential_bulk_points = generate_2d_hexagonal_grid(
             approx_point_spacing,
             domain_lower_bound,
             domain_upper_bound
         );
+
+        // we also add jitter in hopes it prevents artifacting
+//        std::default_random_engine offset_rng(2); // use same seed for reproducibility
+//        std::normal_distribution<double> offset_dist(0.0, 0.05 * approx_point_spacing);
+//        std::default_random_engine angle_rng(456); // use same seed for reproducibility
+//        std::uniform_real_distribution<double> angle_dist(0., naga::math::pi<double>);
+//        for (auto& p : potential_bulk_points) {
+//            auto offset = offset_dist(offset_rng);
+//            auto angle = angle_dist(angle_rng);
+//            p[0] += offset * naga::math::cos(angle);
+//            p[1] += offset * naga::math::sin(angle);
+//        }
 
         remove_points_outside_2d_contours(
             potential_bulk_points,
