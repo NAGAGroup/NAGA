@@ -17,7 +17,7 @@ struct problem_traits {
     using simulation_domain_t  = typename sim_engine_t::simulation_domain_t;
     using problem_parameters_t = typename sim_engine_t::problem_parameters_t;
     using solution_t           = typename sim_engine_t::solution_t;
-    using region_t = naga::regions::hypersphere<value_type, dimensions>;
+    using region_t = naga::regions::nd_rectangular_prism<value_type, dimensions>;
 
     using node_provider_t = naga::experimental::fluids::nonlocal_lbm::
         conforming_point_cloud_provider<lattice_type>;
@@ -225,22 +225,23 @@ struct problem_traits {
         std::shared_ptr<path_t> path_;
     };
 
+    template <class SourceRegion>
     class sine_wav_density_source : public density_source_t {
       public:
         using point_t = naga::point_t<value_type, dimensions>;
+        using region_type = SourceRegion;
 
         sine_wav_density_source(
+            region_type source_region,
             const value_type& amplitude,
             const value_type& pulse_width,
             const value_type& speed_of_sound,
-            const value_type& source_radius,
-            const point_t& source_center,
             const value_type& periods         = 0.0,
             const value_type& time_multiplier = 1.0
         )
             : amplitude_(amplitude),
               time_multiplier_(time_multiplier),
-              source_region_(source_radius, source_center),
+              source_region_(std::move(source_region)),
               periods_(periods) {
             frequency_ = speed_of_sound / pulse_width;
         }
@@ -304,12 +305,12 @@ struct problem_traits {
         value_type time_multiplier_;
         value_type frequency_;
         value_type periods_;
-        region_t source_region_;
+        region_type source_region_;
     };
 
-    class pulse_density_source : public sine_wav_density_source {
+    class pulse_density_source : public sine_wav_density_source<region_t>{
       public:
-        using point_t = typename sine_wav_density_source::point_t;
+        using point_t = typename sine_wav_density_source<region_t>::point_t;
 
         pulse_density_source(
             const value_type& amplitude,
@@ -319,12 +320,11 @@ struct problem_traits {
             const point_t& source_center,
             const value_type& time_multiplier = 1.0
         )
-            : sine_wav_density_source(
+            : sine_wav_density_source<region_t>(
+                region_t{source_radius, source_center},
                 amplitude,
                 pulse_width,
                 speed_of_sound,
-                source_radius,
-                source_center,
                 1.0,
                 time_multiplier
             ) {}
