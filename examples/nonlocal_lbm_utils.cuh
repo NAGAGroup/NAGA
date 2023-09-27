@@ -18,7 +18,7 @@ struct problem_traits {
     using problem_parameters_t = typename sim_engine_t::problem_parameters_t;
     using solution_t           = typename sim_engine_t::solution_t;
     using region_t
-        = naga::regions::nd_rectangular_prism<value_type, dimensions>;
+        = naga::regions::hypersphere<value_type, dimensions>;
 
     using node_provider_t = naga::experimental::fluids::nonlocal_lbm::
         conforming_point_cloud_provider<lattice_type>;
