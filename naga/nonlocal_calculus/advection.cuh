@@ -148,9 +148,6 @@ class advection_operator {
         T dt,
         T centering_offset = T(0)
     ) {
-        auto fut
-            = sclx::assign_array(static_cast<sclx::array<const T, 1>>(f0), f);
-
         divergence_field_map<FieldMap> div_input_field{
             velocity_field,
             f0,
@@ -159,7 +156,6 @@ class advection_operator {
         divergence_op_->apply(div_input_field, rk_df_dt_list_[0]);
 
         div_input_field.scalar_field_ = f;
-        fut.get();
 
         std::vector<std::future<void>> transform_futures;
 
