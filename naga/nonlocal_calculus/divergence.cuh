@@ -188,31 +188,33 @@ class divergence_operator {
                     field_type support_point_field_value
                         = field[support_indices[index]];
                     auto local_thread_id = info.local_thread_id();
-                    T* local_weights = &weights(0, index[0], index[1]);
-                    T& local_div = divergence_tmp[local_thread_id];
                     {
-                        T div = 0;
-                        for (uint d = 0; d < Dimensions; ++d) {
-                            div += local_weights[d]
-                                 * (support_point_field_value[d]
-                                    - centering_offset);
+                        T* local_weights = &weights(0, index[0], index[1]);
+                        T& local_div = divergence_tmp[local_thread_id];
+                        {
+                            T div = 0;
+                            for (uint d = 0; d < Dimensions; ++d) {
+                                div += local_weights[d]
+                                     * (support_point_field_value[d]
+                                        - centering_offset);
+                            }
+                            local_div = div;
                         }
-                        local_div = div;
                     }
+                    handler.syncthreads();
 
-                    uint i = 2;
-                    uint local_div_id = local_thread_id[0];
-                    while (block_shape[0] / i != 0) {
+                    T* shared_result = &divergence_tmp(0, local_thread_id[1]);
+                    for (uint s = 1; s < block_shape[0]; s*=2) {
+                        uint idx = 2 * s * static_cast<uint>(local_thread_id[0]);
+
+                        if (idx < block_shape[0]) {
+                            shared_result[idx] += shared_result[idx + s];
+                        }
                         handler.syncthreads();
-                        if (local_div_id < block_shape[0] / i) {
-                            local_div
-                                += (&local_div)[local_div_id + block_shape[0] / i];
-                        }
-                        i *= 2;
                     }
 
-                    if (local_div_id == 0) {
-                        result[index[1]] = local_div;
+                    if (local_thread_id[0] == 0) {
+                        result[index[1]] = shared_result[0];
                     }
                 },
                 block_shape,
