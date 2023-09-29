@@ -167,7 +167,7 @@ class divergence_operator {
 
             sclx::shape_t<2> block_shape{
                 support_indices_.shape()[0],
-                512 / support_indices_.shape()[0]};
+                128 / support_indices_.shape()[0]};
             size_t grid_size
                 = max_total_threads_per_dev / (block_shape.elements());
 
@@ -188,35 +188,31 @@ class divergence_operator {
                     field_type support_point_field_value
                         = field[support_indices[index]];
                     auto local_thread_id = info.local_thread_id();
-                    T& local_div = divergence_tmp[local_thread_id] = T(0);
                     T* local_weights = &weights(0, index[0], index[1]);
-                    for (uint d = 0; d < Dimensions; ++d) {
-                        //                            if (weights_(d, s,
-                        //                            index[0]) == T(0) &&
-                        //                            index[0] ==
-                        //                            result.shape()[0] / 2
-                        //                            + result.shape()[0] /
-                        //                            4) {
-                        //                                printf("Oh NO!
-                        //                                Weight is exactly
-                        //                                zero at idx %u,
-                        //                                %u, %u\n",
-                        //                                static_cast<uint>(d),
-                        //                                static_cast<uint>(s),
-                        //                                static_cast<uint>(index[0]));
-                        //                            }
-                        local_div += local_weights[d]
-                                   * (support_point_field_value[d]
-                                      - centering_offset);
-                    }
-                    handler.syncthreads();
-
-                    if (local_thread_id[0] == 0) {
-                        T divergence = T(0);
-                        for (uint i = 0; i < block_shape[0]; ++i) {
-                            divergence += (&local_div)[i];
+                    T& local_div = divergence_tmp[local_thread_id];
+                    {
+                        T div = 0;
+                        for (uint d = 0; d < Dimensions; ++d) {
+                            div += local_weights[d]
+                                 * (support_point_field_value[d]
+                                    - centering_offset);
                         }
-                        result[index[1]] = divergence;
+                        local_div = div;
+                    }
+
+                    uint i = 2;
+                    uint local_div_id = local_thread_id[0];
+                    while (block_shape[0] / i != 0) {
+                        handler.syncthreads();
+                        if (local_div_id < block_shape[0] / i) {
+                            local_div
+                                += (&local_div)[local_div_id + block_shape[0] / i];
+                        }
+                        i *= 2;
+                    }
+
+                    if (local_div_id == 0) {
+                        result[index[1]] = local_div;
                     }
                 },
                 block_shape,
