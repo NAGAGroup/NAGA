@@ -173,246 +173,151 @@ struct lattice_interface<d3q27_lattice<T>> {
         value_type Kxyyzz  = compute_central_moment<1, 2, 2>(f, u);
         value_type Kxxyyz  = compute_central_moment<2, 2, 1>(f, u);
         value_type Kxxyyzz = compute_central_moment<2, 2, 2>(f, u);
-        k[4]               = omega_ab / -12 * (Kxy);
-        k[5]               = omega_ab / -12 * (Kxz);
-        k[6]               = omega_ab / -12 * (Kyz);
-        k[7]               = omega_ab / -12 * (Kxx - Kyy);
-        k[8]               = omega_ab / -36 * (Kxx + Kyy - 2 * Kzz);
+        k[4]               = omega_ab * (-Kxy / 12);
+
+        k[5] = omega_ab * (-Kxz / 12);
+
+        k[6] = omega_ab * (-Kyz / 12);
+
+        k[7] = omega_ab * (-(Kxx - Kyy) / 12);
+
+        k[8] = omega_ab * (-(Kxx + Kyy - 2 * Kzz) / 36);
 
         omega_ab = 1.f / lat_dt;
-        k[9]     = omega_ab / -18 * (Kxx + Kyy + Kzz - rho);
-        k[10]    = omega_ab / -24
-              * (Kxyy + Kxzz - 24 * (k[4] / omega_ab) * v1
-                 - 24 * (k[5] / omega_ab) * v2
-                 + 6 * v0
-                       * ((k[7] / omega_ab) + (k[8] / omega_ab)
-                          - 2 * (k[9] / omega_ab)));
-        k[13] = omega_ab / -8
-              * (Kxyy - Kxzz - 24 * (k[4] / omega_ab) * v1
-                 + 24 * (k[5] / omega_ab) * v2
-                 + 6 * v0 * ((k[7] / omega_ab) - 3 * (k[8] / omega_ab)));
-        k[11] = omega_ab / 24
-              * (-Kxxy - Kyzz + 24 * (k[4] / omega_ab) * v0
-                 + 24 * (k[6] / omega_ab) * v2
-                 + 6 * v1
-                       * ((k[7] / omega_ab) - (k[8] / omega_ab)
-                          + 2 * (k[9] / omega_ab)));
-        k[14] = omega_ab / 8
-              * (-Kxxy + Kyzz + 24 * (k[4] / omega_ab) * v0
-                 - 24 * (k[6] / omega_ab) * v2
-                 + 6 * v1 * ((k[7] / omega_ab) + 3 * (k[8] / omega_ab)));
-        k[12] = omega_ab / 24
-              * (-Kxxz - Kyyz + 24 * (k[5] / omega_ab) * v0
-                 + 24 * (k[6] / omega_ab) * v1
-                 + 12 * v2 * ((k[8] / omega_ab) + (k[9] / omega_ab)));
-        k[15] = omega_ab / 8
-              * (-Kxxz + Kyyz + 24 * (k[5] / omega_ab) * v0
-                 - 24 * (k[6] / omega_ab) * v1 + 12 * (k[7] / omega_ab) * v2);
-        k[16] = omega_ab / 8
-              * (-Kxyz + 12 * (k[4] / omega_ab) * v2
-                 + 12 * (k[5] / omega_ab) * v1 + 12 * (k[6] / omega_ab) * v0);
-        k[17] = omega_ab / 36
-              * (-3 * Kxxyy - 3 * Kxxzz - 3 * Kyyzz
-                 + 144 * (k[12] / omega_ab) * v2 - 72 * (k[9] / omega_ab) + rho
-                 + 18 * v0sq
-                       * ((k[7] / omega_ab) + (k[8] / omega_ab)
-                          - 2 * (k[9] / omega_ab))
-                 - 144 * v0
-                       * (-(k[10] / omega_ab) + (k[4] / omega_ab) * v1
-                          + (k[5] / omega_ab) * v2)
-                 - 18 * v1sq
-                       * ((k[7] / omega_ab) - (k[8] / omega_ab)
-                          + 2 * (k[9] / omega_ab))
-                 + 144 * v1 * ((k[11] / omega_ab) - (k[6] / omega_ab) * v2)
-                 - 36 * v2sq * ((k[8] / omega_ab) + (k[9] / omega_ab)));
-        k[18] = omega_ab / 24
-              * (-Kxxyy - Kxxzz + 2 * Kyyzz - 12 * (k[7] / omega_ab)
-                 - 12 * (k[8] / omega_ab)
-                 + 6 * v0sq
-                       * ((k[7] / omega_ab) + (k[8] / omega_ab)
-                          - 2 * (k[9] / omega_ab))
-                 - 48 * v0
-                       * (-(k[10] / omega_ab) + (k[4] / omega_ab) * v1
-                          + (k[5] / omega_ab) * v2)
-                 - 6 * v1sq
-                       * ((k[7] / omega_ab) + 5 * (k[8] / omega_ab)
-                          - (k[9] / omega_ab))
-                 + 24 * v1
-                       * (-(k[11] / omega_ab) + (k[14] / omega_ab)
-                          + 4 * (k[6] / omega_ab) * v2)
-                 + 6 * v2sq
-                       * (-3 * (k[7] / omega_ab) + (k[8] / omega_ab)
-                          + (k[9] / omega_ab))
-                 - 24 * v2 * ((k[12] / omega_ab) - (k[15] / omega_ab)));
-        k[19] = omega_ab / 8
-              * (-Kxxyy + Kxxzz + 4 * (k[7] / omega_ab) - 12 * (k[8] / omega_ab)
-                 + 6 * v0sq * ((k[7] / omega_ab) - 3 * (k[8] / omega_ab))
-                 + 16 * v0
-                       * ((k[13] / omega_ab) - 3 * (k[4] / omega_ab) * v1
-                          + 3 * (k[5] / omega_ab) * v2)
-                 - 6 * v1sq
-                       * ((k[7] / omega_ab) + (k[8] / omega_ab)
-                          + (k[9] / omega_ab))
-                 + 8 * v1 * (3 * (k[11] / omega_ab) + (k[14] / omega_ab))
-                 + 6 * v2sq
-                       * ((k[7] / omega_ab) + (k[8] / omega_ab)
-                          + (k[9] / omega_ab))
-                 - 8 * v2 * (3 * (k[12] / omega_ab) + (k[15] / omega_ab)));
-        k[20] = omega_ab / -8
-              * (Kxxyz + 12 * (k[6] / omega_ab) * v0sq + 8 * (k[6] / omega_ab)
-                 + 8 * v0
-                       * (-2 * (k[16] / omega_ab) + 3 * (k[4] / omega_ab) * v2
-                          + 3 * (k[5] / omega_ab) * v1)
-                 - 2 * v1
-                       * (6 * (k[12] / omega_ab) + 2 * (k[15] / omega_ab)
-                          - 3 * v2
-                                * ((k[7] / omega_ab) + (k[8] / omega_ab)
-                                   + (k[9] / omega_ab)))
-                 - 4 * v2 * (3 * (k[11] / omega_ab) + (k[14] / omega_ab)));
-        k[21]
-            = omega_ab / -8
-            * (Kxyyz + 12 * (k[5] / omega_ab) * v1sq + 8 * (k[5] / omega_ab)
-               + 2 * v0
-                     * (-6 * (k[12] / omega_ab) + 2 * (k[15] / omega_ab)
-                        + 12 * (k[6] / omega_ab) * v1
-                        + 3 * v2
-                              * (-(k[7] / omega_ab) + (k[8] / omega_ab)
-                                 + (k[9] / omega_ab)))
-               - 8 * v1 * (2 * (k[16] / omega_ab) - 3 * (k[4] / omega_ab) * v2)
-               - 4 * v2 * (3 * (k[10] / omega_ab) + (k[13] / omega_ab)));
-        k[22]
-            = omega_ab / 8
-            * (-Kxyzz + 16 * (k[16] / omega_ab) * v2
-               - 12 * (k[4] / omega_ab) * v2sq - 8 * (k[4] / omega_ab)
-               + 2 * v0
-                     * (6 * (k[11] / omega_ab) - 2 * (k[14] / omega_ab)
-                        - 12 * (k[6] / omega_ab) * v2
-                        + 3 * v1 * (2 * (k[8] / omega_ab) - (k[9] / omega_ab)))
-               - 4 * v1
-                     * (-3 * (k[10] / omega_ab) + (k[13] / omega_ab)
-                        + 6 * (k[5] / omega_ab) * v2));
-        k[23]
-            = omega_ab / -8
-            * (Kxyyzz + 16 * (k[10] / omega_ab)
-               + 2 * v0
-                     * (-2 * (k[17] / omega_ab) + 4 * (k[18] / omega_ab)
-                        + 2 * (k[7] / omega_ab) + 2 * (k[8] / omega_ab)
-                        - 4 * (k[9] / omega_ab)
-                        + 3 * v1sq * (2 * (k[8] / omega_ab) - (k[9] / omega_ab))
-                        - 4 * v1
-                              * (-3 * (k[11] / omega_ab) + (k[14] / omega_ab)
-                                 + 6 * (k[6] / omega_ab) * v2)
-                        + 3 * v2sq
-                              * ((k[7] / omega_ab) - (k[8] / omega_ab)
-                                 - (k[9] / omega_ab))
-                        + 4 * v2 * (3 * (k[12] / omega_ab) - (k[15] / omega_ab))
-                     )
-               + 4 * v1sq
-                     * (3 * (k[10] / omega_ab) - (k[13] / omega_ab)
-                        - 6 * (k[5] / omega_ab) * v2)
-               - 8 * v1
-                     * (-4 * (k[16] / omega_ab) * v2 + 2 * (k[22] / omega_ab)
-                        + 3 * (k[4] / omega_ab) * v2sq + 2 * (k[4] / omega_ab))
-               + 4 * v2sq * (3 * (k[10] / omega_ab) + (k[13] / omega_ab))
-               - 16 * v2 * ((k[21] / omega_ab) + (k[5] / omega_ab)));
-        k[24]
-            = omega_ab / -8
-            * (Kxxyzz + 16 * (k[11] / omega_ab)
-               + 2 * v0sq
-                     * (6 * (k[11] / omega_ab) - 2 * (k[14] / omega_ab)
-                        - 12 * (k[6] / omega_ab) * v2
-                        + 3 * v1 * (2 * (k[8] / omega_ab) - (k[9] / omega_ab)))
-               - 8 * v0
-                     * (-4 * (k[16] / omega_ab) * v2 + 2 * (k[22] / omega_ab)
-                        + 3 * (k[4] / omega_ab) * v2sq + 2 * (k[4] / omega_ab)
-                        + v1
-                              * (-3 * (k[10] / omega_ab) + (k[13] / omega_ab)
-                                 + 6 * (k[5] / omega_ab) * v2))
-               - 2 * v1
-                     * (2 * (k[17] / omega_ab) + 2 * (k[18] / omega_ab)
-                        - 2 * (k[19] / omega_ab) + 2 * (k[7] / omega_ab)
-                        - 2 * (k[8] / omega_ab) + 4 * (k[9] / omega_ab)
-                        + 3 * v2sq
-                              * ((k[7] / omega_ab) + (k[8] / omega_ab)
-                                 + (k[9] / omega_ab))
-                        - 4 * v2 * (3 * (k[12] / omega_ab) + (k[15] / omega_ab))
-                     )
-               + 4 * v2sq * (3 * (k[11] / omega_ab) + (k[14] / omega_ab))
-               - 16 * v2 * ((k[20] / omega_ab) + (k[6] / omega_ab)));
-        k[25] = omega_ab / 8
-              * (-Kxxyyz - 16 * (k[12] / omega_ab)
-                 + v0sq
-                       * (-12 * (k[12] / omega_ab) + 4 * (k[15] / omega_ab)
-                          + 24 * (k[6] / omega_ab) * v1
-                          + 6 * v2
-                                * (-(k[7] / omega_ab) + (k[8] / omega_ab)
-                                   + (k[9] / omega_ab)))
-                 + 8 * v0
-                       * (2 * (k[21] / omega_ab) + 3 * (k[5] / omega_ab) * v1sq
-                          + 2 * (k[5] / omega_ab)
-                          - 2 * v1
-                                * (2 * (k[16] / omega_ab)
-                                   - 3 * (k[4] / omega_ab) * v2)
-                          - v2 * (3 * (k[10] / omega_ab) + (k[13] / omega_ab)))
-                 + v1sq
-                       * (-12 * (k[12] / omega_ab) - 4 * (k[15] / omega_ab)
-                          + 6 * v2
-                                * ((k[7] / omega_ab) + (k[8] / omega_ab)
-                                   + (k[9] / omega_ab)))
-                 + 8 * v1
-                       * (2 * (k[20] / omega_ab) + 2 * (k[6] / omega_ab)
-                          - v2 * (3 * (k[11] / omega_ab) + (k[14] / omega_ab)))
-                 + 4 * v2
-                       * ((k[17] / omega_ab) + (k[18] / omega_ab)
-                          + (k[19] / omega_ab) + 2 * (k[8] / omega_ab)
-                          + 2 * (k[9] / omega_ab)));
-        k[26]
-            = omega_ab / 216
-            * (-27 * Kxxyyzz - 216 * (k[17] / omega_ab)
-               - 216 * (k[9] / omega_ab) + rho
-               + 54 * v0sq
-                     * (-2 * (k[17] / omega_ab) + 4 * (k[18] / omega_ab)
-                        + 2 * (k[7] / omega_ab) + 2 * (k[8] / omega_ab)
-                        - 4 * (k[9] / omega_ab)
-                        + 3 * v1sq * (2 * (k[8] / omega_ab) - (k[9] / omega_ab))
-                        - 4 * v1
-                              * (-3 * (k[11] / omega_ab) + (k[14] / omega_ab)
-                                 + 6 * (k[6] / omega_ab) * v2)
-                        + 3 * v2sq
-                              * ((k[7] / omega_ab) - (k[8] / omega_ab)
-                                 - (k[9] / omega_ab))
-                        + 4 * v2 * (3 * (k[12] / omega_ab) - (k[15] / omega_ab))
-                     )
-               + 216 * v0
-                     * (4 * (k[10] / omega_ab) + 2 * (k[23] / omega_ab)
-                        + v1sq
-                              * (3 * (k[10] / omega_ab) - (k[13] / omega_ab)
-                                 - 6 * (k[5] / omega_ab) * v2)
-                        - 2 * v1
-                              * (-4 * (k[16] / omega_ab) * v2
-                                 + 2 * (k[22] / omega_ab)
-                                 + 3 * (k[4] / omega_ab) * v2sq
-                                 + 2 * (k[4] / omega_ab))
-                        + v2sq * (3 * (k[10] / omega_ab) + (k[13] / omega_ab))
-                        - 4 * v2 * ((k[21] / omega_ab) + (k[5] / omega_ab)))
-               + 54 * v1sq
-                     * (-2 * (k[17] / omega_ab) - 2 * (k[18] / omega_ab)
-                        + 2 * (k[19] / omega_ab) - 2 * (k[7] / omega_ab)
-                        + 2 * (k[8] / omega_ab) - 4 * (k[9] / omega_ab)
-                        - 3 * v2sq
-                              * ((k[7] / omega_ab) + (k[8] / omega_ab)
-                                 + (k[9] / omega_ab))
-                        + 4 * v2 * (3 * (k[12] / omega_ab) + (k[15] / omega_ab))
-                     )
-               + 216 * v1
-                     * (4 * (k[11] / omega_ab) + 2 * (k[24] / omega_ab)
-                        + v2sq * (3 * (k[11] / omega_ab) + (k[14] / omega_ab))
-                        - 4 * v2 * ((k[20] / omega_ab) + (k[6] / omega_ab)))
-               - 108 * v2sq
-                     * ((k[17] / omega_ab) + (k[18] / omega_ab)
-                        + (k[19] / omega_ab) + 2 * (k[8] / omega_ab)
-                        + 2 * (k[9] / omega_ab))
-               + 432 * v2 * (2 * (k[12] / omega_ab) + (k[25] / omega_ab)));
+        k[9]     = omega_ab * (-(Kxx + Kyy + Kzz - rho) / 18);
+
+        k[10] = omega_ab
+              * (-(6 * Kxy * v1 + 3 * Kxyy + 6 * Kxz * v2 + 3 * Kxzz
+                   + 3 * Kyy * v0 + 3 * Kzz * v0 - 2 * rho * v0)
+                 / 72);
+
+        k[11] = omega_ab
+              * (-(3 * Kxx * v1 + 3 * Kxxy + 6 * Kxy * v0 + 6 * Kyz * v2
+                   + 3 * Kyzz + 3 * Kzz * v1 - 2 * rho * v1)
+                 / 72);
+
+        k[12] = omega_ab
+              * (-(3 * Kxx * v2 + 3 * Kxxz + 6 * Kxz * v0 + 3 * Kyy * v2
+                   + 3 * Kyyz + 6 * Kyz * v1 - 2 * rho * v2)
+                 / 72);
+
+        k[13] = omega_ab
+              * (-(2 * Kxy * v1 + Kxyy - 2 * Kxz * v2 - Kxzz + Kyy * v0
+                   - Kzz * v0)
+                 / 8);
+
+        k[14] = omega_ab
+              * (-(Kxx * v1 + Kxxy + 2 * Kxy * v0 - 2 * Kyz * v2 - Kyzz
+                   - Kzz * v1)
+                 / 8);
+
+        k[15] = omega_ab
+              * (-(Kxx * v2 + Kxxz + 2 * Kxz * v0 - Kyy * v2 - Kyyz
+                   - 2 * Kyz * v1)
+                 / 8);
+
+        k[16] = omega_ab * (-(Kxy * v2 + Kxyz + Kxz * v1 + Kyz * v0) / 8);
+
+        k[17] = omega_ab
+              * (-(3 * Kxx * v1sq + 3 * Kxx * v2sq - 4 * Kxx + 6 * Kxxy * v1
+                   + 3 * Kxxyy + 6 * Kxxz * v2 + 3 * Kxxzz + 12 * Kxy * v0 * v1
+                   + 6 * Kxyy * v0 + 12 * Kxz * v0 * v2 + 6 * Kxzz * v0
+                   + 3 * Kyy * v0sq + 3 * Kyy * v2sq - 4 * Kyy + 6 * Kyyz * v2
+                   + 3 * Kyyzz + 12 * Kyz * v1 * v2 + 6 * Kyzz * v1
+                   + 3 * Kzz * v0sq + 3 * Kzz * v1sq - 4 * Kzz - 2 * rho * v0sq
+                   - 2 * rho * v1sq - 2 * rho * v2sq + 3 * rho)
+                 / 36);
+
+        k[18] = omega_ab
+              * (-(3 * Kxx * v1sq + 3 * Kxx * v2sq - 4 * Kxx + 6 * Kxxy * v1
+                   + 3 * Kxxyy + 6 * Kxxz * v2 + 3 * Kxxzz + 12 * Kxy * v0 * v1
+                   + 6 * Kxyy * v0 + 12 * Kxz * v0 * v2 + 6 * Kxzz * v0
+                   + 3 * Kyy * v0sq - 6 * Kyy * v2sq + 2 * Kyy - 12 * Kyyz * v2
+                   - 6 * Kyyzz - 24 * Kyz * v1 * v2 - 12 * Kyzz * v1
+                   + 3 * Kzz * v0sq - 6 * Kzz * v1sq + 2 * Kzz - 2 * rho * v0sq
+                   + rho * v1sq + rho * v2sq)
+                 / 72);
+
+        k[19] = omega_ab
+              * (-(3 * Kxx * v1sq - 3 * Kxx * v2sq + 6 * Kxxy * v1 + 3 * Kxxyy
+                   - 6 * Kxxz * v2 - 3 * Kxxzz + 12 * Kxy * v0 * v1
+                   + 6 * Kxyy * v0 - 12 * Kxz * v0 * v2 - 6 * Kxzz * v0
+                   + 3 * Kyy * v0sq - 2 * Kyy - 3 * Kzz * v0sq + 2 * Kzz
+                   - rho * v1sq + rho * v2sq)
+                 / 24);
+
+        k[20] = omega_ab
+              * (-(3 * Kxx * v1 * v2 + 3 * Kxxy * v2 + 3 * Kxxyz + 3 * Kxxz * v1
+                   + 6 * Kxy * v0 * v2 + 6 * Kxyz * v0 + 6 * Kxz * v0 * v1
+                   + 3 * Kyz * v0sq - 2 * Kyz - rho * v1 * v2)
+                 / 24);
+
+        k[21] = omega_ab
+              * (-(6 * Kxy * v1 * v2 + 3 * Kxyy * v2 + 3 * Kxyyz + 6 * Kxyz * v1
+                   + 3 * Kxz * v1sq - 2 * Kxz + 3 * Kyy * v0 * v2
+                   + 3 * Kyyz * v0 + 6 * Kyz * v0 * v1 - rho * v0 * v2)
+                 / 24);
+
+        k[22] = omega_ab
+              * (-(3 * Kxy * v2sq - 2 * Kxy + 6 * Kxyz * v2 + 3 * Kxyzz
+                   + 6 * Kxz * v1 * v2 + 3 * Kxzz * v1 + 6 * Kyz * v0 * v2
+                   + 3 * Kyzz * v0 + 3 * Kzz * v0 * v1 - rho * v0 * v1)
+                 / 24);
+
+        k[23] = omega_ab
+              * (-(6 * Kxy * v1 * v2sq - 4 * Kxy * v1 + 3 * Kxyy * v2sq
+                   - 2 * Kxyy + 6 * Kxyyz * v2 + 3 * Kxyyzz
+                   + 12 * Kxyz * v1 * v2 + 6 * Kxyzz * v1 + 6 * Kxz * v1sq * v2
+                   - 4 * Kxz * v2 + 3 * Kxzz * v1sq - 2 * Kxzz
+                   + 3 * Kyy * v0 * v2sq - 2 * Kyy * v0 + 6 * Kyyz * v0 * v2
+                   + 3 * Kyyzz * v0 + 12 * Kyz * v0 * v1 * v2
+                   + 6 * Kyzz * v0 * v1 + 3 * Kzz * v0 * v1sq - 2 * Kzz * v0
+                   - rho * v0 * v1sq - rho * v0 * v2sq + rho * v0)
+                 / 24);
+
+        k[24] = omega_ab
+              * (-(3 * Kxx * v1 * v2sq - 2 * Kxx * v1 + 3 * Kxxy * v2sq
+                   - 2 * Kxxy + 6 * Kxxyz * v2 + 3 * Kxxyzz + 6 * Kxxz * v1 * v2
+                   + 3 * Kxxzz * v1 + 6 * Kxy * v0 * v2sq - 4 * Kxy * v0
+                   + 12 * Kxyz * v0 * v2 + 6 * Kxyzz * v0
+                   + 12 * Kxz * v0 * v1 * v2 + 6 * Kxzz * v0 * v1
+                   + 6 * Kyz * v0sq * v2 - 4 * Kyz * v2 + 3 * Kyzz * v0sq
+                   - 2 * Kyzz + 3 * Kzz * v0sq * v1 - 2 * Kzz * v1
+                   - rho * v0sq * v1 - rho * v1 * v2sq + rho * v1)
+                 / 24);
+
+        k[25] = omega_ab
+              * (-(3 * Kxx * v1sq * v2 - 2 * Kxx * v2 + 6 * Kxxy * v1 * v2
+                   + 3 * Kxxyy * v2 + 3 * Kxxyyz + 6 * Kxxyz * v1
+                   + 3 * Kxxz * v1sq - 2 * Kxxz + 12 * Kxy * v0 * v1 * v2
+                   + 6 * Kxyy * v0 * v2 + 6 * Kxyyz * v0 + 12 * Kxyz * v0 * v1
+                   + 6 * Kxz * v0 * v1sq - 4 * Kxz * v0 + 3 * Kyy * v0sq * v2
+                   - 2 * Kyy * v2 + 3 * Kyyz * v0sq - 2 * Kyyz
+                   + 6 * Kyz * v0sq * v1 - 4 * Kyz * v1 - rho * v0sq * v2
+                   - rho * v1sq * v2 + rho * v2)
+                 / 24);
+
+        k[26] = omega_ab
+              * (-(27 * Kxx * v1sq * v2sq - 18 * Kxx * v1sq - 18 * Kxx * v2sq
+                   + 12 * Kxx + 54 * Kxxy * v1 * v2sq - 36 * Kxxy * v1
+                   + 27 * Kxxyy * v2sq - 18 * Kxxyy + 54 * Kxxyyz * v2
+                   + 27 * Kxxyyzz + 108 * Kxxyz * v1 * v2 + 54 * Kxxyzz * v1
+                   + 54 * Kxxz * v1sq * v2 - 36 * Kxxz * v2 + 27 * Kxxzz * v1sq
+                   - 18 * Kxxzz + 108 * Kxy * v0 * v1 * v2sq
+                   - 72 * Kxy * v0 * v1 + 54 * Kxyy * v0 * v2sq - 36 * Kxyy * v0
+                   + 108 * Kxyyz * v0 * v2 + 54 * Kxyyzz * v0
+                   + 216 * Kxyz * v0 * v1 * v2 + 108 * Kxyzz * v0 * v1
+                   + 108 * Kxz * v0 * v1sq * v2 - 72 * Kxz * v0 * v2
+                   + 54 * Kxzz * v0 * v1sq - 36 * Kxzz * v0
+                   + 27 * Kyy * v0sq * v2sq - 18 * Kyy * v0sq - 18 * Kyy * v2sq
+                   + 12 * Kyy + 54 * Kyyz * v0sq * v2 - 36 * Kyyz * v2
+                   + 27 * Kyyzz * v0sq - 18 * Kyyzz + 108 * Kyz * v0sq * v1 * v2
+                   - 72 * Kyz * v1 * v2 + 54 * Kyzz * v0sq * v1 - 36 * Kyzz * v1
+                   + 27 * Kzz * v0sq * v1sq - 18 * Kzz * v0sq - 18 * Kzz * v1sq
+                   + 12 * Kzz - 9 * rho * v0sq * v1sq - 9 * rho * v0sq * v2sq
+                   + 9 * rho * v0sq - 9 * rho * v1sq * v2sq + 9 * rho * v1sq
+                   + 9 * rho * v2sq - 7 * rho)
+                 / 216);
     }
 
     static constexpr int get_bounce_back_idx(const int& alpha) {
