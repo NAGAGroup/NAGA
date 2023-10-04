@@ -112,7 +112,7 @@ class audio_sink_observer : public simulation_observer<Lattice> {
                 channel_configuration::stereo>::location_type& location_ref
                 = location;
             sink_locations[0] = &location_ref.first;
-            sink_locations[0] = &location_ref.second;
+            sink_locations[1] = &location_ref.second;
         }
         sink_locations_ = sclx::array<value_type, 2>{dimensions, channel_count};
         for (int i = 0; i < channel_count; ++i) {
@@ -143,11 +143,19 @@ class audio_sink_observer : public simulation_observer<Lattice> {
         );
 
         signal_history_.resize(moving_avg_samples);
-        std::fill(
-            signal_history_.begin(),
-            signal_history_.end(),
-            nominal_density
-        );
+        if constexpr (channel_config == channel_configuration::mono) {
+            std::fill(
+                signal_history_.begin(),
+                signal_history_.end(),
+                nominal_density
+            );
+        } else {
+            std::fill(
+                signal_history_.begin(),
+                signal_history_.end(),
+                std::make_pair(nominal_density, nominal_density)
+            );
+        }
 
         audio_buffer_.resize(channel_count);
     }
@@ -183,27 +191,16 @@ class audio_sink_observer : public simulation_observer<Lattice> {
 
             audio_buffer_[0].push_back(sink_signal_[0]);
         } else {
-            value_type moving_avg[2];
+            value_type moving_avg[2]{};
 
-            moving_avg[0] = std::reduce(
-                                signal_history_.begin(),
-                                signal_history_.end(),
-                                0.0,
-                                [](value_type acc,
-                                   const std::pair<value_type, value_type>& pair
-                                ) { return acc + pair.first; }
-                            )
-                          / signal_history_.size();
-
-            moving_avg[1] = std::reduce(
-                                signal_history_.begin(),
-                                signal_history_.end(),
-                                0.0,
-                                [](value_type acc,
-                                   const std::pair<value_type, value_type>& pair
-                                ) { return acc + pair.second; }
-                            )
-                          / signal_history_.size();
+            std::for_each(
+                signal_history_.begin(),
+                signal_history_.end(),
+                [&](const auto& signal) {
+                    moving_avg[0] += signal.first / signal_history_.size();
+                    moving_avg[1] += signal.second / signal_history_.size();
+                }
+            );
 
             signal_history_.pop_front();
             signal_history_.push_back({sink_signal_[0], sink_signal_[1]});
