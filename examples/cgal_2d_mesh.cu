@@ -249,7 +249,7 @@ int main() {
 
     std::cout << "Simulation parameters scaled such that the speed of sound is "
                  "300 and \n"
-                 "minimum wavelength is at least ~4 nodes: \n";
+                 "minimum wavelength is at least ~" << node_resolution << " nodes\n";
     std::cout << "    Max resolved frequency: " << max_resolved_frequency
               << " Hz\n";
     std::cout << "    Speed of sound: " << 300 << " m/s\n";
