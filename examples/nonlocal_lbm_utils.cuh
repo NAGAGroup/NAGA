@@ -17,8 +17,7 @@ struct problem_traits {
     using simulation_domain_t  = typename sim_engine_t::simulation_domain_t;
     using problem_parameters_t = typename sim_engine_t::problem_parameters_t;
     using solution_t           = typename sim_engine_t::solution_t;
-    using region_t
-        = naga::regions::hypersphere<value_type, dimensions>;
+    using region_t = naga::regions::hypersphere<value_type, dimensions>;
 
     using node_provider_t = naga::experimental::fluids::nonlocal_lbm::
         conforming_point_cloud_provider<lattice_type>;
@@ -26,7 +25,7 @@ struct problem_traits {
     class path_t {
       public:
         using point_type = naga::point_t<value_type, dimensions>;
-        virtual const point_type& operator()(const value_type& t) const = 0;
+        virtual const point_type& operator()(const value_type& t) = 0;
     };
 
     class zero_path_t : public path_t {
@@ -34,17 +33,53 @@ struct problem_traits {
         using base       = path_t;
         using point_type = typename base::point_type;
 
-        static std::shared_ptr<zero_path_t> create(const point_type& origin) {
-            return std::shared_ptr<zero_path_t>(new zero_path_t(origin));
+        static std::shared_ptr<path_t> create(const point_type& origin) {
+            return std::shared_ptr<path_t>(new zero_path_t(origin));
         }
 
-        const point_type& operator()(const value_type&) const final {
+        const point_type& operator()(const value_type&) final {
             return origin_;
         }
 
       private:
         zero_path_t(point_type origin) : origin_(std::move(origin)) {}
         naga::point_t<value_type, dimensions> origin_;
+    };
+
+    class circular_path : public path_t {
+      public:
+        using base       = path_t;
+        using point_type = typename base::point_type;
+
+        static std::shared_ptr<path_t>
+        create(const value_type& radius, const value_type& period) {
+            return std::shared_ptr<path_t>(
+                new circular_path(radius, period)
+            );
+        }
+
+        const point_type& operator()(const value_type& t) final {
+            current_point_[0]
+                = radius_
+                * naga::math::cos(
+                      2 * naga::math::pi<value_type> * t / period_
+                );
+            current_point_[1]
+                = radius_
+                * naga::math::sin(
+                      2 * naga::math::pi<value_type> * t / period_
+                );
+
+            return current_point_;
+        }
+
+      private:
+        circular_path(value_type radius, value_type period)
+            : radius_(radius),
+              period_(period) {}
+        value_type radius_;
+        value_type period_;
+        point_type current_point_;
     };
 
     class spherical_audio_source : public density_source_t {
@@ -114,7 +149,7 @@ struct problem_traits {
             const value_type& time,
             sclx::array<value_type, 1>& source_terms
         ) final {
-            region_t source_region{source_radius_, (*path_)(time)};
+            region_t source_region{source_radius_, (*path_)(time * time_multiplier_)};
 
             auto lower_frame_number = std::floor(
                 time * time_multiplier_ * static_cast<value_type>(sample_rate_)
