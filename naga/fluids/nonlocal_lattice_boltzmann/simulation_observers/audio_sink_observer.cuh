@@ -39,6 +39,8 @@
 #include <AudioFile.h>
 #include <numeric>
 #include <utility>
+#include <cereal/types/vector.hpp>
+#include <cereal/types/string.hpp>
 
 namespace naga::fluids::nonlocal_lbm {
 
@@ -51,7 +53,6 @@ template<class T, uint Dimensions>
 struct audio_sink_traits<T, Dimensions, channel_configuration::mono> {
     static constexpr uint channel_count = 1;
     using location_type                 = naga::point_t<T, Dimensions>;
-    using signal_history_type           = std::deque<T>;
 };
 
 template<class T, uint Dimensions>
@@ -59,7 +60,6 @@ struct audio_sink_traits<T, Dimensions, channel_configuration::stereo> {
     static constexpr uint channel_count = 2;
     using location_type
         = std::pair<naga::point_t<T, Dimensions>, naga::point_t<T, Dimensions>>;
-    using signal_history_type = std::deque<std::pair<T, T>>;
 };
 
 template<class Lattice, channel_configuration ChannelConfig>
@@ -85,10 +85,8 @@ class audio_sink_observer : public simulation_observer<Lattice> {
         sclx::filesystem::path output_wav_file,
         const value_type& sample_rate,
         const location_type& location,
-        const value_type& nominal_density,
         const simulation_domain_t& domain,
         const value_type& time_multiplier = 1,
-        uint moving_avg_samples           = 10,
         size_t save_frequency             = 10
     )
         : sample_rate_(sample_rate),
@@ -142,21 +140,6 @@ class audio_sink_observer : public simulation_observer<Lattice> {
             )
         );
 
-        signal_history_.resize(moving_avg_samples);
-        if constexpr (channel_config == channel_configuration::mono) {
-            std::fill(
-                signal_history_.begin(),
-                signal_history_.end(),
-                nominal_density
-            );
-        } else {
-            std::fill(
-                signal_history_.begin(),
-                signal_history_.end(),
-                std::make_pair(nominal_density, nominal_density)
-            );
-        }
-
         audio_buffer_.resize(channel_count);
     }
 
@@ -176,38 +159,10 @@ class audio_sink_observer : public simulation_observer<Lattice> {
             sink_signal_
         );
         if constexpr (ChannelConfig == channel_configuration::mono) {
-            value_type moving_avg = std::reduce(
-                                        signal_history_.begin(),
-                                        signal_history_.end(),
-                                        0.0
-                                    )
-                                  / signal_history_.size();
-
-            signal_history_.pop_front();
-            signal_history_.push_back(sink_signal_[0]);
-
-            //            sink_signal_[0] -= moving_avg;
             sink_signal_[0] -= params.nondim_factors.density_scale;
 
             audio_buffer_[0].push_back(sink_signal_[0]);
         } else {
-            value_type moving_avg[2]{};
-
-            std::for_each(
-                signal_history_.begin(),
-                signal_history_.end(),
-                [&](const auto& signal) {
-                    moving_avg[0] += signal.first / signal_history_.size();
-                    moving_avg[1] += signal.second / signal_history_.size();
-                }
-            );
-
-            signal_history_.pop_front();
-            signal_history_.push_back({sink_signal_[0], sink_signal_[1]});
-
-            //            sink_signal_[0] -= moving_avg[0];
-            //            sink_signal_[1] -= moving_avg[1];
-
             sink_signal_[0] -= params.nondim_factors.density_scale;
             sink_signal_[1] -= params.nondim_factors.density_scale;
 
@@ -250,6 +205,34 @@ class audio_sink_observer : public simulation_observer<Lattice> {
         audio_file.save(output_wav_file_.string());
     }
 
+    template<class Archive>
+    void save_state(Archive& ar) const {
+        sclx::serialize_array<Archive, value_type, 2>(ar, sink_locations_);
+        sclx::serialize_array<Archive, value_type, 1>(ar, sink_signal_);
+        ar(*interpolator_);
+        ar(time_multiplier_);
+        ar(audio_buffer_);
+        ar(output_wav_file_.string());
+        ar(sample_rate_);
+        ar(save_frequency_);
+        ar(max_signal_);
+    }
+
+    template<class Archive>
+    void load_state(Archive& ar) {
+        sclx::deserialize_array<Archive, value_type, 2>(ar, sink_locations_);
+        sclx::deserialize_array<Archive, value_type, 1>(ar, sink_signal_);
+        ar(*interpolator_);
+        ar(time_multiplier_);
+        ar(audio_buffer_);
+        std::string file_str;
+        ar(file_str);
+        output_wav_file_ = file_str;
+        ar(sample_rate_);
+        ar(save_frequency_);
+        ar(max_signal_);
+    }
+
     ~audio_sink_observer() { save(); }
 
   private:
@@ -258,10 +241,6 @@ class audio_sink_observer : public simulation_observer<Lattice> {
 
     using interpolator_t = naga::interpolation::radial_point_method<value_type>;
     std::shared_ptr<interpolator_t> interpolator_;
-    using dequeue_t =
-        typename audio_sink_traits<value_type, dimensions, channel_config>::
-            signal_history_type;
-    dequeue_t signal_history_;
 
     value_type time_multiplier_;
     typename AudioFile<value_type>::AudioBuffer audio_buffer_;

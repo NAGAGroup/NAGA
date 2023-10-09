@@ -85,6 +85,8 @@ class constant_velocity_field {
 template<class T, uint Dimensions>
 class advection_operator {
   public:
+    advection_operator() = default;
+
     friend class operator_builder<T, Dimensions>;
 
     template<class VelocityFieldMap>
@@ -211,8 +213,24 @@ class advection_operator {
         return *divergence_op_;
     }
 
-  private:
-    advection_operator() = default;
+    template<class Archive>
+    void save(Archive& ar) const {
+        ar(*divergence_op_);
+        for (const auto& arr : rk_df_dt_list_) {
+            sclx::serialize_array(ar, arr);
+        }
+    }
+
+    template<class Archive>
+    void load(Archive& ar) {
+        divergence_op_ = std::make_shared<divergence_operator<T, Dimensions>>();
+        ar(*divergence_op_);
+        for (auto& arr : rk_df_dt_list_) {
+            sclx::deserialize_array(ar, arr);
+        }
+    }
+
+    private:
     std::shared_ptr<divergence_operator<T, Dimensions>> divergence_op_;
 
     struct runge_kutta_4 {

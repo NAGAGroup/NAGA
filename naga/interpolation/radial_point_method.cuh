@@ -70,6 +70,8 @@ using default_shape_function
 template<class T>
 class radial_point_method {
   public:
+    radial_point_method() = default;
+
     static size_t get_scratchpad_size(
         size_t query_size,
         uint support_size,
@@ -140,7 +142,6 @@ class radial_point_method {
         interpolator.indices_                 = interpolating_indices;
         interpolator.group_size_              = group_size;
         interpolator.source_points_size_      = source_points.shape()[1];
-        interpolator.approx_particle_spacing_ = approx_particle_spacing;
         return interpolator;
     }
 
@@ -226,9 +227,23 @@ class radial_point_method {
         });
     }
 
-  private:
-    radial_point_method() = default;
+    template<class Archive>
+    void save(Archive& ar) const {
+        ar(group_size_, source_points_size_);
+        sclx::serialize_array(ar, weights_);
+        sclx::serialize_array(ar, indices_);
+    }
 
+    template<class Archive>
+    void load(Archive& ar) {
+        ar(group_size_, source_points_size_);
+        sclx::deserialize_array(ar, weights_);
+        sclx::array<size_t, 2> indices;
+        sclx::deserialize_array(ar, indices);
+        indices_ = indices;
+    }
+
+    private:
     // group size allows for groups of interpolated points to use the same
     // source points. This is useful, for example, when interpolating to
     // quadrature points in a meshless method as the quadrature points can
@@ -238,7 +253,6 @@ class radial_point_method {
     size_t source_points_size_{};
     sclx::array<T, 2> weights_{};
     sclx::array<const size_t, 2> indices_{};
-    T approx_particle_spacing_{};
 };
 
 }  // namespace naga::interpolation

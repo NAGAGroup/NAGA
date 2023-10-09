@@ -42,6 +42,8 @@ REGISTER_SCALIX_KERNEL_TAG(apply_divergence);
 template<class T, uint Dimensions>
 class divergence_operator {
   public:
+    divergence_operator() = default;
+
     friend class operator_builder<T, Dimensions>;
 
     using default_field_map = default_point_map<T, Dimensions>;
@@ -231,8 +233,19 @@ class divergence_operator {
         apply(default_field_map{field}, result, centering_offset);
     }
 
-  private:
-    divergence_operator() = default;
+    template<class Archive>
+    void save(Archive& ar) const {
+        sclx::serialize_array(ar, weights_);
+        sclx::serialize_array(ar, support_indices_);
+    }
+
+    template<class Archive>
+    void load(Archive& ar) {
+        sclx::deserialize_array(ar, weights_);
+        sclx::deserialize_array(ar, support_indices_);
+    }
+
+    private:
 
     static divergence_operator create(
         const sclx::array<T, 2>& domain,

@@ -643,6 +643,80 @@ class simulation_engine {
         }
     }
 
+    template<class Archive>
+    void save_state(Archive& ar) const {
+        ar(parameters_.fluid_viscosity,
+           parameters_.time_step,
+           parameters_.nondim_factors.density_scale,
+           parameters_.nondim_factors.velocity_scale,
+           parameters_.nondim_factors.length_scale,
+           parameters_.nondim_factors.time_scale,
+           parameters_.nondim_factors.viscosity_scale);
+
+        for (const auto& arr : solution_.lattice_distributions) {
+            sclx::serialize_array(ar, arr);
+        }
+        sclx::serialize_array(ar, solution_.macroscopic_values.fluid_velocity);
+        sclx::serialize_array(ar, solution_.macroscopic_values.fluid_density);
+
+        sclx::serialize_array(ar, domain_.points);
+        sclx::serialize_array(ar, domain_.boundary_normals);
+        sclx::serialize_array(ar, domain_.layer_absorption);
+        ar(domain_.num_bulk_points,
+           domain_.num_layer_points,
+           domain_.num_boundary_points,
+           domain_.nodal_spacing);
+
+        ar(*advection_operator_ptr_);
+        ar(*boundary_interpolator_ptr_);
+
+        sclx::serialize_array(ar, density_source_term_);
+        sclx::serialize_array(ar, temporary_distribution_);
+        ar(frame_number_);
+
+        ar(pml_absorption_operator_);
+    }
+
+    template<class Archive>
+    void load_state(Archive& ar) {
+        ar(parameters_.fluid_viscosity,
+           parameters_.time_step,
+           parameters_.nondim_factors.density_scale,
+           parameters_.nondim_factors.velocity_scale,
+           parameters_.nondim_factors.length_scale,
+           parameters_.nondim_factors.time_scale,
+           parameters_.nondim_factors.viscosity_scale);
+
+        for (auto& arr : solution_.lattice_distributions) {
+            sclx::deserialize_array(ar, arr);
+        }
+        sclx::deserialize_array(
+            ar,
+            solution_.macroscopic_values.fluid_velocity
+        );
+        sclx::deserialize_array(ar, solution_.macroscopic_values.fluid_density);
+
+        sclx::deserialize_array(ar, domain_.points);
+        sclx::deserialize_array(ar, domain_.boundary_normals);
+        sclx::deserialize_array(ar, domain_.layer_absorption);
+        ar(domain_.num_bulk_points,
+           domain_.num_layer_points,
+           domain_.num_boundary_points,
+           domain_.nodal_spacing);
+
+        advection_operator_ptr_ = std::make_shared<advection_operator_t>();
+        ar(*advection_operator_ptr_);
+        boundary_interpolator_ptr_ = std::make_shared<interpolater_t>();
+        ar(*boundary_interpolator_ptr_);
+
+        sclx::deserialize_array(ar, density_source_term_);
+        sclx::deserialize_array(ar, temporary_distribution_);
+        ar(frame_number_);
+
+        pml_absorption_operator_ = pml_absorption_operator<Lattice>{this};
+        ar(pml_absorption_operator_);
+    }
+
     problem_parameters<value_type> parameters_{};
     state_variables<lattice_type> solution_{};
     simulation_nodes<value_type> domain_{};
@@ -658,11 +732,11 @@ class simulation_engine {
     sclx::array<value_type, 1> temporary_distribution_{};
     uint frame_number_ = 0;
 
+    pml_absorption_operator<Lattice> pml_absorption_operator_{};
+
     std::vector<density_source<Lattice>*> density_sources_{};
 
     std::vector<simulation_observer<Lattice>*> observers_{};
-
-    pml_absorption_operator<Lattice> pml_absorption_operator_{};
 };
 
 template<class Lattice>

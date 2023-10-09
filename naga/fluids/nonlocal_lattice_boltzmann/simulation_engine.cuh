@@ -113,7 +113,17 @@ class simulation_engine {
         );
     }
 
-  private:
+    template<class Archive>
+    void save_state(Archive& archive) const {
+        engine_ptr_->save_state(archive);
+    }
+
+    template<class Archive>
+    void load_state(Archive& archive) {
+        engine_ptr_->load_state(archive);
+    }
+
+    private:
     std::shared_ptr<detail::simulation_engine<Lattice>> engine_ptr_
         = std::make_shared<detail::simulation_engine<Lattice>>();
 };

@@ -42,6 +42,8 @@
 #include <vtkPolyData.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLPolyDataWriter.h>
+#include <cereal/types/vector.hpp>
+#include <cereal/types/string.hpp>
 
 namespace naga::fluids::nonlocal_lbm {
 
@@ -90,7 +92,9 @@ class vtk_observer : public simulation_observer<Lattice> {
         }
         current_frame_ = save_frame + 1;
 
-        previous_frame_future_.get();
+        if (previous_frame_future_.valid()) {
+            previous_frame_future_.get();
+        }
 
         vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
         points->SetNumberOfPoints(static_cast<vtkIdType>(domain.points.shape(
@@ -220,12 +224,31 @@ class vtk_observer : public simulation_observer<Lattice> {
         previous_frame_future_ = std::move(fut);
     }
 
+    template<class Archive>
+    void save_state(Archive& ar) const {
+        if (previous_frame_future_.valid()) {
+            previous_frame_future_.wait();
+        }
+        ar(output_directory_.string());
+        ar(time_multiplier_, frame_rate_, current_frame_);
+    }
+
+    template<class Archive>
+    void load_state(Archive& ar) {
+        if (previous_frame_future_.valid()) {
+            previous_frame_future_.wait();
+        }
+        std::string output_directory_str;
+        ar(output_directory_str);
+        output_directory_ = output_directory_str;
+        ar(time_multiplier_, frame_rate_, current_frame_);
+    }
+
   private:
     sclx::filesystem::path output_directory_;
     value_type time_multiplier_;
     value_type frame_rate_;
-    std::future<void> previous_frame_future_
-        = std::async(std::launch::deferred, []() {});
+    std::future<void> previous_frame_future_;
     size_t current_frame_ = 0;
 };
 
