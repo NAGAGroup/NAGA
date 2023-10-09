@@ -34,6 +34,8 @@
 
 #include "../simulation_observer.cuh"
 
+#include <cereal/types/string.hpp>
+#include <cereal/types/vector.hpp>
 #include <vtkDoubleArray.h>
 #include <vtkFloatArray.h>
 #include <vtkNew.h>
@@ -42,8 +44,6 @@
 #include <vtkPolyData.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLPolyDataWriter.h>
-#include <cereal/types/vector.hpp>
-#include <cereal/types/string.hpp>
 
 namespace naga::fluids::nonlocal_lbm {
 

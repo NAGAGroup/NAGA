@@ -37,10 +37,10 @@
 #include "../simulation_observer.cuh"
 
 #include <AudioFile.h>
+#include <cereal/types/string.hpp>
+#include <cereal/types/vector.hpp>
 #include <numeric>
 #include <utility>
-#include <cereal/types/vector.hpp>
-#include <cereal/types/string.hpp>
 
 namespace naga::fluids::nonlocal_lbm {
 

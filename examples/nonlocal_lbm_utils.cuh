@@ -53,22 +53,16 @@ struct problem_traits {
 
         static std::shared_ptr<path_t>
         create(const value_type& radius, const value_type& period) {
-            return std::shared_ptr<path_t>(
-                new circular_path(radius, period)
-            );
+            return std::shared_ptr<path_t>(new circular_path(radius, period));
         }
 
         const point_type& operator()(const value_type& t) final {
             current_point_[0]
                 = radius_
-                * naga::math::cos(
-                      2 * naga::math::pi<value_type> * t / period_
-                );
+                * naga::math::cos(2 * naga::math::pi<value_type> * t / period_);
             current_point_[1]
                 = radius_
-                * naga::math::sin(
-                      2 * naga::math::pi<value_type> * t / period_
-                );
+                * naga::math::sin(2 * naga::math::pi<value_type> * t / period_);
 
             return current_point_;
         }
@@ -149,7 +143,9 @@ struct problem_traits {
             const value_type& time,
             sclx::array<value_type, 1>& source_terms
         ) final {
-            region_t source_region{source_radius_, (*path_)(time * time_multiplier_)};
+            region_t source_region{
+                source_radius_,
+                (*path_)(time * time_multiplier_)};
 
             auto lower_frame_number = std::floor(
                 time * time_multiplier_ * static_cast<value_type>(sample_rate_)

@@ -123,7 +123,7 @@ class simulation_engine {
         engine_ptr_->load_state(archive);
     }
 
-    private:
+  private:
     std::shared_ptr<detail::simulation_engine<Lattice>> engine_ptr_
         = std::make_shared<detail::simulation_engine<Lattice>>();
 };

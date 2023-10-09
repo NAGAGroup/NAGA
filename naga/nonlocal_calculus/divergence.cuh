@@ -192,7 +192,7 @@ class divergence_operator {
                     auto local_thread_id = info.local_thread_id();
                     {
                         T* local_weights = &weights(0, index[0], index[1]);
-                        T& local_div = divergence_tmp[local_thread_id];
+                        T& local_div     = divergence_tmp[local_thread_id];
                         {
                             T div = 0;
                             for (uint d = 0; d < Dimensions; ++d) {
@@ -206,8 +206,9 @@ class divergence_operator {
                     handler.syncthreads();
 
                     T* shared_result = &divergence_tmp(0, local_thread_id[1]);
-                    for (uint s = 1; s < block_shape[0]; s*=2) {
-                        uint idx = 2 * s * static_cast<uint>(local_thread_id[0]);
+                    for (uint s = 1; s < block_shape[0]; s *= 2) {
+                        uint idx
+                            = 2 * s * static_cast<uint>(local_thread_id[0]);
 
                         if (idx < block_shape[0]) {
                             shared_result[idx] += shared_result[idx + s];
@@ -245,8 +246,7 @@ class divergence_operator {
         sclx::deserialize_array(ar, support_indices_);
     }
 
-    private:
-
+  private:
     static divergence_operator create(
         const sclx::array<T, 2>& domain,
         const sclx::array<sclx::index_t, 2>& support_indices,

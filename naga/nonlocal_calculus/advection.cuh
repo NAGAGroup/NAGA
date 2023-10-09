@@ -230,7 +230,7 @@ class advection_operator {
         }
     }
 
-    private:
+  private:
     std::shared_ptr<divergence_operator<T, Dimensions>> divergence_op_;
 
     struct runge_kutta_4 {

@@ -377,14 +377,14 @@ class pml_absorption_operator<d2q9_lattice<T>> {
 
     template<class Archive>
     void save(Archive& ar) const {
-        for (const auto& arr: lattice_Q1_values_) {
+        for (const auto& arr : lattice_Q1_values_) {
             sclx::serialize_array(ar, arr);
         }
     }
 
     template<class Archive>
     void load(Archive& ar) {
-        for (auto& arr: lattice_Q1_values_) {
+        for (auto& arr : lattice_Q1_values_) {
             sclx::deserialize_array(ar, arr);
         }
     }
@@ -842,25 +842,25 @@ class pml_absorption_operator<d3q27_lattice<T>> {
 
     template<class Archive>
     void save(Archive& ar) const {
-        for (const auto& arr: lattice_Q1_values_) {
+        for (const auto& arr : lattice_Q1_values_) {
             sclx::serialize_array(ar, arr);
         }
-        for (auto& arr: lattice_Q2_values_) {
+        for (auto& arr : lattice_Q2_values_) {
             sclx::serialize_array(ar, arr);
         }
     }
 
     template<class Archive>
     void load(Archive& ar) {
-        for (auto& arr: lattice_Q1_values_) {
+        for (auto& arr : lattice_Q1_values_) {
             sclx::deserialize_array(ar, arr);
         }
-        for (auto& arr: lattice_Q2_values_) {
+        for (auto& arr : lattice_Q2_values_) {
             sclx::deserialize_array(ar, arr);
         }
     }
 
-    private:
+  private:
     simulation_engine<lattice>* engine_;
     sclx::array_list<value_type, 1, lattice_size> lattice_Q1_values_;
     sclx::array_list<value_type, 1, lattice_size> lattice_Q2_values_;

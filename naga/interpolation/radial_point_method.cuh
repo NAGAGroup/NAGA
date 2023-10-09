@@ -138,10 +138,10 @@ class radial_point_method {
             shape_function,
             devices
         );
-        interpolator.weights_                 = weights;
-        interpolator.indices_                 = interpolating_indices;
-        interpolator.group_size_              = group_size;
-        interpolator.source_points_size_      = source_points.shape()[1];
+        interpolator.weights_            = weights;
+        interpolator.indices_            = interpolating_indices;
+        interpolator.group_size_         = group_size;
+        interpolator.source_points_size_ = source_points.shape()[1];
         return interpolator;
     }
 
@@ -243,7 +243,7 @@ class radial_point_method {
         indices_ = indices;
     }
 
-    private:
+  private:
     // group size allows for groups of interpolated points to use the same
     // source points. This is useful, for example, when interpolating to
     // quadrature points in a meshless method as the quadrature points can
