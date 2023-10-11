@@ -371,7 +371,7 @@ std::vector<std::pair<size_t, double>> remove_points_outside_2d_contours(
         distances_to_edges.end(),
         valid_bulk_points.begin(),
         [&](const auto& d) {
-            return d.second > 0.5 * approx_point_spacing ? 1 : 0;
+            return d.second > 0.3 * approx_point_spacing ? 1 : 0;
         }
     );
 
