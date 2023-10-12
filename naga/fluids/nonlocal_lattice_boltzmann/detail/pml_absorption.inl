@@ -41,6 +41,72 @@ class pml_div_Q1_field_map {
     static constexpr uint lattice_size = lattice_traits<Lattice>::size;
 
     using point_type = point_t<value_type, dimensions>;
+    using c0_type = point_t<value_type, dimensions>;
+
+    __host__  pml_div_Q1_field_map(
+        const c0_type& c0,
+        const sclx::array<const value_type, 1>& Q1,
+        const sclx::array<const value_type, 1>& absorption_coeff,
+        size_t pml_start_index,
+        size_t pml_end_index
+    ) {
+        construct(c0, absorption_coeff, Q1, pml_start_index, pml_end_index);
+    }
+
+    __host__ __device__ point_type operator[](sclx::index_t i) const {
+        point_type c;
+        memcpy(&c, &field_values_(0, i), sizeof(value_type) * dimensions);
+        return c;
+    }
+
+    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
+    ) const {
+        return (*this)[index[0]];
+    }
+
+    __host__ __device__ size_t size() const {
+        return field_values_.shape()[1];
+    }
+
+
+    __host__ __device__ const value_type* pointer_to(const sclx::index_t& i) const {
+        return &field_values_(0, i);
+    }
+
+    __host__ void construct(
+        const c0_type& c0,
+        const sclx::array<const value_type, 1>& absorption_coeff,
+        const sclx::array<const value_type, 1>& Q1,
+        size_t pml_start_index,
+        size_t pml_end_index
+    ) {
+        field_values_ = sclx::array<value_type, 2>({dimensions, Q1.elements()});
+        auto& field_values = field_values_;
+
+        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            handler.launch(
+                sclx::md_range_t<1>{Q1.elements()},
+                field_values,
+                [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                    if (idx[0] < pml_start_index || idx[0] >= pml_end_index) {
+                        for (uint d = 0; d < dimensions; d++) {
+                            field_values(d, idx[0]) = 0.f;
+                        }
+                    } else {
+                        size_t pml_index = idx[0] - pml_start_index;
+                        value_type sigma = absorption_coeff[pml_index];
+                        for (uint d = 0; d < dimensions; d++) {
+                            field_values(d, idx[0])
+                                = -c0[d] * sigma * Q1[idx[0]];
+                        }
+                    }
+                }
+            );
+        }).get();
+    }
+
+  private:
+    sclx::array<value_type, 2> field_values_;
 };
 
 template<class Lattice>
@@ -52,67 +118,6 @@ class partial_pml_subtask {
 };
 
 // ------------------ D2Q9 Lattice Specialization ------------------
-
-template<class T>
-class pml_div_Q1_field_map<d2q9_lattice<T>> {
-  public:
-    using lattice    = d2q9_lattice<T>;
-    using value_type = typename lattice_traits<lattice>::value_type;
-    static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
-    static constexpr uint lattice_size = lattice_traits<lattice>::size;
-
-    using point_type = point_t<value_type, dimensions>;
-
-    __host__ __device__ pml_div_Q1_field_map(
-        const value_type* c0,
-        const sclx::array<const value_type, 1>& absorption_coeff,
-        const sclx::array<const value_type, 1>& Q1,
-        size_t pml_start_index,
-        size_t pml_end_index
-    )
-        : absorption_coeff(absorption_coeff),
-          Q1(Q1),
-          pml_start_index(pml_start_index),
-          pml_end_index(pml_end_index) {
-
-        for (uint d = 0; d < dimensions; d++) {
-            this->c0[d] = c0[d];
-        }
-    }
-
-    __host__ __device__ point_type operator[](sclx::index_t i) const {
-        point_type c;
-        if (i < pml_start_index || i >= pml_end_index) {
-            for (uint d = 0; d < dimensions; d++) {
-                c[d] = 0.f;
-            }
-        } else {
-            size_t pml_index = i - pml_start_index;
-            value_type sigma = absorption_coeff[pml_index];
-            for (uint d = 0; d < dimensions; d++) {
-                c[d] = -c0[d] * sigma * Q1[pml_index];
-            }
-        }
-
-        return c;
-    }
-
-    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
-    ) const {
-        return (*this)[index[0]];
-    }
-
-    __host__ __device__ size_t size() const {
-        return absorption_coeff.elements();
-    }
-
-  private:
-    value_type c0[dimensions];
-    sclx::array<const value_type, 1> absorption_coeff;
-    sclx::array<const value_type, 1> Q1;
-    size_t pml_start_index;
-    size_t pml_end_index;
-};
 
 template<class T>
 class partial_pml_subtask<d2q9_lattice<T>> {
@@ -339,8 +344,13 @@ class pml_absorption_operator<d2q9_lattice<T>> {
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             const auto& Q1 = lattice_Q1_values_[alpha];
 
+            typename pml_div_Q1_field_map<lattice>::point_type c0;
+            for (uint d = 0; d < dimensions; ++d) {
+                c0[d] = lattice_interface<lattice>::lattice_velocities()
+                            .vals[alpha][d];
+            }
             pml_div_Q1_field_map<lattice> field_map{
-                lattice_interface<lattice>::lattice_velocities().vals[alpha],
+                c0,
                 Q1,
                 engine_->domain_.layer_absorption,
                 engine_->domain_.num_bulk_points,
@@ -397,67 +407,6 @@ class pml_absorption_operator<d2q9_lattice<T>> {
 // ------------------------ D3Q27 Specialization ------------------------------
 
 template<class T>
-class pml_div_Q1_field_map<d3q27_lattice<T>> {
-  public:
-    using lattice    = d3q27_lattice<T>;
-    using value_type = typename lattice_traits<lattice>::value_type;
-    static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
-    static constexpr uint lattice_size = lattice_traits<lattice>::size;
-
-    using point_type = point_t<value_type, dimensions>;
-
-    __host__ __device__ pml_div_Q1_field_map(
-        const value_type* c0,
-        const sclx::array<const value_type, 1>& absorption_coeff,
-        const sclx::array<const value_type, 1>& Q1,
-        size_t pml_start_index,
-        size_t pml_end_index
-    )
-        : absorption_coeff(absorption_coeff),
-          Q1(Q1),
-          pml_start_index(pml_start_index),
-          pml_end_index(pml_end_index) {
-
-        for (uint d = 0; d < dimensions; d++) {
-            this->c0[d] = c0[d];
-        }
-    }
-
-    __host__ __device__ point_type operator[](sclx::index_t i) const {
-        point_type c;
-        if (i < pml_start_index || i >= pml_end_index) {
-            for (uint d = 0; d < dimensions; d++) {
-                c[d] = 0.f;
-            }
-        } else {
-            size_t pml_index = i - pml_start_index;
-            value_type sigma = absorption_coeff[pml_index];
-            for (uint d = 0; d < dimensions; d++) {
-                c[d] = -2.f * c0[d] * sigma * Q1[pml_index];
-            }
-        }
-
-        return c;
-    }
-
-    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
-    ) const {
-        return (*this)[index[0]];
-    }
-
-    __host__ __device__ size_t size() const {
-        return absorption_coeff.elements();
-    }
-
-  private:
-    value_type c0[dimensions];
-    sclx::array<const value_type, 1> absorption_coeff;
-    sclx::array<const value_type, 1> Q1;
-    size_t pml_start_index;
-    size_t pml_end_index;
-};
-
-template<class T>
 class pml_div_Q2_field_map {
   public:
     using lattice    = d3q27_lattice<T>;
@@ -466,38 +415,21 @@ class pml_div_Q2_field_map {
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
 
     using point_type = point_t<value_type, dimensions>;
+    using c0_type = point_t<value_type, dimensions>;
 
-    __host__ __device__ pml_div_Q2_field_map(
-        const value_type* c0,
-        const sclx::array<const value_type, 1>& absorption_coeff,
+    __host__  pml_div_Q2_field_map(
+        const c0_type& c0,
         const sclx::array<const value_type, 1>& Q2,
+        const sclx::array<const value_type, 1>& absorption_coeff,
         size_t pml_start_index,
         size_t pml_end_index
-    )
-        : absorption_coeff(absorption_coeff),
-          Q2(Q2),
-          pml_start_index(pml_start_index),
-          pml_end_index(pml_end_index) {
-
-        for (uint d = 0; d < dimensions; d++) {
-            this->c0[d] = c0[d];
-        }
+    ) {
+        construct(c0, absorption_coeff, Q2, pml_start_index, pml_end_index);
     }
 
     __host__ __device__ point_type operator[](sclx::index_t i) const {
         point_type c;
-        if (i < pml_start_index || i >= pml_end_index) {
-            for (uint d = 0; d < dimensions; d++) {
-                c[d] = 0.f;
-            }
-        } else {
-            size_t pml_index = i - pml_start_index;
-            value_type sigma = absorption_coeff[pml_index];
-            for (uint d = 0; d < dimensions; d++) {
-                c[d] = c0[d] * sigma * sigma * Q2[pml_index];
-            }
-        }
-
+        memcpy(&c, &field_values_(0, i), sizeof(value_type) * dimensions);
         return c;
     }
 
@@ -507,15 +439,47 @@ class pml_div_Q2_field_map {
     }
 
     __host__ __device__ size_t size() const {
-        return absorption_coeff.elements();
+        return field_values_.shape()[1];
+    }
+
+    __host__ __device__ const value_type* pointer_to(const sclx::index_t& i) const {
+        return &field_values_(0, i);
+    }
+
+    __host__  void construct(
+        const c0_type& c0,
+        const sclx::array<const value_type, 1>& absorption_coeff,
+        const sclx::array<const value_type, 1>& Q2,
+        size_t pml_start_index,
+        size_t pml_end_index
+    ) {
+        field_values_ = sclx::array<value_type, 2>({dimensions, Q2.elements()});
+        auto& field_values = field_values_;
+
+        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            handler.launch(
+                sclx::md_range_t<1>{Q2.elements()},
+                field_values,
+                [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                    if (idx[0] < pml_start_index || idx[0] >= pml_end_index) {
+                        for (uint d = 0; d < dimensions; d++) {
+                            field_values(d, idx[0]) = 0.f;
+                        }
+                    } else {
+                        size_t pml_index = idx[0] - pml_start_index;
+                        value_type sigma = absorption_coeff[pml_index];
+                        for (uint d = 0; d < dimensions; d++) {
+                            field_values(d, idx[0])
+                                = c0[d] * sigma * sigma * Q2[idx[0]];
+                        }
+                    }
+                }
+            );
+        }).get();
     }
 
   private:
-    value_type c0[dimensions];
-    sclx::array<const value_type, 1> absorption_coeff;
-    sclx::array<const value_type, 1> Q2;
-    size_t pml_start_index;
-    size_t pml_end_index;
+    sclx::array<value_type, 2> field_values_;
 };
 
 template<class T>
@@ -775,8 +739,13 @@ class pml_absorption_operator<d3q27_lattice<T>> {
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             const auto& Q1 = lattice_Q1_values_[alpha];
 
+            typename pml_div_Q1_field_map<lattice>::point_type c0;
+            for (uint d = 0; d < dimensions; ++d) {
+                c0[d] = lattice_interface<lattice>::lattice_velocities()
+                            .vals[alpha][d];
+            }
             pml_div_Q1_field_map<lattice> field_map_Q1{
-                lattice_interface<lattice>::lattice_velocities().vals[alpha],
+                c0,
                 Q1,
                 engine_->domain_.layer_absorption,
                 engine_->domain_.num_bulk_points,
@@ -798,7 +767,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             const auto& Q2 = lattice_Q2_values_[alpha];
 
             pml_div_Q2_field_map<value_type> field_map_Q2{
-                lattice_interface<lattice>::lattice_velocities().vals[alpha],
+                c0,
                 Q2,
                 engine_->domain_.layer_absorption,
                 engine_->domain_.num_bulk_points,

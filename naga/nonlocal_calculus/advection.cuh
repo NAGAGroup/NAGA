@@ -67,13 +67,16 @@ class constant_velocity_field {
         return map;
     }
 
-    __host__ __device__ point_type operator[](const sclx::index_t& index
-    ) const {
+    __host__ __device__ point_type operator[](const sclx::index_t&) const {
         point_type vector_value;
         for (uint i = 0; i < Dimensions; ++i) {
             vector_value[i] = velocity_[i];
         }
         return vector_value;
+    }
+
+    __host__ __device__ const T* pointer_to(const sclx::index_t&) const {
+        return velocity_;
     }
 
   private:
@@ -96,20 +99,43 @@ class advection_operator {
         friend class advection_operator;
 
         divergence_field_map(
-            const VelocityFieldMap& velocity_field,
+            const VelocityFieldMap& velocity_field_map,
             const sclx::array<T, 1>& scalar_field,
             T centering_offset = T(0)
-        )
-            : velocity_field_(velocity_field),
-              scalar_field_(scalar_field),
-              centering_offset_(centering_offset) {}
+        ) {
+            construct(velocity_field_map, scalar_field, centering_offset);
+        }
+
+        __host__ void construct(
+            const VelocityFieldMap& velocity_field_map,
+            const sclx::array<T, 1>& scalar_field,
+            T centering_offset = T(0)
+        ) {
+            velocity_field_
+                = sclx::array<T, 2>{Dimensions, scalar_field.elements()};
+            auto& velocity_field = velocity_field_;
+
+            sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+                handler.launch(
+                    sclx::md_range_t<1>{scalar_field.elements()},
+                    velocity_field,
+                    [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                        auto velocity = velocity_field_map[idx[0]];
+                        for (uint i = 0; i < Dimensions; ++i) {
+                            velocity_field(i, idx[0])
+                                = velocity[i]
+                                * -(scalar_field[idx] - centering_offset);
+                        }
+                    }
+                );
+            }).get();
+        }
 
         __host__ __device__ point_type operator[](const sclx::index_t& index
         ) const {
-            point_type velocity = velocity_field_[index];
-            T scalar            = scalar_field_[index];
+            point_type velocity;
             for (uint i = 0; i < Dimensions; ++i) {
-                velocity[i] *= -(scalar - centering_offset_);
+                velocity[i] = velocity_field_(i, index);
             }
 
             return velocity;
@@ -121,13 +147,15 @@ class advection_operator {
         }
 
         __host__ __device__ size_t size() const {
-            return scalar_field_.elements();
+            return velocity_field_.shape()[1];
+        }
+
+        __host__ __device__ const T* pointer_to(const sclx::index_t& i) const {
+            return &velocity_field_(0, i);
         }
 
       private:
-        VelocityFieldMap velocity_field_;
-        sclx::array<T, 1> scalar_field_;
-        T centering_offset_;
+        sclx::array<T, 2> velocity_field_;
     };
 
     static advection_operator create(const sclx::array<T, 2>& domain) {
@@ -157,7 +185,10 @@ class advection_operator {
 
         divergence_op_->apply(div_input_field, rk_df_dt_list_[0]);
 
-        div_input_field.scalar_field_ = f;
+        div_input_field = divergence_field_map<FieldMap>{
+            velocity_field,
+            f,
+            centering_offset};
 
         std::vector<std::future<void>> transform_futures;
 

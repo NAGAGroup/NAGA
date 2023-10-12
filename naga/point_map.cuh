@@ -76,6 +76,10 @@ class default_point_map {
         return source_points_.shape()[1];
     }
 
+    __host__ __device__ const value_type* pointer_to(const sclx::index_t& i) const {
+        return &source_points_(0, i);
+    }
+
   private:
     sclx::array<typename point_type::value_type, 2> source_points_;
 };

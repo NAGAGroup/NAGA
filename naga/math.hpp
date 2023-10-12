@@ -40,13 +40,13 @@ namespace naga::math {
 template<class T, class U>
 NAGA_HOST NAGA_DEVICE auto min(const T& x, const U& y)
     -> decltype(x < y ? x : y) {
-    return std::min(x, y);
+    return x < y ? x : y;
 }
 
 template<class T, class U>
 NAGA_HOST NAGA_DEVICE auto max(const T& x, const U& y)
     -> decltype(x > y ? x : y) {
-    return std::max(x, y);
+    return x > y ? x : y;
 }
 
 template<class T>

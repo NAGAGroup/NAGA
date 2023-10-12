@@ -44,7 +44,10 @@ namespace detail {
 template<auto Start, auto End, class Loop>
 __device__ void divergence_unrolled_loop(Loop&& f) {
     static_assert(Start <= End, "Start must be less than or equal to End.");
-    static_assert(std::is_integral_v<decltype(Start)>, "Start must be integral.");
+    static_assert(
+        std::is_integral_v<decltype(Start)>,
+        "Start must be integral."
+    );
     static_assert(std::is_integral_v<decltype(End)>, "End must be integral.");
     if constexpr (Start == End) {
         return;
@@ -53,7 +56,7 @@ __device__ void divergence_unrolled_loop(Loop&& f) {
         divergence_unrolled_loop<Start + 1, End, Loop>(std::forward<Loop>(f));
     }
 }
-}
+}  // namespace detail
 
 template<class T, uint Dimensions>
 class divergence_operator {
@@ -186,7 +189,7 @@ class divergence_operator {
             constexpr uint num_solution_nodes_per_block = 8;
             constexpr uint num_threads
                 = num_solution_nodes_per_block * detail::num_interp_support;
-            constexpr uint prefetch_distance = 16;
+            constexpr uint prefetch_distance = 2;
 
             sclx::shape_t<2> block_shape{
                 detail::num_interp_support,
@@ -216,7 +219,7 @@ class divergence_operator {
                     num_solution_nodes_per_block,
                     prefetch_distance}};
 
-            sclx::local_array<uint, 2> pipeline_wait_prior{
+            sclx::local_array<T, 2> pipeline_wait_prior{
                 handler,
                 block_shape};
 
@@ -232,212 +235,185 @@ class divergence_operator {
                     const sclx::md_index_t<2>& index,
                     const sclx::kernel_info<2, 2>& info
                 ) mutable {
-                    auto local_thread_id = info.local_thread_id();
-                    auto linear_index    = index.as_linear(info.global_range());
-                    auto start_idx
-                        = info.start_index().as_linear(info.global_range());
+                    const auto& local_thread_id = info.local_thread_id();
+                    const auto& linear_index    = [&]() {
+                        return index.as_linear(info.global_range());
+                    };
+                    const auto& start_idx = [&]() {
+                        return info.start_index().as_linear(info.global_range()
+                        );
+                    };
                     if (info.stride_count() == 0) {
                         pipeline_wait_prior[local_thread_id] = 0;
-                        detail::divergence_unrolled_loop<0, prefetch_distance>([&](const int& i) {
-                            if (linear_index + i * info.grid_stride()
-                                >= start_idx + info.device_range().elements()) {
-                                return;
-                            }
+                        detail::divergence_unrolled_loop<0, prefetch_distance>(
+                            [&](const int& i) {
+                                if (linear_index() + i * info.grid_stride()
+                                    >= start_idx()
+                                           + info.device_range().elements()) {
+                                    return;
+                                }
 
-                            detail::divergence_unrolled_loop<0, Dimensions>([&](int d){
+                                detail::divergence_unrolled_loop<0, Dimensions>(
+                                    [&](const int& d) {
+                                        __pipeline_memcpy_async(
+                                            &weights_prefetch(
+                                                d,
+                                                local_thread_id[0],
+                                                local_thread_id[1],
+                                                i
+                                            ),
+                                            &weights(
+                                                d,
+                                                local_thread_id[0],
+                                                (linear_index()
+                                                 + i * info.grid_stride())
+                                                    / detail::num_interp_support
+                                            ),
+                                            sizeof(T)
+                                        );
+                                        __pipeline_commit();
+                                        ++pipeline_wait_prior[local_thread_id];
+                                    }
+                                );
+
+                                auto support_index = support_indices(
+                                    local_thread_id[0],
+                                    (linear_index() + i * info.grid_stride())
+                                        / detail::num_interp_support
+                                );
+                                detail::divergence_unrolled_loop<
+                                    0,
+                                    field_dimensions>([&](const int& d) {
+                                    __pipeline_memcpy_async(
+                                        &field_prefetch(
+                                            d,
+                                            local_thread_id[0],
+                                            local_thread_id[1],
+                                            i
+                                        ),
+                                        field.pointer_to(support_index) + d,
+                                        sizeof(T)
+                                    );
+                                    __pipeline_commit();
+                                    ++pipeline_wait_prior[local_thread_id];
+                                });
+                            }
+                        );
+                    }
+
+                    T local_weights[Dimensions];
+                    T support_field_value[field_dimensions];
+                    detail::divergence_unrolled_loop<0, Dimensions>(
+                        [&](const int& d) {
+                            __pipeline_wait_prior(
+                                --pipeline_wait_prior[local_thread_id]
+                            );
+                            local_weights[d] = weights_prefetch(
+                                d,
+                                local_thread_id[0],
+                                local_thread_id[1],
+                                info.stride_count() % prefetch_distance
+                            );
+                        }
+                    );
+                    detail::divergence_unrolled_loop<0, field_dimensions>(
+                        [&](const int& d) {
+                            __pipeline_wait_prior(
+                                --pipeline_wait_prior[local_thread_id]
+                            );
+                            support_field_value[d] = field_prefetch(
+                                d,
+                                local_thread_id[0],
+                                local_thread_id[1],
+                                info.stride_count() % prefetch_distance
+                            );
+                        }
+                    );
+
+                    if (linear_index() + prefetch_distance * info.grid_stride()
+                        < start_idx() + info.device_range().elements()) {
+                        detail::divergence_unrolled_loop<0, Dimensions>(
+                            [&](const int& d) {
                                 __pipeline_memcpy_async(
                                     &weights_prefetch(
                                         d,
                                         local_thread_id[0],
                                         local_thread_id[1],
-                                        i
+                                        info.stride_count() % prefetch_distance
                                     ),
                                     &weights(
                                         d,
                                         local_thread_id[0],
-                                        (linear_index + i * info.grid_stride())
+                                        (linear_index()
+                                         + prefetch_distance
+                                               * info.grid_stride())
                                             / detail::num_interp_support
                                     ),
                                     sizeof(T)
                                 );
                                 __pipeline_commit();
                                 ++pipeline_wait_prior[local_thread_id];
-                            });
+                            }
+                        );
 
-                            auto support_index = support_indices(
-                                local_thread_id[0],
-                                (linear_index + i * info.grid_stride())
-                                    / detail::num_interp_support
-                            );
-                            auto field_value = field[support_index];
-                            __pipeline_memcpy_async(
-                                &field_prefetch(
-                                    0,
-                                    local_thread_id[0],
-                                    local_thread_id[1],
-                                    i
-                                ),
-                                &field_value[0],
-                                sizeof(T)
-                            );
-                            __pipeline_commit();
-                            ++pipeline_wait_prior[local_thread_id];
-
-                            __pipeline_memcpy_async(
-                                &field_prefetch(
-                                    1,
-                                    local_thread_id[0],
-                                    local_thread_id[1],
-                                    i
-                                ),
-                                &field_value[1],
-                                sizeof(T)
-                            );
-                            __pipeline_commit();
-                            ++pipeline_wait_prior[local_thread_id];
-
-                            if constexpr (field_dimensions == 3) {
+                        auto support_index = support_indices(
+                            local_thread_id[0],
+                            (linear_index()
+                             + prefetch_distance * info.grid_stride())
+                                / detail::num_interp_support
+                        );
+                        detail::divergence_unrolled_loop<0, field_dimensions>(
+                            [&](const int& d) {
                                 __pipeline_memcpy_async(
                                     &field_prefetch(
-                                        2,
+                                        d,
                                         local_thread_id[0],
                                         local_thread_id[1],
-                                        i
+                                        info.stride_count() % prefetch_distance
                                     ),
-                                    &field_value[2],
+                                    field.pointer_to(support_index) + d,
                                     sizeof(T)
                                 );
                                 __pipeline_commit();
                                 ++pipeline_wait_prior[local_thread_id];
                             }
-                        });
-                    }
-
-                    T local_weights[Dimensions];
-                    T support_field_value[field_dimensions];
-                    detail::divergence_unrolled_loop<0, Dimensions>([&](int d){
-                        __pipeline_wait(--pipeline_wait_prior[local_thread_id]);
-                        local_weights[d] = weights_prefetch(
-                            d,
-                            local_thread_id[0],
-                            local_thread_id[1],
-                            info.stride_count() % prefetch_distance
                         );
-                    });
-                    detail::divergence_unrolled_loop<0, field_dimensions>([&](int d){
-                        __pipeline_wait(--pipeline_wait_prior[local_thread_id]);
-                        support_field_value[d] = field_prefetch(
-                            d,
-                            local_thread_id[0],
-                            local_thread_id[1],
-                            info.stride_count() % prefetch_distance
-                        );
-                    });
-
-                    if (linear_index + prefetch_distance * info.grid_stride()
-                        < start_idx + info.device_range().elements()) {
-                        __pipeline_memcpy_async(
-                            &support_indices_prefetch(
-                                local_thread_id[0],
-                                local_thread_id[1],
-                                info.stride_count() % prefetch_distance
-                            ),
-                            &support_indices(
-                                local_thread_id[0],
-                                (linear_index
-                                 + prefetch_distance * info.grid_stride())
-                                    / detail::num_interp_support
-                            ),
-                            sizeof(sclx::index_t)
-                        );
-                        __pipeline_commit();
-                        ++pipeline_wait_prior[local_thread_id];
-
-                        __pipeline_memcpy_async(
-                            &weights_prefetch(
-                                0,
-                                local_thread_id[0],
-                                local_thread_id[1],
-                                info.stride_count() % prefetch_distance
-                            ),
-                            &weights(
-                                0,
-                                local_thread_id[0],
-                                (linear_index
-                                 + prefetch_distance * info.grid_stride())
-                                    / detail::num_interp_support
-                            ),
-                            sizeof(T)
-                        );
-                        __pipeline_commit();
-                        ++pipeline_wait_prior[local_thread_id];
-
-                        __pipeline_memcpy_async(
-                            &weights_prefetch(
-                                1,
-                                local_thread_id[0],
-                                local_thread_id[1],
-                                info.stride_count() % prefetch_distance
-                            ),
-                            &weights(
-                                1,
-                                local_thread_id[0],
-                                (linear_index
-                                 + prefetch_distance * info.grid_stride())
-                                    / detail::num_interp_support
-                            ),
-                            sizeof(T)
-                        );
-                        __pipeline_commit();
-                        ++pipeline_wait_prior[local_thread_id];
-
-                        if constexpr (Dimensions == 3) {
-                            __pipeline_memcpy_async(
-                                &weights_prefetch(
-                                    2,
-                                    local_thread_id[0],
-                                    local_thread_id[1],
-                                    info.stride_count() % prefetch_distance
-                                ),
-                                &weights(
-                                    2,
-                                    local_thread_id[0],
-                                    (linear_index
-                                     + prefetch_distance * info.grid_stride())
-                                        / detail::num_interp_support
-                                ),
-                                sizeof(T)
-                            );
-                            __pipeline_commit();
-                            ++pipeline_wait_prior[local_thread_id];
-                        }
-                    }
-
-                    {
-                        T& local_div = divergence_tmp[local_thread_id];
-                        T div        = 0;
-                        detail::divergence_unrolled_loop<0, Dimensions>([&](int d){
-                            div += local_weights[d]
-                                 * (support_point_field_value[d]
-                                    - centering_offset);
-                        });
-                        local_div = div;
-                    }
-
-                    T* shared_result = &divergence_tmp(0, local_thread_id[1]);
-                    for (uint s = 1; s < block_shape[0]; s *= 2) {
-                        uint idx
-                            = 2 * s * static_cast<uint>(local_thread_id[0]);
-
-                        if (idx < block_shape[0]) {
-                            shared_result[idx] += shared_result[idx + s];
-                        }
-                        handler.syncthreads();
                     }
 
                     if (local_thread_id[0] == 0) {
-                        result[index[1]] = shared_result[0];
+                        __pipeline_wait_prior(
+                            --pipeline_wait_prior[local_thread_id]
+                        );
                     }
+                    {
+                        T& local_div = divergence_tmp[local_thread_id];
+                        T div        = 0;
+                        detail::divergence_unrolled_loop<0, Dimensions>(
+                            [&](const int& d) {
+                                div += local_weights[d]
+                                     * (support_field_value[d]
+                                        - centering_offset);
+                            }
+                        );
+                        local_div = div;
+                    }
+
+                    auto& shared_result = divergence_tmp;
+                    for (uint s = 1; s < block_shape[0]; s *= 2) {
+                        uint idx
+                            = 2 * s * static_cast<uint>(local_thread_id[0]);
+                        handler.syncthreads();
+
+                        if (idx < block_shape[0]) {
+                            shared_result(idx, local_thread_id[1])
+                                += shared_result(idx + s, local_thread_id[1]);
+                        }
+                    }
+
+                    if (local_thread_id[0] == 0) {
+                        result[index[1]] = shared_result(0, local_thread_id[1]);
+                    }
+                    handler.syncthreads();
                 },
                 block_shape,
                 grid_size
