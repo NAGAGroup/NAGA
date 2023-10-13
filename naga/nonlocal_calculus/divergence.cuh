@@ -206,14 +206,14 @@ class divergence_operator {
                     handler.syncthreads();
 
                     T* shared_result = &divergence_tmp(0, local_thread_id[1]);
-                    for (uint s = 1; s < block_shape[0]; s *= 2) {
+                    for (uint s = 1; s < detail::num_interp_support / 2; s *= 2) {
                         uint idx
                             = 2 * s * static_cast<uint>(local_thread_id[0]);
+                        handler.syncthreads();
 
-                        if (idx < block_shape[0]) {
+                        if (idx + s < detail::num_interp_support) {
                             shared_result[idx] += shared_result[idx + s];
                         }
-                        handler.syncthreads();
                     }
 
                     if (local_thread_id[0] == 0) {
