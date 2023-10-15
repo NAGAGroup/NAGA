@@ -204,11 +204,14 @@ class divergence_operator {
                     auto* barriers
                         = reinterpret_cast<barrier_t*>(barrier_storage);
 
-                    if (info.stride_count() == 0 && index[0] == 0) {
-                        init(
-                            &barriers[local_thread_id[1]],
-                            detail::num_interp_support
-                        );
+                    if (info.stride_count() == 0) {
+                        if (local_thread_id[0] == 0) {
+                            init(
+                                &barriers[local_thread_id[1]],
+                                detail::num_interp_support
+                            );
+                        }
+                        handler.syncthreads();
                     }
 
                     {
