@@ -33,6 +33,7 @@
 #pragma once
 
 #include "detail/divergence.cuh"
+#include <cuda/barrier>
 #include <scalix/assign_array.cuh>
 
 namespace naga::nonlocal_calculus {
@@ -167,11 +168,17 @@ class divergence_operator {
             }
             sclx::cuda::set_device(current_device);
 
+            constexpr uint num_nodes_per_block   = 4;
+            constexpr uint num_grid_strides      = 4;
+
             sclx::shape_t<2> block_shape{
-                support_indices_.shape()[0],
-                128 / support_indices_.shape()[0]};
-            size_t grid_size
-                = max_total_threads_per_dev / (block_shape.elements());
+                detail::num_interp_support,
+                num_nodes_per_block};
+            size_t problem_size = result.elements() * detail::num_interp_support
+                                / num_grid_strides;
+            size_t total_threads
+                = std::min(max_total_threads_per_dev, problem_size);
+            size_t grid_size = total_threads / (block_shape.elements());
 
             sclx::local_array<T, 2> divergence_tmp{handler, block_shape};
 
@@ -190,6 +197,20 @@ class divergence_operator {
                     field_type support_point_field_value
                         = field[support_indices[index]];
                     auto local_thread_id = info.local_thread_id();
+
+                    using barrier_t = cuda::barrier<cuda::thread_scope_block>;
+                    __shared__ char barrier_storage
+                        [sizeof(barrier_t) * num_nodes_per_block];
+                    auto* barriers
+                        = reinterpret_cast<barrier_t*>(barrier_storage);
+
+                    if (info.stride_count() == 0 && index[0] == 0) {
+                        init(
+                            &barriers[local_thread_id[1]],
+                            detail::num_interp_support
+                        );
+                    }
+
                     {
                         T* local_weights = &weights(0, index[0], index[1]);
                         T& local_div     = divergence_tmp[local_thread_id];
@@ -203,18 +224,18 @@ class divergence_operator {
                             local_div = div;
                         }
                     }
-                    handler.syncthreads();
 
                     T* shared_result = &divergence_tmp(0, local_thread_id[1]);
-                    for (uint s = 1; s < detail::num_interp_support / 2; s *= 2) {
+                    for (uint s = 1; s < detail::num_interp_support; s *= 2) {
                         uint idx
                             = 2 * s * static_cast<uint>(local_thread_id[0]);
-                        handler.syncthreads();
+                        barriers[local_thread_id[1]].arrive_and_wait();
 
                         if (idx + s < detail::num_interp_support) {
                             shared_result[idx] += shared_result[idx + s];
                         }
                     }
+                    barriers[local_thread_id[1]].arrive_and_wait();
 
                     if (local_thread_id[0] == 0) {
                         result[index[1]] = shared_result[0];
