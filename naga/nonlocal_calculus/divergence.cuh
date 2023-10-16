@@ -210,27 +210,34 @@ class divergence_operator {
                     const auto& local_thread_id = info.local_thread_id()[0];
                     uint pipeline_count         = 0;
                     for (uint p = 0; p < prefetch_distance; ++p) {
-                        __pipeline_memcpy_async(
-                            &interp_indices_prefetch(p, local_thread_id),
-                            &support_indices(p, index[0]),
-                            sizeof(sclx::index_t)
-                        );
-                        __pipeline_commit();
-                        ++pipeline_count;
+                        interp_indices_prefetch(p, local_thread_id) =
+                            support_indices(p, index[0]);
+//                        __pipeline_memcpy_async(
+//                            &interp_indices_prefetch(p, local_thread_id),
+//                            &support_indices(p, index[0]),
+//                            sizeof(sclx::index_t)
+//                        );
+//                        __pipeline_commit();
+//                        ++pipeline_count;
                     }
                     for (uint p = 0; p < prefetch_distance; ++p) {
                         for (int d = 0; d < Dimensions; ++d) {
-                            __pipeline_memcpy_async(
-                                &weights_prefetch(d, p, local_thread_id),
-                                &weights(d, p, index[0]),
-                                sizeof(T)
+                            weights_prefetch(d, p, local_thread_id) = weights(
+                                d,
+                                p,
+                                index[0]
                             );
-                            __pipeline_commit();
-                            ++pipeline_count;
+//                            __pipeline_memcpy_async(
+//                                &weights_prefetch(d, p, local_thread_id),
+//                                &weights(d, p, index[0]),
+//                                sizeof(T)
+//                            );
+//                            __pipeline_commit();
+//                            ++pipeline_count;
                         }
                     }
                     for (uint p = 0; p < prefetch_distance; ++p) {
-                        __pipeline_wait_prior(--pipeline_count);
+//                        __pipeline_wait_prior(--pipeline_count);
                         field.prefetch_field_entry(
                             interp_indices_prefetch(p, local_thread_id),
                             sclx::md_index_t<2>{p, local_thread_id},
@@ -244,23 +251,30 @@ class divergence_operator {
                     for (uint n = 0; n < detail::num_interp_support; ++n) {
                         if (n + prefetch_distance
                             < detail::num_interp_support) {
-                            __pipeline_memcpy_async(
-                                &interp_indices_prefetch(
-                                    n % prefetch_distance,
-                                    local_thread_id
-                                ),
-                                &support_indices(
-                                    n + prefetch_distance,
-                                    index[0]
-                                ),
-                                sizeof(sclx::index_t)
+                            interp_indices_prefetch(
+                                n % prefetch_distance,
+                                local_thread_id
+                            ) = support_indices(
+                                n + prefetch_distance,
+                                index[0]
                             );
-                            __pipeline_commit();
-                            ++pipeline_count;
+//                            __pipeline_memcpy_async(
+//                                &interp_indices_prefetch(
+//                                    n % prefetch_distance,
+//                                    local_thread_id
+//                                ),
+//                                &support_indices(
+//                                    n + prefetch_distance,
+//                                    index[0]
+//                                ),
+//                                sizeof(sclx::index_t)
+//                            );
+//                            __pipeline_commit();
+//                            ++pipeline_count;
                         }
                         T indexed_weights[Dimensions];
                         for (uint d = 0; d < Dimensions; ++d) {
-                            __pipeline_wait_prior(--pipeline_count);
+//                            __pipeline_wait_prior(--pipeline_count);
                             indexed_weights[d] = weights_prefetch(
                                 d,
                                 n % prefetch_distance,
@@ -268,37 +282,30 @@ class divergence_operator {
                             );
                             if (n + prefetch_distance
                                 < detail::num_interp_support) {
-                                __pipeline_memcpy_async(
-                                    &weights_prefetch(
+                                weights_prefetch(
                                         d,
                                         n % prefetch_distance,
                                         local_thread_id
-                                    ),
-                                    &weights(
+                                    ) = weights(
                                         d,
                                         n + prefetch_distance,
                                         index[0]
-                                    ),
-                                    sizeof(T)
-                                );
-                                __pipeline_commit();
-                                ++pipeline_count;
-                            }
-                        }
-                        for (uint d = 0; d < Dimensions; ++d) {
-                            if (indexed_weights[d] != weights(d, n, index[0])) {
-                                printf(
-                                    "Weights prefetch failed: "
-                                    "indexed_weights[%d] = %f, "
-                                    "weights(%d, %d, %d) = %f\n",
-                                    d,
-                                    indexed_weights[d],
-                                    d,
-                                    n,
-                                    static_cast<int>(index[0]),
-                                    weights(d, n, index[0])
-                                );
-                                asm("trap;");
+                                    );
+//                                __pipeline_memcpy_async(
+//                                    &weights_prefetch(
+//                                        d,
+//                                        n % prefetch_distance,
+//                                        local_thread_id
+//                                    ),
+//                                    &weights(
+//                                        d,
+//                                        n + prefetch_distance,
+//                                        index[0]
+//                                    ),
+//                                    sizeof(T)
+//                                );
+//                                __pipeline_commit();
+//                                ++pipeline_count;
                             }
                         }
 
@@ -333,7 +340,7 @@ class divergence_operator {
 
                         if (n + prefetch_distance
                             < detail::num_interp_support) {
-                            __pipeline_wait_prior(--pipeline_count);
+//                            __pipeline_wait_prior(--pipeline_count);
                             field.prefetch_field_entry(
                                 interp_indices_prefetch(
                                     n % prefetch_distance,
