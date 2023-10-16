@@ -93,7 +93,14 @@ class advection_operator {
     class divergence_field_map {
       public:
         using point_type = point_t<T, Dimensions>;
+        using prefetch_point_type = point_type;
         friend class advection_operator;
+
+        template <uint PrefetchRank>
+        struct prefetch_data_type {
+            sclx::local_array<T, PrefetchRank> scalar;
+            sclx::local_array<point_type, PrefetchRank> velocity;
+        };
 
         divergence_field_map(
             const VelocityFieldMap& velocity_field,
@@ -122,6 +129,47 @@ class advection_operator {
 
         __host__ __device__ size_t size() const {
             return scalar_field_.elements();
+        }
+
+        template<uint PrefetchRank>
+        __host__ prefetch_data_type<PrefetchRank>
+        allocate_prefetch_array(
+            sclx::kernel_handler& handler,
+            const sclx::shape_t<PrefetchRank>& prefetch_shape
+        ) const {
+            return {.scalar = {handler, prefetch_shape},
+                    .velocity = {handler, prefetch_shape}};
+        }
+
+        template<uint PrefetchRank>
+        __device__ void prefetch_field_entry(
+            const sclx::index_t& src_index,
+            const sclx::md_index_t<PrefetchRank>& prefetch_index,
+            prefetch_data_type<PrefetchRank>& prefetch_array,
+            uint& pipeline_count
+        ) const {
+            __pipeline_memcpy_async(
+                &prefetch_array.scalar[prefetch_index],
+                &scalar_field_[src_index],
+                sizeof(T)
+            );
+            __pipeline_commit();
+            ++pipeline_count;
+            prefetch_array.velocity[prefetch_index] = velocity_field_[src_index];
+        }
+
+        template<uint PrefetchRank>
+        __device__ const prefetch_point_type& index_prefetch_array(
+            const sclx::md_index_t<PrefetchRank>& prefetch_index,
+            prefetch_data_type<PrefetchRank>& prefetch_array,
+            uint& pipeline_count
+        ) const {
+            __pipeline_wait_prior(--pipeline_count);
+            for (uint i = 0; i < Dimensions; ++i) {
+                prefetch_array.velocity[prefetch_index][i] *=
+                    -(prefetch_array.scalar[prefetch_index] - centering_offset_);
+            }
+            return prefetch_array.velocity[prefetch_index];
         }
 
       private:

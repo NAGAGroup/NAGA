@@ -168,81 +168,187 @@ class divergence_operator {
             }
             sclx::cuda::set_device(current_device);
 
-            constexpr uint num_nodes_per_block   = 4;
-            constexpr uint num_grid_strides      = 4;
+            constexpr uint num_nodes_per_block = 256;
+            constexpr uint prefetch_distance   = 4;
+            static_assert(
+                prefetch_distance <= detail::num_interp_support,
+                "prefetch_distance must be less than or equal to "
+                "detail::num_interp_support"
+            );
 
-            sclx::shape_t<2> block_shape{
-                detail::num_interp_support,
-                num_nodes_per_block};
-            size_t problem_size = result.elements() * detail::num_interp_support
-                                / num_grid_strides;
+            sclx::shape_t<1> block_shape{num_nodes_per_block};
+            size_t problem_size = result.elements();
             size_t total_threads
                 = std::min(max_total_threads_per_dev, problem_size);
             size_t grid_size = total_threads / (block_shape.elements());
 
-            sclx::local_array<T, 2> divergence_tmp{handler, block_shape};
+            sclx::local_array<T, 1> local_divergence{handler, block_shape};
+            sclx::local_array<sclx::index_t, 2> interp_indices_prefetch{
+                handler,
+                sclx::shape_t<2>{prefetch_distance, num_nodes_per_block}};
+            sclx::local_array<T, 3> weights_prefetch{
+                handler,
+                sclx::shape_t<3>{
+                    Dimensions,
+                    prefetch_distance,
+                    num_nodes_per_block}};
+            auto field_prefetch = field.allocate_prefetch_array(
+                handler,
+                sclx::shape_t<2>{prefetch_distance, num_nodes_per_block}
+            );
 
             auto& support_indices = support_indices_;
             auto& weights         = weights_;
 
             handler.launch<apply_divergence>(
-                sclx::md_range_t<2>{
-                    support_indices_.shape()[0],
-                    result.elements()},
+                sclx::md_range_t<1>{result.elements()},
                 result,
                 [=] __device__(
-                    const sclx::md_index_t<2>& index,
-                    const sclx::kernel_info<2, 2>& info
+                    const sclx::md_index_t<1>& index,
+                    const sclx::kernel_info<1, 1>& info
                 ) mutable {
-                    field_type support_point_field_value
-                        = field[support_indices[index]];
-                    auto local_thread_id = info.local_thread_id();
+                    const auto& local_thread_id = info.local_thread_id()[0];
+                    uint pipeline_count         = 0;
+                    for (uint p = 0; p < prefetch_distance; ++p) {
+                        __pipeline_memcpy_async(
+                            &interp_indices_prefetch(p, local_thread_id),
+                            &support_indices(p, index[0]),
+                            sizeof(sclx::index_t)
+                        );
+                        __pipeline_commit();
+                        ++pipeline_count;
+                    }
+                    for (uint p = 0; p < prefetch_distance; ++p) {
+                        for (int d = 0; d < Dimensions; ++d) {
+                            __pipeline_memcpy_async(
+                                &weights_prefetch(d, p, local_thread_id),
+                                &weights(d, p, index[0]),
+                                sizeof(T)
+                            );
+                            __pipeline_commit();
+                            ++pipeline_count;
+                        }
+                    }
+                    for (uint p = 0; p < prefetch_distance; ++p) {
+                        __pipeline_wait_prior(--pipeline_count);
+                        field.prefetch_field_entry(
+                            interp_indices_prefetch(p, local_thread_id),
+                            sclx::md_index_t<2>{p, local_thread_id},
+                            field_prefetch,
+                            pipeline_count
+                        );
+                    }
 
-                    using barrier_t = cuda::barrier<cuda::thread_scope_block>;
-                    __shared__ char barrier_storage
-                        [sizeof(barrier_t) * num_nodes_per_block];
-                    auto* barriers
-                        = reinterpret_cast<barrier_t*>(barrier_storage);
+                    local_divergence[local_thread_id] = 0;
 
-                    if (info.stride_count() == 0) {
-                        if (local_thread_id[0] == 0) {
-                            init(
-                                &barriers[local_thread_id[1]],
-                                detail::num_interp_support
+                    for (uint n = 0; n < detail::num_interp_support; ++n) {
+                        if (n + prefetch_distance
+                            < detail::num_interp_support) {
+                            __pipeline_memcpy_async(
+                                &interp_indices_prefetch(
+                                    n % prefetch_distance,
+                                    local_thread_id
+                                ),
+                                &support_indices(
+                                    n + prefetch_distance,
+                                    index[0]
+                                ),
+                                sizeof(sclx::index_t)
+                            );
+                            __pipeline_commit();
+                            ++pipeline_count;
+                        }
+                        T indexed_weights[Dimensions];
+                        for (uint d = 0; d < Dimensions; ++d) {
+                            __pipeline_wait_prior(--pipeline_count);
+                            indexed_weights[d] = weights_prefetch(
+                                d,
+                                n % prefetch_distance,
+                                local_thread_id
+                            );
+                            if (n + prefetch_distance
+                                < detail::num_interp_support) {
+                                __pipeline_memcpy_async(
+                                    &weights_prefetch(
+                                        d,
+                                        n % prefetch_distance,
+                                        local_thread_id
+                                    ),
+                                    &weights(
+                                        d,
+                                        n + prefetch_distance,
+                                        index[0]
+                                    ),
+                                    sizeof(T)
+                                );
+                                __pipeline_commit();
+                                ++pipeline_count;
+                            }
+                        }
+                        for (uint d = 0; d < Dimensions; ++d) {
+                            if (indexed_weights[d] != weights(d, n, index[0])) {
+                                printf(
+                                    "Weights prefetch failed: "
+                                    "indexed_weights[%d] = %f, "
+                                    "weights(%d, %d, %d) = %f\n",
+                                    d,
+                                    indexed_weights[d],
+                                    d,
+                                    n,
+                                    static_cast<int>(index[0]),
+                                    weights(d, n, index[0])
+                                );
+                                asm("trap;");
+                            }
+                        }
+
+                        const auto& field_value = field.index_prefetch_array(
+                            sclx::md_index_t<2>{
+                                n % prefetch_distance,
+                                local_thread_id},
+                            field_prefetch,
+                            pipeline_count
+                        );
+                        for (uint d = 0; d < Dimensions; ++d) {
+                            if (math::abs(field_value[d] - field[support_indices(n, index[0])][d])
+                                > 1e-6) {
+                                printf(
+                                    "Field prefetch failed: "
+                                    "field_value[%d] = %f, "
+                                    "field[%d][%d] = %f\n",
+                                    d,
+                                    field_value[d],
+                                    static_cast<int>(index[0]),
+                                    d,
+                                    field[index[0]][d]
+                                );
+                                asm("trap;");
+                            }
+                        }
+                        for (uint d = 0; d < Dimensions; ++d) {
+                            local_divergence[local_thread_id]
+                                += indexed_weights[d]
+                                 * (field_value[d] - centering_offset);
+                        }
+
+                        if (n + prefetch_distance
+                            < detail::num_interp_support) {
+                            __pipeline_wait_prior(--pipeline_count);
+                            field.prefetch_field_entry(
+                                interp_indices_prefetch(
+                                    n % prefetch_distance,
+                                    local_thread_id
+                                ),
+                                sclx::md_index_t<2>{
+                                    n % prefetch_distance,
+                                    local_thread_id},
+                                field_prefetch,
+                                pipeline_count
                             );
                         }
-                        handler.syncthreads();
                     }
 
-                    {
-                        T* local_weights = &weights(0, index[0], index[1]);
-                        T& local_div     = divergence_tmp[local_thread_id];
-                        {
-                            T div = 0;
-                            for (uint d = 0; d < Dimensions; ++d) {
-                                div += local_weights[d]
-                                     * (support_point_field_value[d]
-                                        - centering_offset);
-                            }
-                            local_div = div;
-                        }
-                    }
-
-                    T* shared_result = &divergence_tmp(0, local_thread_id[1]);
-                    for (uint s = 1; s < detail::num_interp_support; s *= 2) {
-                        uint idx
-                            = 2 * s * static_cast<uint>(local_thread_id[0]);
-                        barriers[local_thread_id[1]].arrive_and_wait();
-
-                        if (idx + s < detail::num_interp_support) {
-                            shared_result[idx] += shared_result[idx + s];
-                        }
-                    }
-                    barriers[local_thread_id[1]].arrive_and_wait();
-
-                    if (local_thread_id[0] == 0) {
-                        result[index[1]] = shared_result[0];
-                    }
+                    result[index[0]] = local_divergence[local_thread_id];
                 },
                 block_shape,
                 grid_size

@@ -61,7 +61,15 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
     static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
 
-    using point_type = point_t<value_type, dimensions>;
+    using point_type          = point_t<value_type, dimensions>;
+    using prefetch_point_type = point_type;
+
+    template<uint PrefetchRank>
+    struct prefetch_data_type {
+        sclx::local_array<value_type, PrefetchRank> Q1;
+        sclx::local_array<value_type, PrefetchRank> absorption_coeff;
+        bool is_in_layer;
+    };
 
     __host__ __device__ pml_div_Q1_field_map(
         const value_type* c0,
@@ -90,7 +98,7 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
             size_t pml_index = i - pml_start_index;
             value_type sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
-                c[d] = -c0[d] * sigma * Q1[pml_index];
+                c[d] = -c0[d] * sigma * Q1[i];
             }
         }
 
@@ -104,6 +112,69 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
 
     __host__ __device__ size_t size() const {
         return absorption_coeff.elements();
+    }
+
+    template<uint PrefetchRank>
+    __host__ prefetch_data_type<PrefetchRank> allocate_prefetch_array(
+        sclx::kernel_handler& handler,
+        const sclx::shape_t<PrefetchRank>& prefetch_shape
+    ) const {
+        return {
+            .Q1               = {handler, prefetch_shape},
+            .absorption_coeff = {handler, prefetch_shape},
+            .is_in_layer      = false};
+    }
+
+    template<uint PrefetchRank>
+    __device__ void prefetch_field_entry(
+        const sclx::index_t& src_index,
+        const sclx::md_index_t<PrefetchRank>& prefetch_index,
+        prefetch_data_type<PrefetchRank>& prefetch_array,
+        uint& pipeline_count
+    ) const {
+        if (src_index < pml_start_index || src_index >= pml_end_index) {
+            prefetch_array.is_in_layer = false;
+            ++pipeline_count;
+            ++pipeline_count;
+            return;
+        }
+        sclx::index_t pml_index = src_index - pml_start_index;
+        __pipeline_memcpy_async(
+            &prefetch_array.Q1[prefetch_index],
+            &Q1[src_index],
+            sizeof(T)
+        );
+        __pipeline_commit();
+
+        __pipeline_memcpy_async(
+            &prefetch_array.absorption_coeff[prefetch_index],
+            &absorption_coeff[pml_index],
+            sizeof(T)
+        );
+        __pipeline_commit();
+        ++pipeline_count;
+
+        prefetch_array.is_in_layer = true;
+    }
+
+    template<uint PrefetchRank>
+    __device__ prefetch_point_type index_prefetch_array(
+        const sclx::md_index_t<PrefetchRank>& prefetch_index,
+        prefetch_data_type<PrefetchRank>& prefetch_array,
+        uint& pipeline_count
+    ) const {
+        prefetch_point_type p{};
+        __pipeline_wait_prior(--pipeline_count);
+        __pipeline_wait_prior(--pipeline_count);
+        if (!prefetch_array.is_in_layer) {
+            return p;
+        }
+        const auto& sigma  = prefetch_array.absorption_coeff[prefetch_index];
+        const auto& Q1_val = prefetch_array.Q1[prefetch_index];
+        for (uint d = 0; d < dimensions; ++d) {
+            p[d] = -c0[d] * sigma * Q1_val;
+        }
+        return p;
     }
 
   private:
@@ -404,7 +475,15 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
     static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
 
-    using point_type = point_t<value_type, dimensions>;
+    using point_type          = point_t<value_type, dimensions>;
+    using prefetch_point_type = point_type;
+
+    template<uint PrefetchRank>
+    struct prefetch_data_type {
+        sclx::local_array<value_type, PrefetchRank> Q1;
+        sclx::local_array<value_type, PrefetchRank> absorption_coeff;
+        bool is_in_layer;
+    };
 
     __host__ __device__ pml_div_Q1_field_map(
         const value_type* c0,
@@ -433,7 +512,7 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
             size_t pml_index = i - pml_start_index;
             value_type sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
-                c[d] = -2.f * c0[d] * sigma * Q1[pml_index];
+                c[d] = -2.f * c0[d] * sigma * Q1[i];
             }
         }
 
@@ -447,6 +526,70 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
 
     __host__ __device__ size_t size() const {
         return absorption_coeff.elements();
+    }
+
+    template<uint PrefetchRank>
+    __host__ prefetch_data_type<PrefetchRank> allocate_prefetch_array(
+        sclx::kernel_handler& handler,
+        const sclx::shape_t<PrefetchRank>& prefetch_shape
+    ) const {
+        return {
+            .Q1               = {handler, prefetch_shape},
+            .absorption_coeff = {handler, prefetch_shape},
+            .is_in_layer      = false};
+    }
+
+    template<uint PrefetchRank>
+    __device__ void prefetch_field_entry(
+        const sclx::index_t& src_index,
+        const sclx::md_index_t<PrefetchRank>& prefetch_index,
+        prefetch_data_type<PrefetchRank>& prefetch_array,
+        uint& pipeline_count
+    ) const {
+        if (src_index < pml_start_index || src_index >= pml_end_index) {
+            prefetch_array.is_in_layer = false;
+            ++pipeline_count;
+            ++pipeline_count;
+            return;
+        }
+        sclx::index_t pml_index = src_index - pml_start_index;
+        __pipeline_memcpy_async(
+            &prefetch_array.Q1[prefetch_index],
+            &Q1[src_index],
+            sizeof(T)
+        );
+        __pipeline_commit();
+        ++pipeline_count;
+
+        __pipeline_memcpy_async(
+            &prefetch_array.absorption_coeff[prefetch_index],
+            &absorption_coeff[pml_index],
+            sizeof(T)
+        );
+        __pipeline_commit();
+        ++pipeline_count;
+
+        prefetch_array.is_in_layer = true;
+    }
+
+    template<uint PrefetchRank>
+    __device__ prefetch_point_type index_prefetch_array(
+        const sclx::md_index_t<PrefetchRank>& prefetch_index,
+        prefetch_data_type<PrefetchRank>& prefetch_array,
+        uint& pipeline_count
+    ) const {
+        prefetch_point_type p{};
+        __pipeline_wait_prior(--pipeline_count);
+        __pipeline_wait_prior(--pipeline_count);
+        if (!prefetch_array.is_in_layer) {
+            return p;
+        }
+        const auto& sigma  = prefetch_array.absorption_coeff[prefetch_index];
+        const auto& Q1_val = prefetch_array.Q1[prefetch_index];
+        for (uint d = 0; d < dimensions; ++d) {
+            p[d] = -2.f * c0[d] * sigma * Q1_val;
+        }
+        return p;
     }
 
   private:
@@ -465,7 +608,15 @@ class pml_div_Q2_field_map {
     static constexpr uint dimensions   = lattice_traits<lattice>::dimensions;
     static constexpr uint lattice_size = lattice_traits<lattice>::size;
 
-    using point_type = point_t<value_type, dimensions>;
+    using point_type          = point_t<value_type, dimensions>;
+    using prefetch_point_type = point_type;
+
+    template<uint PrefetchRank>
+    struct prefetch_data_type {
+        sclx::local_array<value_type, PrefetchRank> Q2;
+        sclx::local_array<value_type, PrefetchRank> absorption_coeff;
+        bool is_in_layer;
+    };
 
     __host__ __device__ pml_div_Q2_field_map(
         const value_type* c0,
@@ -494,7 +645,7 @@ class pml_div_Q2_field_map {
             size_t pml_index = i - pml_start_index;
             value_type sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
-                c[d] = c0[d] * sigma * sigma * Q2[pml_index];
+                c[d] = c0[d] * sigma * sigma * Q2[i];
             }
         }
 
@@ -508,6 +659,70 @@ class pml_div_Q2_field_map {
 
     __host__ __device__ size_t size() const {
         return absorption_coeff.elements();
+    }
+
+    template<uint PrefetchRank>
+    __host__ prefetch_data_type<PrefetchRank> allocate_prefetch_array(
+        sclx::kernel_handler& handler,
+        const sclx::shape_t<PrefetchRank>& prefetch_shape
+    ) const {
+        return {
+            .Q2               = {handler, prefetch_shape},
+            .absorption_coeff = {handler, prefetch_shape},
+            .is_in_layer      = false};
+    }
+
+    template<uint PrefetchRank>
+    __device__ void prefetch_field_entry(
+        const sclx::index_t& src_index,
+        const sclx::md_index_t<PrefetchRank>& prefetch_index,
+        prefetch_data_type<PrefetchRank>& prefetch_array,
+        uint& pipeline_count
+    ) const {
+        if (src_index < pml_start_index || src_index >= pml_end_index) {
+            prefetch_array.is_in_layer = false;
+            ++pipeline_count;
+            ++pipeline_count;
+            return;
+        }
+        sclx::index_t pml_index = src_index - pml_start_index;
+        __pipeline_memcpy_async(
+            &prefetch_array.Q2[prefetch_index],
+            &Q2[src_index],
+            sizeof(T)
+        );
+        __pipeline_commit();
+        ++pipeline_count;
+
+        __pipeline_memcpy_async(
+            &prefetch_array.absorption_coeff[prefetch_index],
+            &absorption_coeff[pml_index],
+            sizeof(T)
+        );
+        __pipeline_commit();
+        ++pipeline_count;
+
+        prefetch_array.is_in_layer = true;
+    }
+
+    template<uint PrefetchRank>
+    __device__ prefetch_point_type index_prefetch_array(
+        const sclx::md_index_t<PrefetchRank>& prefetch_index,
+        prefetch_data_type<PrefetchRank>& prefetch_array,
+        uint& pipeline_count
+    ) const {
+        prefetch_point_type p{};
+        __pipeline_wait_prior(--pipeline_count);
+        __pipeline_wait_prior(--pipeline_count);
+        if (!prefetch_array.is_in_layer) {
+            return p;
+        }
+        const auto& sigma  = prefetch_array.absorption_coeff[prefetch_index];
+        const auto& Q2_val = prefetch_array.Q2[prefetch_index];
+        for (uint d = 0; d < dimensions; ++d) {
+            p[d] = c0[d] * sigma * sigma * Q2_val;
+        }
+        return p;
     }
 
   private:

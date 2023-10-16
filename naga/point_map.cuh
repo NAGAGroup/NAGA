@@ -33,6 +33,7 @@
 #pragma once
 #include "point.hpp"
 #include <scalix/array.cuh>
+#include <cuda_pipeline.h>
 
 namespace naga {
 
@@ -46,6 +47,7 @@ template<class T, uint Dimensions>
 class default_point_map {
   public:
     using point_type = point_view_t<const T, Dimensions>;
+    using prefetch_point_type = point_t<T, Dimensions>;
 
     __host__ __device__ explicit default_point_map(
         const sclx::array<typename point_type::value_type, 2>& source_points
@@ -76,7 +78,47 @@ class default_point_map {
         return source_points_.shape()[1];
     }
 
-  private:
+    template<uint PrefetchRank>
+    __host__ sclx::local_array<prefetch_point_type, PrefetchRank>
+    allocate_prefetch_array(
+        sclx::kernel_handler& handler,
+        const sclx::shape_t<PrefetchRank>& prefetch_shape
+    ) const {
+        return {handler, prefetch_shape};
+    }
+
+    template<uint PrefetchRank>
+    __device__ void prefetch_field_entry(
+        const sclx::index_t& src_index,
+        const sclx::md_index_t<PrefetchRank>& prefetch_index,
+        sclx::local_array<prefetch_point_type, PrefetchRank>& prefetch_array,
+        uint& pipeline_count
+    ) const {
+        for (int d = 0; d < Dimensions; ++d) {
+            __pipeline_memcpy_async(
+                &prefetch_array[prefetch_index][d],
+                &source_points_(d, src_index),
+                sizeof(T)
+            );
+            __pipeline_commit();
+            ++pipeline_count;
+        }
+    }
+
+    template<uint PrefetchRank>
+    __device__ const prefetch_point_type& index_prefetch_array(
+        const sclx::md_index_t<PrefetchRank>& prefetch_index,
+        const sclx::local_array<prefetch_point_type, PrefetchRank>& prefetch_array,
+        uint& pipeline_count
+    ) const {
+        for (int d = 0; d < Dimensions; ++d) {
+            __pipeline_wait_prior(--pipeline_count);
+        }
+        return prefetch_array[prefetch_index];
+    }
+
+
+    private:
     sclx::array<typename point_type::value_type, 2> source_points_;
 };
 
