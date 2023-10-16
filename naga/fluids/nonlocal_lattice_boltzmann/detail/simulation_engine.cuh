@@ -569,7 +569,7 @@ class simulation_engine {
         collision_step();
         bounce_back_step();
 
-//        streaming_step();
+        streaming_step();
 
         ++frame_number_;
     }

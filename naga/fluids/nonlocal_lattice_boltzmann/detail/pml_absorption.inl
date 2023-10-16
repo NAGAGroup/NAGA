@@ -137,24 +137,21 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
             return;
         }
         sclx::index_t pml_index = src_index - pml_start_index;
-        prefetch_array.Q1[prefetch_index] = Q1[src_index];
-        prefetch_array.absorption_coeff[prefetch_index]
-            = absorption_coeff[pml_index];
-//        __pipeline_memcpy_async(
-//            &prefetch_array.Q1[prefetch_index],
-//            &Q1[src_index],
-//            sizeof(T)
-//        );
-//        __pipeline_commit();
-//        ++pipeline_count;
-//
-//        __pipeline_memcpy_async(
-//            &prefetch_array.absorption_coeff[prefetch_index],
-//            &absorption_coeff[pml_index],
-//            sizeof(T)
-//        );
-//        __pipeline_commit();
-//        ++pipeline_count;
+        __pipeline_memcpy_async(
+            &prefetch_array.Q1[prefetch_index],
+            &Q1[src_index],
+            sizeof(T)
+        );
+        __pipeline_commit();
+        ++pipeline_count;
+
+        __pipeline_memcpy_async(
+            &prefetch_array.absorption_coeff[prefetch_index],
+            &absorption_coeff[pml_index],
+            sizeof(T)
+        );
+        __pipeline_commit();
+        ++pipeline_count;
 
         prefetch_array.is_in_layer[prefetch_index] = true;
     }
