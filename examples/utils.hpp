@@ -62,10 +62,10 @@ class async_time_printer {
         thread_ = std::thread([&]() {
             is_running_ = true;
             while (!is_finished_) {
-                std::lock_guard<std::mutex> lock(mutex_);
                 if (is_next_value_) {
                     std::cout << "\rTime: " << next_value_ << " s"
                               << std::flush;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     is_next_value_ = false;
                 } else {
                     std::this_thread::yield();
@@ -76,7 +76,9 @@ class async_time_printer {
     }
 
     void print_next_value(const value_type& value) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        if (is_next_value_ || is_finished_) {
+            return;
+        }
         next_value_    = value;
         is_next_value_ = true;
     }
@@ -90,10 +92,13 @@ class async_time_printer {
         thread_.join();
     }
 
+    [[nodiscard]] const std::atomic<bool>& is_busy() const {
+        return is_next_value_;
+    }
+
   private:
     std::thread thread_;
-    bool is_next_value_ = false;
-    std::mutex mutex_;
+    std::atomic<bool> is_next_value_ = false;
     std::atomic<bool> is_running_  = false;
     std::atomic<bool> is_finished_ = false;
     value_type next_value_{};
