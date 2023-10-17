@@ -99,7 +99,7 @@ class async_time_printer {
   private:
     std::thread thread_;
     std::atomic<bool> is_next_value_ = false;
-    std::atomic<bool> is_running_  = false;
-    std::atomic<bool> is_finished_ = false;
+    std::atomic<bool> is_running_    = false;
+    std::atomic<bool> is_finished_   = false;
     value_type next_value_{};
 };

@@ -168,8 +168,8 @@ class divergence_operator {
             }
             sclx::cuda::set_device(current_device);
 
-            constexpr uint num_nodes_per_block   = 4;
-            constexpr uint num_grid_strides      = 4;
+            constexpr uint num_nodes_per_block = 4;
+            constexpr uint num_grid_strides    = 4;
 
             sclx::shape_t<2> block_shape{
                 detail::num_interp_support,
