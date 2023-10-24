@@ -143,7 +143,7 @@ class advection_operator {
 
     void set_max_concurrent_threads(uint max_concurrent_threads) {
         std::lock_guard<std::mutex> lock(*mutex_);
-        max_concurrent_threads_ = max_concurrent_threads;
+        max_concurrent_threads_  = max_concurrent_threads;
         uint num_rk_df_dt_arrays = 4 * max_concurrent_threads;
         for (uint i = rk_df_dt_list_->size(); i < num_rk_df_dt_arrays; ++i) {
             rk_df_dt_list_->push_back(
