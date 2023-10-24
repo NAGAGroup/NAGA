@@ -195,8 +195,7 @@ class simulation_engine {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
         for (auto& tmp : temporary_distributions_) {
-            tmp
-                = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+            tmp = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
 
         solution_.macroscopic_values.fluid_velocity
@@ -565,8 +564,8 @@ class simulation_engine {
         std::vector<std::future<void>> assign_futures;
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             streaming_futures[alpha].get();
-            auto& f_alpha0 = solution_.lattice_distributions[alpha];
-            auto& f_alpha  = temporary_distributions_[alpha];
+            auto& f_alpha0  = solution_.lattice_distributions[alpha];
+            auto& f_alpha   = temporary_distributions_[alpha];
             auto assign_fut = sclx::assign_array(f_alpha, f_alpha0);
             assign_futures.push_back(std::move(assign_fut));
         }

@@ -148,8 +148,7 @@ class advection_operator {
             rk_df_dt_list_->push_back(
                 std::pair<std::shared_future<void>, sclx::array<T, 1>>{
                     std::shared_future<void>{},
-                    sclx::array<T, 1>{domain_size_}
-                }
+                    sclx::array<T, 1>{domain_size_}}
             );
         }
     }
@@ -168,7 +167,7 @@ class advection_operator {
     ) {
         std::lock_guard<std::mutex> lock(*mutex_);
         sclx::array<T, 1> rk_df_dt_list[4];
-        for (auto & df_dt : rk_df_dt_list) {
+        for (auto& df_dt : rk_df_dt_list) {
             auto [fut, array] = rk_df_dt_list_->front();
             if (fut.valid()) {
                 fut.wait();
@@ -240,7 +239,7 @@ class advection_operator {
 
             ready_promise.set_value();
         });
-        for (auto & arr : rk_df_dt_list) {
+        for (auto& arr : rk_df_dt_list) {
             while (!ready_future.valid()) {
                 std::this_thread::yield();
             }
@@ -266,9 +265,10 @@ class advection_operator {
 
   private:
     std::shared_ptr<divergence_operator<T, Dimensions>> divergence_op_;
-    using queue_type = std::deque<std::pair<std::shared_future<void>, sclx::array<T, 1>>>;
+    using queue_type
+        = std::deque<std::pair<std::shared_future<void>, sclx::array<T, 1>>>;
     std::shared_ptr<queue_type> rk_df_dt_list_ = std::make_shared<queue_type>();
-    std::shared_ptr<std::mutex> mutex_ = std::make_shared<std::mutex>();
+    std::shared_ptr<std::mutex> mutex_         = std::make_shared<std::mutex>();
     size_t domain_size_;
 
     struct runge_kutta_4 {
