@@ -154,6 +154,7 @@ class simulation_engine {
         advection_operator_ptr_ = std::make_shared<advection_operator_t>(
             advection_operator_t::create(domain.points)
         );
+        advection_operator_ptr_->set_max_concurrent_threads(lattice_size);
 
         {
             // We use the nearest neighbors algorithm to provide the
@@ -193,8 +194,10 @@ class simulation_engine {
         for (auto& f_alpha : solution_.lattice_distributions) {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
-        temporary_distribution_
-            = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+        for (auto& tmp : temporary_distributions_) {
+            tmp
+                = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+        }
 
         solution_.macroscopic_values.fluid_velocity
             = sclx::zeros<value_type, 2>(domain_.points.shape());
@@ -534,6 +537,7 @@ class simulation_engine {
             = lattice_interface<Lattice>::lattice_velocities();
         auto lattice_weights = lattice_interface<Lattice>::lattice_weights();
 
+        std::vector<std::future<void>> streaming_futures;
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& time_scale   = parameters_.nondim_factors.time_scale;
             auto& length_scale = parameters_.nondim_factors.length_scale;
@@ -544,18 +548,31 @@ class simulation_engine {
                 = velocity_map::create(&(lattice_velocities.vals[alpha][0]));
 
             auto& f_alpha0 = solution_.lattice_distributions[alpha];
-            auto& f_alpha  = temporary_distribution_;
+            auto& f_alpha  = temporary_distributions_[alpha];
 
             value_type centering_offset = lattice_weights.vals[alpha];
 
-            advection_operator_ptr_->step_forward(
+            auto fut = advection_operator_ptr_->step_forward(
                 velocity_map,
                 f_alpha0,
                 f_alpha,
                 time_step,
                 centering_offset
             );
-            sclx::assign_array(f_alpha, f_alpha0);
+            streaming_futures.push_back(std::move(fut));
+        }
+
+        std::vector<std::future<void>> assign_futures;
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            streaming_futures[alpha].get();
+            auto& f_alpha0 = solution_.lattice_distributions[alpha];
+            auto& f_alpha  = temporary_distributions_[alpha];
+            auto assign_fut = sclx::assign_array(f_alpha, f_alpha0);
+            assign_futures.push_back(std::move(assign_fut));
+        }
+
+        for (auto& fut : assign_futures) {
+            fut.get();
         }
     }
 
@@ -671,7 +688,9 @@ class simulation_engine {
         ar(*boundary_interpolator_ptr_);
 
         sclx::serialize_array(ar, density_source_term_);
-        sclx::serialize_array(ar, temporary_distribution_);
+        for (auto tmp : temporary_distributions_) {
+            sclx::serialize_array(ar, tmp);
+        }
         ar(frame_number_);
 
         ar(pml_absorption_operator_);
@@ -710,7 +729,9 @@ class simulation_engine {
         ar(*boundary_interpolator_ptr_);
 
         sclx::deserialize_array(ar, density_source_term_);
-        sclx::deserialize_array(ar, temporary_distribution_);
+        for (auto tmp : temporary_distributions_) {
+            sclx::deserialize_array(ar, tmp);
+        }
         ar(frame_number_);
 
         pml_absorption_operator_ = pml_absorption_operator<Lattice>{this};
@@ -729,7 +750,7 @@ class simulation_engine {
     std::shared_ptr<interpolater_t> boundary_interpolator_ptr_{};
 
     sclx::array<value_type, 1> density_source_term_{};
-    sclx::array<value_type, 1> temporary_distribution_{};
+    sclx::array<value_type, 1> temporary_distributions_[lattice_size]{};
     uint frame_number_ = 0;
 
     pml_absorption_operator<Lattice> pml_absorption_operator_{};

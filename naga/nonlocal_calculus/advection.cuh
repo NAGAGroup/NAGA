@@ -136,77 +136,117 @@ class advection_operator {
             = std::make_shared<divergence_operator<T, Dimensions>>(
                 divergence_operator<T, Dimensions>::create(domain)
             );
-        for (auto& rk_df_dt : op.rk_df_dt_list_) {
-            rk_df_dt = sclx::array<T, 1>{domain.shape()[1]};
-        }
+        op.domain_size_ = domain.shape()[1];
+        op.set_max_concurrent_threads(4);
         return op;
     }
 
+    void set_max_concurrent_threads(uint max_concurrent_threads) {
+        std::lock_guard<std::mutex> lock(*mutex_);
+        uint num_rk_df_dt_arrays = 4 * max_concurrent_threads;
+        for (uint i = rk_df_dt_list_->size(); i < num_rk_df_dt_arrays; ++i) {
+            rk_df_dt_list_->push_back(
+                std::pair<std::shared_future<void>, sclx::array<T, 1>>{
+                    std::shared_future<void>{},
+                    sclx::array<T, 1>{domain_size_}
+                }
+            );
+        }
+    }
+
+    [[nodiscard]] uint max_concurrent_threads() const {
+        return static_cast<uint>(rk_df_dt_list_->size() / 4);
+    }
+
     template<class FieldMap>
-    void step_forward(
+    std::future<void> step_forward(
         FieldMap& velocity_field,
         sclx::array<T, 1>& f0,
         sclx::array<T, 1>& f,
         T dt,
         T centering_offset = T(0)
     ) {
-        divergence_field_map<FieldMap> div_input_field{
-            velocity_field,
-            f0,
-            centering_offset};
+        std::lock_guard<std::mutex> lock(*mutex_);
+        sclx::array<T, 1> rk_df_dt_list[4];
+        for (auto & df_dt : rk_df_dt_list) {
+            auto [fut, array] = rk_df_dt_list_->front();
+            if (fut.valid()) {
+                fut.wait();
+            }
+            df_dt = std::move(array);
+            rk_df_dt_list_->pop_front();
+        }
+        std::shared_future<void> ready_future;
+        auto fut = std::async(std::launch::async, [=, &ready_future]() mutable {
+            std::promise<void> ready_promise;
+            ready_future = ready_promise.get_future();
+            divergence_field_map<FieldMap> div_input_field{
+                velocity_field,
+                f0,
+                centering_offset};
 
-        divergence_op_->apply(div_input_field, rk_df_dt_list_[0]);
+            divergence_op_->apply(div_input_field, rk_df_dt_list[0]);
 
-        div_input_field.scalar_field_ = f;
+            div_input_field.scalar_field_ = f;
 
-        std::vector<std::future<void>> transform_futures;
+            std::vector<std::future<void>> transform_futures;
 
-        for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < 3; ++i) {
+                sclx::algorithm::elementwise_reduce(
+                    forward_euler<T>{dt * runge_kutta_4::df_dt_weights[i]},
+                    f,
+                    f0,
+                    rk_df_dt_list[i]
+                );
+
+                auto t_fut = sclx::algorithm::transform(
+                    rk_df_dt_list[i],
+                    rk_df_dt_list[i],
+                    runge_kutta_4::summation_weights[i],
+                    sclx::algorithm::multiplies<>{}
+                );
+                transform_futures.push_back(std::move(t_fut));
+
+                divergence_op_->apply(div_input_field, rk_df_dt_list[i + 1]);
+            }
+
+            sclx::algorithm::transform(
+                rk_df_dt_list[3],
+                rk_df_dt_list[3],
+                runge_kutta_4::summation_weights[3],
+                sclx::algorithm::multiplies<>{}
+            )
+                .get();
+
+            for (auto& t_fut : transform_futures) {
+                t_fut.get();
+            }
+
             sclx::algorithm::elementwise_reduce(
-                forward_euler<T>{dt * runge_kutta_4::df_dt_weights[i]},
+                sclx::algorithm::plus<>{},
+                rk_df_dt_list[0],
+                rk_df_dt_list[0],
+                rk_df_dt_list[1],
+                rk_df_dt_list[2],
+                rk_df_dt_list[3]
+            );
+
+            sclx::algorithm::elementwise_reduce(
+                forward_euler<T>{dt},
                 f,
                 f0,
-                rk_df_dt_list_[i]
+                rk_df_dt_list[0]
             );
 
-            auto t_fut = sclx::algorithm::transform(
-                rk_df_dt_list_[i],
-                rk_df_dt_list_[i],
-                runge_kutta_4::summation_weights[i],
-                sclx::algorithm::multiplies<>{}
-            );
-            transform_futures.push_back(std::move(t_fut));
-
-            divergence_op_->apply(div_input_field, rk_df_dt_list_[i + 1]);
+            ready_promise.set_value();
+        });
+        for (auto & arr : rk_df_dt_list) {
+            while (!ready_future.valid()) {
+                std::this_thread::yield();
+            }
+            rk_df_dt_list_->emplace_back(ready_future, arr);
         }
-
-        sclx::algorithm::transform(
-            rk_df_dt_list_[3],
-            rk_df_dt_list_[3],
-            runge_kutta_4::summation_weights[3],
-            sclx::algorithm::multiplies<>{}
-        )
-            .get();
-
-        for (auto& t_fut : transform_futures) {
-            t_fut.get();
-        }
-
-        sclx::algorithm::elementwise_reduce(
-            sclx::algorithm::plus<>{},
-            rk_df_dt_list_[0],
-            rk_df_dt_list_[0],
-            rk_df_dt_list_[1],
-            rk_df_dt_list_[2],
-            rk_df_dt_list_[3]
-        );
-
-        sclx::algorithm::elementwise_reduce(
-            forward_euler<T>{dt},
-            f,
-            f0,
-            rk_df_dt_list_[0]
-        );
+        return fut;
     }
 
     const divergence_operator<T, Dimensions>& divergence_op() const {
@@ -216,29 +256,26 @@ class advection_operator {
     template<class Archive>
     void save(Archive& ar) const {
         ar(*divergence_op_);
-        for (const auto& arr : rk_df_dt_list_) {
-            sclx::serialize_array(ar, arr);
-        }
     }
 
     template<class Archive>
     void load(Archive& ar) {
         divergence_op_ = std::make_shared<divergence_operator<T, Dimensions>>();
         ar(*divergence_op_);
-        for (auto& arr : rk_df_dt_list_) {
-            sclx::deserialize_array(ar, arr);
-        }
     }
 
   private:
     std::shared_ptr<divergence_operator<T, Dimensions>> divergence_op_;
+    using queue_type = std::deque<std::pair<std::shared_future<void>, sclx::array<T, 1>>>;
+    std::shared_ptr<queue_type> rk_df_dt_list_ = std::make_shared<queue_type>();
+    std::shared_ptr<std::mutex> mutex_ = std::make_shared<std::mutex>();
+    size_t domain_size_;
 
     struct runge_kutta_4 {
         static constexpr T df_dt_weights[3] = {1. / 2., 1. / 2., 1.};
         static constexpr T summation_weights[4]
             = {1. / 6., 2. / 6., 2. / 6., 1. / 6.};
     };
-    sclx::array<T, 1> rk_df_dt_list_[4];
 };
 
 }  // namespace naga::nonlocal_calculus
