@@ -137,12 +137,13 @@ class advection_operator {
                 divergence_operator<T, Dimensions>::create(domain)
             );
         op.domain_size_ = domain.shape()[1];
-        op.set_max_concurrent_threads(4);
+        op.set_max_concurrent_threads(op.max_concurrent_threads_);
         return op;
     }
 
     void set_max_concurrent_threads(uint max_concurrent_threads) {
         std::lock_guard<std::mutex> lock(*mutex_);
+        max_concurrent_threads_ = max_concurrent_threads;
         uint num_rk_df_dt_arrays = 4 * max_concurrent_threads;
         for (uint i = rk_df_dt_list_->size(); i < num_rk_df_dt_arrays; ++i) {
             rk_df_dt_list_->push_back(
@@ -154,7 +155,7 @@ class advection_operator {
     }
 
     [[nodiscard]] uint max_concurrent_threads() const {
-        return static_cast<uint>(rk_df_dt_list_->size() / 4);
+        return max_concurrent_threads_;
     }
 
     template<class FieldMap>
@@ -255,12 +256,18 @@ class advection_operator {
     template<class Archive>
     void save(Archive& ar) const {
         ar(*divergence_op_);
+        ar(domain_size_);
+        ar(max_concurrent_threads_);
     }
 
     template<class Archive>
     void load(Archive& ar) {
         divergence_op_ = std::make_shared<divergence_operator<T, Dimensions>>();
+        rk_df_dt_list_->clear();
         ar(*divergence_op_);
+        ar(domain_size_);
+        ar(max_concurrent_threads_);
+        set_max_concurrent_threads(max_concurrent_threads_);
     }
 
   private:
@@ -270,6 +277,7 @@ class advection_operator {
     std::shared_ptr<queue_type> rk_df_dt_list_ = std::make_shared<queue_type>();
     std::shared_ptr<std::mutex> mutex_         = std::make_shared<std::mutex>();
     size_t domain_size_;
+    uint max_concurrent_threads_ = 4;
 
     struct runge_kutta_4 {
         static constexpr T df_dt_weights[3] = {1. / 2., 1. / 2., 1.};

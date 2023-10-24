@@ -687,7 +687,7 @@ class simulation_engine {
         ar(*boundary_interpolator_ptr_);
 
         sclx::serialize_array(ar, density_source_term_);
-        for (auto tmp : temporary_distributions_) {
+        for (auto &tmp : temporary_distributions_) {
             sclx::serialize_array(ar, tmp);
         }
         ar(frame_number_);
@@ -728,7 +728,7 @@ class simulation_engine {
         ar(*boundary_interpolator_ptr_);
 
         sclx::deserialize_array(ar, density_source_term_);
-        for (auto tmp : temporary_distributions_) {
+        for (auto &tmp : temporary_distributions_) {
             sclx::deserialize_array(ar, tmp);
         }
         ar(frame_number_);
