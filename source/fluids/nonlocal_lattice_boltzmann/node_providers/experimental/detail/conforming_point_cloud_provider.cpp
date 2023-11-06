@@ -793,10 +793,9 @@ fill_face_with_nodes(
         * (-v2_2d.y() * v3_2d.x() + v1_2d.y() * (-v2_2d.x() + v3_2d.x())
            + v1_2d.x() * (v2_2d.y() - v3_2d.y()) + v2_2d.x() * v3_2d.y());
 
-    //    if (std::isnan(area)
-    //        || area < 0.5 * naga::math::loopless::pow<2>(nodal_spacing / 2.))
-    //        { return {{}, {}};
-    //    }
+    if (std::isnan(area)) {
+        return {{}, {}};
+    }
 
     point2_t lower_bound2d{
         {std::min(edge_verts2d[0], std::min(edge_verts2d[2], edge_verts2d[4])),
