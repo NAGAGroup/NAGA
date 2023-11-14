@@ -87,7 +87,7 @@ class vtk_observer : public simulation_observer<Lattice> {
         const auto& results_path = output_directory_;
         auto save_frame
             = static_cast<size_t>(time_multiplier_ * time * frame_rate_);
-        if (save_frame < current_frame_) {
+        if (frame_rate_ != 0 && save_frame < current_frame_) {
             return;
         }
         current_frame_ = save_frame + 1;
