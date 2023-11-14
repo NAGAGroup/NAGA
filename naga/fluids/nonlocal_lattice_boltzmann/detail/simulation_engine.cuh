@@ -155,6 +155,7 @@ class simulation_engine {
             advection_operator_t::create(domain.points)
         );
         advection_operator_ptr_->set_max_concurrent_threads(lattice_size);
+        advection_operator_ptr_->enable_cusparse_algorithm();
 
         {
             // We use the nearest neighbors algorithm to provide the
@@ -543,16 +544,16 @@ class simulation_engine {
             value_type time_step
                 = parameters_.time_step / time_scale * length_scale;
 
-            auto velocity_map
-                = velocity_map::create(&(lattice_velocities.vals[alpha][0]));
+//            auto velocity_map
+//                = velocity_map::create(&(lattice_velocities.vals[alpha][0]));
 
             auto& f_alpha0 = solution_.lattice_distributions[alpha];
             auto& f_alpha  = temporary_distributions_[alpha];
 
             value_type centering_offset = lattice_weights.vals[alpha];
 
-            auto fut = advection_operator_ptr_->step_forward(
-                velocity_map,
+            auto fut = advection_operator_ptr_->step_forward_v2(
+                lattice_velocities.vals[alpha],
                 f_alpha0,
                 f_alpha,
                 time_step,
