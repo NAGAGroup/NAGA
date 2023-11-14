@@ -1086,15 +1086,12 @@ void fill_surface_with_nodes(
     unsigned int max_threads = std::thread::hardware_concurrency();
 
     std::vector<hashable_edge> processed_edges(boundary_mesh.faces().size());
-    std::vector<std::atomic<bool>> valid_edges(boundary_mesh.faces().size());
-    for (auto& valid_edge : valid_edges) {
-        valid_edge = false;
-    }
+    std::vector<std::atomic<bool>> busy_edges(boundary_mesh.faces().size());
+    std::fill(busy_edges.begin(), busy_edges.end(), true);
     std::atomic<uint> processed_edges_size{0};
 
     unsigned int processed_edge_cleanup_interval = max_threads * 10;
-    std::vector<size_t> indices_to_erase(boundary_mesh.faces().size());
-    std::atomic<uint> indices_to_erase_size{0};
+    std::vector<std::vector<size_t>> indices_to_erase(max_threads);
 
     std::vector<std::vector<point_t>> points_to_insert(max_threads);
     std::vector<std::vector<point_t>> normals_to_insert(max_threads);
@@ -1105,9 +1102,6 @@ void fill_surface_with_nodes(
         if (futures.size() == max_threads) {
             {
                 auto processed_face = futures[0].get();
-                std::cout << "\rprocessed faces: " << processed_face + 1
-                          << " of " << boundary_mesh.faces().size() / 3
-                          << std::flush;
                 futures.erase(futures.begin());
 
                 points.insert(
@@ -1123,12 +1117,12 @@ void fill_surface_with_nodes(
                 );
             }
 
-            if (f % processed_edge_cleanup_interval == 0
-                && indices_to_erase_size > 100) {
+            if (f % processed_edge_cleanup_interval == 0) {
                 for (auto& fut : futures) {
                     auto processed_face = fut.get();
                     std::cout << "\rprocessed faces: " << processed_face + 1
-                              << " of " << boundary_mesh.faces().size() / 3
+                              << " of " << boundary_mesh.faces().size() / 3 << " with "
+                              << points_to_insert[processed_face % max_threads].size() << " points"
                               << std::flush;
 
                     points.insert(
@@ -1145,20 +1139,45 @@ void fill_surface_with_nodes(
                 }
                 futures.clear();
 
-                std::for_each(
-                    indices_to_erase.begin(),
-                    indices_to_erase.begin() + indices_to_erase_size,
-                    [&](const auto& i) {
-                        processed_edges[i]
-                            = processed_edges[--processed_edges_size];
-                        valid_edges[i].store(
-                            valid_edges[processed_edges_size].load()
-                        );
-                        valid_edges[processed_edges_size].store(false);
+                std::vector<size_t> flat_indices_to_erase;
+                for (auto& erase_list : indices_to_erase) {
+                    if (erase_list.size() < 100) {
+                        continue;
+                    }
+                    std::for_each(
+                        erase_list.begin(),
+                        erase_list.end(),
+                        [&](const auto& i) {
+                            flat_indices_to_erase.push_back(i);
+                        }
+                    );
+                    erase_list.clear();
+                }
+                std::sort(
+                    flat_indices_to_erase.begin(),
+                    flat_indices_to_erase.end(),
+                    std::greater()
+                );
+                auto end_it = std::remove_if(
+                    processed_edges.begin(),
+                    processed_edges.begin() + processed_edges_size.load(),
+                    [&](const auto& e) {
+                        auto i = static_cast<size_t>(&e - &processed_edges[0]);
+                        return std::find(
+                                   flat_indices_to_erase.begin(),
+                                   flat_indices_to_erase.end(),
+                                   i
+                               ) != flat_indices_to_erase.end();
                     }
                 );
-
-                indices_to_erase_size = 0;
+                processed_edges_size.store(
+                    std::distance(processed_edges.begin(), end_it));
+                std::fill(
+                    busy_edges.begin() + processed_edges_size.load(),
+                    busy_edges.end(),
+                    true
+                );
+                flat_indices_to_erase.clear();
             }
         }
 
@@ -1174,24 +1193,25 @@ void fill_surface_with_nodes(
                     boundary_mesh.faces()[f * 3 + (e + 1) % 3]};
                 auto old_processed_size = processed_edges_size.fetch_add(1);
                 processed_edges[old_processed_size] = edge;
-                valid_edges[old_processed_size].store(true);
-                auto found_ptr = processed_edges.begin() + old_processed_size;
-                for (auto it = processed_edges.begin(); it != found_ptr; ++it) {
-                    while (
-                        !valid_edges[std::distance(processed_edges.begin(), it)]
-                             .load()
-                    ) {}
-                    if (*it == edge) {
-                        found_ptr = it;
-                        break;
+                busy_edges[old_processed_size].store(false);
+                auto end_search_it = processed_edges.begin() + old_processed_size;
+                auto found_it = [&](){
+                    for (auto it = processed_edges.begin(); it < end_search_it; ++it) {
+                        auto& busy_ref = busy_edges[std::distance(processed_edges.begin(), it)];
+                        while(busy_ref.load()) {
+                            std::this_thread::yield();
+                        }
+                        if (*it == edge) {
+                            return it;
+                        }
                     }
-                }
-                if (found_ptr != processed_edges.begin() + old_processed_size) {
+                    return end_search_it;
+                }();
+                if (found_it != end_search_it) {
                     excluded_edges.push_back(e);
-                    auto old_erase_size = indices_to_erase_size.fetch_add(2);
-                    indices_to_erase[old_erase_size]
-                        = std::distance(processed_edges.begin(), found_ptr);
-                    indices_to_erase[old_erase_size + 1] = old_processed_size;
+                    indices_to_erase[f % max_threads].push_back(
+                        std::distance(processed_edges.begin(), found_it) - 1
+                    );
                 }
             }
             auto [face_points, face_normals] = fill_face_with_nodes(
@@ -1325,143 +1345,114 @@ class conforming_point_cloud_impl_t<3> {
             );
         }
 
-        sdf::Points potential_bulk_points;
-        {
-            std::vector<point_t> fill_points(
-                2 * approx_grid_size[0] * approx_grid_size[1]
-                * approx_grid_size[2]
-            );
-            std::transform(
-                fill_points.begin(),
-                fill_points.begin() + fill_points.size() / 2,
-                fill_points.begin(),
-                [&](const point_t& p) {
-                    size_t linear_id = &p - &fill_points[0];
-                    size_t i         = linear_id % approx_grid_size[0];
-                    size_t j         = (linear_id / approx_grid_size[0])
-                             % approx_grid_size[1];
-                    size_t k = (linear_id
-                                / (approx_grid_size[0] * approx_grid_size[1]))
-                             % (approx_grid_size[2]);
-                    point_t new_point{
-                        {lower_bound[0]
-                             + static_cast<double>(i) * nodal_spacing,
-                         lower_bound[1]
-                             + static_cast<double>(j) * nodal_spacing,
-                         lower_bound[2]
-                             + static_cast<double>(k) * nodal_spacing}};
-                    return new_point;
-                }
-            );
-            std::transform(
-                fill_points.begin() + fill_points.size() / 2,
-                fill_points.end(),
-                fill_points.begin() + fill_points.size() / 2,
-                [&](const point_t& p) {
-                    size_t linear_id
-                        = &p - &fill_points[fill_points.size() / 2];
-                    size_t i = linear_id % approx_grid_size[0];
-                    size_t j = (linear_id / approx_grid_size[0])
-                             % approx_grid_size[1];
-                    size_t k = (linear_id
-                                / (approx_grid_size[0] * approx_grid_size[1]))
-                             % (approx_grid_size[2]);
-                    point_t new_point{
-                        {lower_bound[0]
-                             + static_cast<double>(i) * nodal_spacing,
-                         lower_bound[1]
-                             + static_cast<double>(j) * nodal_spacing,
-                         lower_bound[2]
-                             + static_cast<double>(k) * nodal_spacing}};
+        auto potential_grid_size = 2 * approx_grid_size[0] * approx_grid_size[1]
+                                 * approx_grid_size[2];
+        size_t batch_bytes        = naga::math::loopless::pow<30>(size_t{2});
+        size_t elements_per_batch = batch_bytes / sizeof(point_t);
+        size_t batch_size = (potential_grid_size + elements_per_batch - 1)
+                          / elements_per_batch;
+        std::vector<point_t> bulk_points;
+        std::vector<double> bulk_to_boundary_distances;
+        std::vector<index_t> closest_boundary_to_bulk;
+        for (size_t b = 0; b < batch_size; ++b) {
+            sdf::Points potential_bulk_points;
+            std::vector<point_t> fill_points(std::min(
+                elements_per_batch,
+                potential_grid_size - b * elements_per_batch
+            ));
+            potential_bulk_points = sdf::Points(fill_points.size(), 3);
+#pragma omp parallel for
+            for (size_t p = 0; p < fill_points.size(); ++p) {
+                auto linear_id = (p / 2) + b * elements_per_batch;
+                auto i         = linear_id % approx_grid_size[0];
+                auto j
+                    = (linear_id / approx_grid_size[0]) % approx_grid_size[1];
+                auto k
+                    = (linear_id / (approx_grid_size[0] * approx_grid_size[1]))
+                    % (approx_grid_size[2]);
+                point_t new_point{
+                    {lower_bound[0] + static_cast<double>(i) * nodal_spacing,
+                     lower_bound[1] + static_cast<double>(j) * nodal_spacing,
+                     lower_bound[2] + static_cast<double>(k) * nodal_spacing}};
+                if (p % 2 == 1) {
                     new_point[0] += nodal_spacing / 2.0;
                     new_point[1] += nodal_spacing / 2.0;
                     new_point[2] += naga::math::sqrt(2) * nodal_spacing / 2.0;
-                    return new_point;
                 }
-            );
-            potential_bulk_points = sdf::Points(fill_points.size(), 3);
-            for (uint i = 0; i < fill_points.size(); ++i) {
-                potential_bulk_points(i, 0)
-                    = static_cast<float>(fill_points[i][0]);
-                potential_bulk_points(i, 1)
-                    = static_cast<float>(fill_points[i][1]);
-                potential_bulk_points(i, 2)
-                    = static_cast<float>(fill_points[i][2]);
+                fill_points[p] = new_point;
+
+                potential_bulk_points(static_cast<uint>(p), 0)
+                    = static_cast<float>(new_point[0]);
+                potential_bulk_points(static_cast<uint>(p), 1)
+                    = static_cast<float>(new_point[1]);
+                potential_bulk_points(static_cast<uint>(p), 2)
+                    = static_cast<float>(new_point[2]);
             }
-        }
 
-        std::vector<double> min_distance_to_boundary
-            = get_sdf_to_points(potential_bulk_points, *domain_sdf.sdf);
-        std::vector<uint> closest_boundary_indices(
-            potential_bulk_points.rows(),
-            0
-        );
-
-        uint boundary_index = 1;
-        for (const auto& sdf : immersed_boundary_sdfs) {
-            std::vector<double> distance_to_boundary
-                = get_sdf_to_points(potential_bulk_points, *sdf.sdf);
-            std::transform(
-                distance_to_boundary.begin(),
-                distance_to_boundary.end(),
-                distance_to_boundary.begin(),
-                [](const double& d) { return -d; }
+            std::vector<double> min_distance_to_boundary
+                = get_sdf_to_points(potential_bulk_points, *domain_sdf.sdf);
+            std::vector<uint> closest_boundary_indices(
+                potential_bulk_points.rows(),
+                0
             );
-            std::transform(
-                closest_boundary_indices.begin(),
-                closest_boundary_indices.end(),
-                closest_boundary_indices.begin(),
-                [&](const uint& closest_boundary_index) {
-                    size_t i = &closest_boundary_index
-                             - &closest_boundary_indices[0];
+
+            uint boundary_index = 1;
+            for (const auto& sdf : immersed_boundary_sdfs) {
+                std::vector<double> distance_to_boundary
+                    = get_sdf_to_points(potential_bulk_points, *sdf.sdf);
+#pragma omp parallel for
+                for (size_t i = 0; i < distance_to_boundary.size(); ++i) {
+                    distance_to_boundary[i] *= -1;
                     constexpr double epsilon = 1e-6;
                     const auto& distance     = distance_to_boundary[i];
                     const auto& min_distance = min_distance_to_boundary[i];
                     if (std::abs(std::abs(distance) - std::abs(min_distance))
                         < epsilon) {
-                        return distance < min_distance ? boundary_index
-                                                       : closest_boundary_index;
+                        closest_boundary_indices[i]
+                            = distance < min_distance
+                                ? boundary_index
+                                : closest_boundary_indices[i];
                     } else if (std::abs(distance) < std::abs(min_distance)) {
-                        return boundary_index;
-                    } else {
-                        return closest_boundary_index;
+                        closest_boundary_indices[i] = boundary_index;
                     }
                 }
-            );
-            std::transform(
-                distance_to_boundary.begin(),
-                distance_to_boundary.end(),
-                min_distance_to_boundary.begin(),
-                [&](const double& distance) {
-                    size_t i = &distance - &distance_to_boundary[0];
-                    return closest_boundary_indices[i] == boundary_index
-                             ? distance
-                             : min_distance_to_boundary[i];
-                }
-            );
-            boundary_index++;
-        }
-
-        std::vector<point_t> bulk_points;
-        bulk_points.reserve(potential_bulk_points.rows());
-        std::vector<double> bulk_to_boundary_distances;
-        bulk_to_boundary_distances.reserve(potential_bulk_points.rows());
-        std::vector<index_t> closest_boundary_to_bulk;
-        closest_boundary_to_bulk.reserve(potential_bulk_points.rows());
-
-        for (uint i = 0; i < potential_bulk_points.rows(); i++) {
-            const auto& distance_to_boundary = min_distance_to_boundary[i];
-            if (distance_to_boundary < 0.1f * nodal_spacing) {
-                continue;
+                std::transform(
+                    distance_to_boundary.begin(),
+                    distance_to_boundary.end(),
+                    min_distance_to_boundary.begin(),
+                    [&](const double& distance) {
+                        size_t i = &distance - &distance_to_boundary[0];
+                        return closest_boundary_indices[i] == boundary_index
+                                 ? distance
+                                 : min_distance_to_boundary[i];
+                    }
+                );
+                boundary_index++;
             }
 
-            bulk_points.emplace_back();
-            bulk_points.back()[0] = potential_bulk_points(i, 0);
-            bulk_points.back()[1] = potential_bulk_points(i, 1);
-            bulk_points.back()[2] = potential_bulk_points(i, 2);
+            std::mutex bulk_points_mutex;
+#pragma omp parallel for
+            for (uint i = 0; i < potential_bulk_points.rows(); i++) {
+                const auto& distance_to_boundary = min_distance_to_boundary[i];
+                if (distance_to_boundary < 0.1f * nodal_spacing) {
+                    continue;
+                }
 
-            bulk_to_boundary_distances.push_back(distance_to_boundary);
-            closest_boundary_to_bulk.push_back(closest_boundary_indices[i]);
+                uint bulk_index = 0;
+                {
+                    std::lock_guard<std::mutex> lock(bulk_points_mutex);
+                    bulk_points.emplace_back();
+                    bulk_index = bulk_points.size() - 1;
+                    bulk_to_boundary_distances.push_back(distance_to_boundary);
+                    closest_boundary_to_bulk.push_back(
+                        closest_boundary_indices[i]
+                    );
+                }
+
+                bulk_points[bulk_index][0] = potential_bulk_points(i, 0);
+                bulk_points[bulk_index][1] = potential_bulk_points(i, 1);
+                bulk_points[bulk_index][2] = potential_bulk_points(i, 2);
+            }
         }
 
         return {
