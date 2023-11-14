@@ -44,7 +44,7 @@ add_library(naga INTERFACE)
 target_include_directories(
   naga INTERFACE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}
                  ${NANOFLANN_INCLUDE_DIR} ${AUDIOFILE_INCLUDE_DIR})
-target_link_libraries(naga INTERFACE naga-lib scalix cublas sdf
+target_link_libraries(naga INTERFACE naga-lib scalix cublas cusparse sdf
                                      OpenMP::OpenMP_CXX ${VTK_LIBRARIES})
 vtk_module_autoinit(TARGETS naga MODULES ${VTK_LIBRARIES})
 set_target_properties(naga PROPERTIES CMAKE_CUDA_FLAGS
@@ -105,3 +105,9 @@ target_link_libraries(cgal_3d_mesh PRIVATE naga)
 
 add_executable(nonlocal_lbm_pulse_3d examples/nonlocal_lbm_pulse_3d.cu)
 target_link_libraries(nonlocal_lbm_pulse_3d PRIVATE naga)
+
+add_executable(sparse_matrix_vector_mult examples/sparse_matrix_vector_mult.cu)
+target_link_libraries(sparse_matrix_vector_mult PRIVATE naga)
+
+add_executable(sparse_gemm examples/sparse_gemm.cu)
+target_link_libraries(sparse_gemm PRIVATE naga)
