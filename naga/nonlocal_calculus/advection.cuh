@@ -249,6 +249,150 @@ class advection_operator {
         return fut;
     }
 
+    void compute_A_matrix(const T (&constant_velocity)[Dimensions]) {
+        auto identity_mat = cusparse_desc_->identity_mat;
+        auto A            = cusparse_desc_->A;
+        A = matrix_type();
+        cusparse_desc_
+            ->mat_mult(
+                -constant_velocity[0],
+                0.,
+                identity_mat,
+                divergence_op_->cusparse_desc_->div_mats[0],
+                A
+            )
+            .get();
+        for (int d = 1; d < Dimensions; ++d) {
+            cusparse_desc_
+                ->mat_mult(
+                    -constant_velocity[d],
+                    1.,
+                    identity_mat,
+                    divergence_op_->cusparse_desc_->div_mats[d],
+                    A
+                )
+                .get();
+        }
+        cusparse_desc_->A = A;
+    }
+
+    std::future<void> fast_step_forward(
+        sclx::array<T, 1> f0,
+        sclx::array<T, 1> f,
+        T dt,
+        T centering_offset = T{0}
+    ) {
+        auto A = cusparse_desc_->A;
+
+        std::lock_guard<std::mutex> lock(*mutex_);
+        sclx::array<T, 1> rk_df_dt_list[4];
+        for (auto& df_dt : rk_df_dt_list) {
+            auto [fut, array] = rk_df_dt_list_->front();
+            if (fut.valid()) {
+                fut.wait();
+            }
+            df_dt = std::move(array);
+            rk_df_dt_list_->pop_front();
+        }
+        std::shared_future<void> ready_future;
+        auto fut = std::async(std::launch::async, [=, &ready_future]() mutable {
+            std::promise<void> ready_promise;
+            ready_future = std::move(ready_promise.get_future());
+
+            sclx::algorithm::transform(
+                f,
+                f0,
+                centering_offset,
+                sclx::algorithm::minus<>{}
+            )
+                .get();
+
+            divergence_op_->cusparse_desc_->mat_mult(A, f, rk_df_dt_list[0])
+                .get();
+
+            std::vector<std::future<void>> transform_futures;
+
+            for (int i = 0; i < 3; ++i) {
+                sclx::algorithm::elementwise_reduce(
+                    forward_euler<T>{dt * runge_kutta_4::df_dt_weights[i]},
+                    f,
+                    f0,
+                    rk_df_dt_list[i]
+                ).get();
+
+                auto centering_fut = sclx::algorithm::transform(
+                    f,
+                    f,
+                    centering_offset,
+                    sclx::algorithm::minus<>{}
+                );
+
+                auto t_fut = sclx::algorithm::transform(
+                    rk_df_dt_list[i],
+                    rk_df_dt_list[i],
+                    runge_kutta_4::summation_weights[i],
+                    sclx::algorithm::multiplies<>{}
+                );
+                transform_futures.push_back(std::move(t_fut));
+
+                centering_fut.get();
+
+                divergence_op_->cusparse_desc_
+                    ->mat_mult(A, f, rk_df_dt_list[i + 1])
+                    .get();
+            }
+
+            sclx::algorithm::transform(
+                rk_df_dt_list[3],
+                rk_df_dt_list[3],
+                runge_kutta_4::summation_weights[3],
+                sclx::algorithm::multiplies<>{}
+            )
+                .get();
+
+            for (auto& t_fut : transform_futures) {
+                t_fut.get();
+            }
+
+            sclx::algorithm::elementwise_reduce(
+                sclx::algorithm::plus<>{},
+                rk_df_dt_list[0],
+                rk_df_dt_list[0],
+                rk_df_dt_list[1],
+                rk_df_dt_list[2],
+                rk_df_dt_list[3]
+            );
+
+            sclx::algorithm::elementwise_reduce(
+                forward_euler<T>{dt},
+                f,
+                f0,
+                rk_df_dt_list[0]
+            );
+
+            ready_promise.set_value();
+        });
+        for (auto& arr : rk_df_dt_list) {
+            while (!ready_future.valid()) {
+                std::this_thread::yield();
+            }
+            rk_df_dt_list_->emplace_back(ready_future, arr);
+        }
+
+        return fut;
+    }
+
+    std::future<void> step_forward_v2(
+        const T (&constant_velocity)[Dimensions],
+        sclx::array<T, 1> f0,
+        sclx::array<T, 1> f,
+        T dt,
+        T centering_offset = T{0}
+    ) {
+        compute_A_matrix(constant_velocity);
+        return fast_step_forward(f0, f, dt, centering_offset);
+    }
+
     const divergence_operator<T, Dimensions>& divergence_op() const {
         return *divergence_op_;
     }
@@ -270,6 +414,42 @@ class advection_operator {
         set_max_concurrent_threads(max_concurrent_threads_);
     }
 
+    void enable_cusparse_algorithm() {
+        divergence_op_->enable_cusparse_algorithm();
+
+        if (cusparse_desc_ == nullptr) {
+            cusparse_desc_ = std::make_shared<cusparse_algo_desc>();
+
+            auto& identity_mat = cusparse_desc_->identity_mat;
+            sclx::array<T, 2> ones{1, domain_size_};
+            sclx::fill(ones, T(1));
+            sclx::array<uint, 2> indices{1, domain_size_};
+            std::iota(indices.begin(), indices.end(), 0);
+            identity_mat
+                = matrix_type::create_from_index_stencil(indices, ones);
+            cusparse_desc_->A = matrix_type ();
+        }
+    }
+
+    advection_operator
+    make_fast_operator_for_velocity(const T (&constant_velocity)[Dimensions]) {
+        bool was_cusparse_enabled = cusparse_algorithm_enabled();
+        advection_operator fast_op = *this;
+        fast_op.cusparse_desc_     = nullptr;
+        fast_op.enable_cusparse_algorithm();
+        fast_op.compute_A_matrix(constant_velocity);
+        return fast_op;
+    }
+
+    void disable_cusparse_algorithm() {
+        divergence_op_->disable_cusparse_algorithm();
+        cusparse_desc_ = nullptr;
+    }
+
+    bool cusparse_algorithm_enabled() const {
+        return divergence_op_->cusparse_algorithm_enabled();
+    }
+
   private:
     std::shared_ptr<divergence_operator<T, Dimensions>> divergence_op_;
     using queue_type
@@ -284,6 +464,18 @@ class advection_operator {
         static constexpr T summation_weights[4]
             = {1. / 6., 2. / 6., 2. / 6., 1. / 6.};
     };
+
+    using matrix_type =
+        typename divergence_operator<T, Dimensions>::matrix_type;
+    using vector_type =
+        typename divergence_operator<T, Dimensions>::vector_type;
+    struct cusparse_algo_desc {
+        matrix_type identity_mat;
+        matrix_type A;
+        naga::linalg::matrix_mult<matrix_type, matrix_type, matrix_type>
+            mat_mult;
+    };
+    std::shared_ptr<cusparse_algo_desc> cusparse_desc_{nullptr};
 };
 
 }  // namespace naga::nonlocal_calculus

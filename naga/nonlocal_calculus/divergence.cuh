@@ -35,6 +35,7 @@
 #include "detail/divergence.cuh"
 #include <cuda/barrier>
 #include <scalix/assign_array.cuh>
+#include <scalix/algorithm/elementwise_reduce.cuh>
 
 namespace naga::nonlocal_calculus {
 
@@ -150,6 +151,174 @@ class divergence_operator {
                 "naga::nonlocal_calculus::divergence_operator::"
             );
         }
+        if (!cusparse_enabled_) {
+            apply_default(field, result, centering_offset);
+        } else {
+            apply_cusparse(field, result, centering_offset);
+        }
+    }
+
+    void apply_v2(
+        const T (&const_velocity)[Dimensions],
+        const sclx::array<T, 1>& scalar_field,
+        const sclx::array<T, 1>& result,
+        const T& centering_offset = T(0)
+    ) const {
+        if (result.elements() != weights_.shape()[2]) {
+            sclx::throw_exception<std::invalid_argument>(
+                "Result array has incorrect shape.",
+                "naga::nonlocal_calculus::divergence_operator::"
+            );
+        }
+        if (result.elements() != scalar_field.elements()) {
+            sclx::throw_exception<std::invalid_argument>(
+                "Result array has incorrect size.",
+                "naga::nonlocal_calculus::divergence_operator::"
+            );
+        }
+        if (!cusparse_enabled_) {
+            sclx::throw_exception<std::invalid_argument>(
+                "This method is only supported when the cusparse algorithm is "
+                "enabled.",
+                "naga::nonlocal_calculus::divergence_operator::"
+            );
+        } else {
+            apply_cusparse_v2(
+                const_velocity,
+                scalar_field,
+                result,
+                centering_offset
+            );
+        }
+    }
+
+    void apply_cusparse_v2(
+        const T (&const_velocity)[Dimensions],
+        sclx::array<T, 1> scalar_field,
+        sclx::array<T, 1> result,
+        const T& centering_offset = T(0)
+    ) const {
+        sclx::assign_array(scalar_field, result).get();
+        sclx::algorithm::transform(
+            result,
+            result,
+            centering_offset,
+            [=] __device__(const T& val, const T& centering_offset) {
+                return val - centering_offset;
+            }
+        ).get();
+        std::vector<std::future<void>> div_futures;
+        for (int d = 0; d < Dimensions; ++d) {
+            auto fut = cusparse_desc_->mat_mult(
+                const_velocity[d],
+                0.,
+                cusparse_desc_->div_mats[d],
+                scalar_field,
+                cusparse_desc_->scratchpad[d]
+            );
+            div_futures.push_back(std::move(fut));
+        }
+
+        std::vector<std::future<void>> scale_futures;
+        for (int d = 0; d < Dimensions; ++d) {
+            div_futures[d].get();
+            auto fut = sclx::algorithm::transform(
+                cusparse_desc_->scratchpad[d],
+                cusparse_desc_->scratchpad[d],
+                const_velocity[d],
+                [=] __device__(const T& val, const T& const_velocity) {
+                    return val * const_velocity;
+                }
+            );
+            scale_futures.push_back(std::move(fut));
+        }
+
+        for (auto& fut : scale_futures) {
+            fut.get();
+        }
+
+        if constexpr (Dimensions == 2) {
+            sclx::algorithm::elementwise_reduce(
+                sclx::algorithm::plus<>{},
+                result,
+                cusparse_desc_->scratchpad[0],
+                cusparse_desc_->scratchpad[1]
+            ).get();
+        } else {
+            return sclx::algorithm::elementwise_reduce(
+                sclx::algorithm::plus<>{},
+                result,
+                cusparse_desc_->scratchpad[0],
+                cusparse_desc_->scratchpad[1],
+                cusparse_desc_->scratchpad[2]
+            ).get();
+        }
+    }
+
+    template<class FieldMap = default_field_map>
+    void apply_cusparse(
+        const FieldMap& field,
+        const sclx::array<T, 1>& result,
+        const T& centering_offset = T(0)
+    ) const {
+        using field_type = typename FieldMap::point_type;
+        static_assert(
+            field_type::dimensions == Dimensions,
+            "Field map has incorrect dimensions."
+        );
+        std::vector<std::future<void>> futures;
+        for (int d = 0; d < Dimensions; ++d) {
+            auto fut = sclx::execute_kernel([&,
+                                             d](sclx::kernel_handler& handler) {
+                auto& scratchpad = cusparse_desc_->scratchpad;
+                handler.launch(
+                    sclx::md_range_t<1>{cusparse_desc_->scratchpad[0].shape()},
+                    sclx::array_list<T, 1, Dimensions>{
+                        cusparse_desc_->scratchpad},
+                    [=] __device__(const sclx::md_index_t<1>& index, const auto&) {
+                        scratchpad[d][index]
+                            = field[index[0]][d] - centering_offset;
+                    }
+                );
+            });
+            futures.push_back(std::move(fut));
+        }
+
+        futures[0].get();
+        cusparse_desc_
+            ->mat_mult(
+                1.,
+                0.,
+                cusparse_desc_->div_mats[0],
+                cusparse_desc_->scratchpad[0],
+                result
+            )
+            .get();
+        for (uint d = 1; d < Dimensions; ++d) {
+            futures[d].get();
+            cusparse_desc_
+                ->mat_mult(
+                    1.,
+                    1.,
+                    cusparse_desc_->div_mats[d],
+                    cusparse_desc_->scratchpad[d],
+                    result
+                )
+                .get();
+        }
+    }
+
+    template<class FieldMap = default_field_map>
+    void apply_default(
+        const FieldMap& field,
+        const sclx::array<T, 1>& result,
+        const T& centering_offset = T(0)
+    ) const {
+        using field_type = typename FieldMap::point_type;
+        static_assert(
+            field_type::dimensions == Dimensions,
+            "Field map has incorrect dimensions."
+        );
 
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             auto max_total_threads_per_dev = std::numeric_limits<size_t>::min();
@@ -270,6 +439,57 @@ class divergence_operator {
         sclx::deserialize_array(ar, support_indices_);
     }
 
+    void enable_cusparse_algorithm() {
+        if (sclx::cuda::traits::device_count() > 1) {
+            std::cerr
+                << "Warning: cusparse algorithm only supports single GPU, \n"
+                   "but multiple GPUs are available. For any arrays \n"
+                   "distributed across multiple devices, the algorithm will \n"
+                   "perform less efficiently than the default algorithm which "
+                   "\n"
+                   "distributes the computation across all available "
+                   "devices.\n";
+        }
+
+        if (cusparse_desc_ == nullptr) {
+            sclx::array<T, 2> ndim_weights(support_indices_.shape());
+            cusparse_desc_ = std::make_shared<cusparse_algo_desc>();
+            for (int d = 0; d < Dimensions; ++d) {
+                sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+                    auto& weights = weights_;
+                    handler.launch(
+                        sclx::md_range_t<2>{ndim_weights.shape()},
+                        ndim_weights,
+                        [=] __device__(const sclx::md_index_t<2>& index, const auto&) {
+                            ndim_weights[index]
+                                = weights(d, index[0], index[1]);
+                        }
+                    );
+                }).get();
+                cusparse_desc_->div_mats[d]
+                    = matrix_type::create_from_index_stencil(
+                        support_indices_,
+                        ndim_weights
+                    );
+            }
+            for (auto& sarr : cusparse_desc_->scratchpad) {
+                sarr = sclx::array<T, 1>(sclx::shape_t<1>{
+                    support_indices_.shape()[1]});
+            }
+            cusparse_enabled_ = true;
+        }
+    }
+
+    void disable_cusparse_algorithm() {
+        cusparse_desc_    = nullptr;
+        cusparse_enabled_ = false;
+    }
+
+    bool cusparse_algorithm_enabled() const { return cusparse_enabled_; }
+
+    template<class TO, uint DimensionsO>
+    friend class advection_operator;
+
   private:
     static divergence_operator create(
         const sclx::array<T, 2>& domain,
@@ -297,6 +517,18 @@ class divergence_operator {
 
     sclx::array<T, 3> weights_;
     sclx::array<sclx::index_t, 2> support_indices_;
+    using matrix_type
+        = naga::linalg::matrix<T, naga::linalg::storage_type::sparse_csr>;
+    using vector_type
+        = naga::linalg::vector<T, naga::linalg::storage_type::dense>;
+    struct cusparse_algo_desc {
+        matrix_type div_mats[Dimensions];
+        sclx::array<T, 1> scratchpad[Dimensions];
+        naga::linalg::matrix_mult<matrix_type, vector_type, vector_type>
+            mat_mult;
+    };
+    std::shared_ptr<cusparse_algo_desc> cusparse_desc_{nullptr};
+    bool cusparse_enabled_{false};
 };
 
 }  // namespace naga::nonlocal_calculus

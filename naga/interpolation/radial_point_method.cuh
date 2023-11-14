@@ -32,8 +32,10 @@
 #pragma once
 #include "../distance_functions.hpp"
 #include "../linalg/batched_matrix_inverse.cuh"
+#include "../linalg/matrix.cuh"
 #include "../point_map.cuh"
 #include "detail/radial_point_method.cuh"
+#include <scalix/algorithm/transform.cuh>
 #include <scalix/array.cuh>
 #include <scalix/execute_kernel.cuh>
 
@@ -121,7 +123,7 @@ class radial_point_method {
         class ShapeFunctionType = default_shape_function<PointMapType>>
     static radial_point_method<T> create_interpolator(
         sclx::array<const T, 2> source_points,
-        sclx::array<const size_t, 2> interpolating_indices,
+        sclx::array<size_t, 2> interpolating_indices,
         const PointMapType& query_points,
         const T& approx_particle_spacing,
         uint group_size                         = 1,
@@ -187,8 +189,8 @@ class radial_point_method {
     }
 
     std::future<void> interpolate(
-        sclx::array<const T, 1> field,
-        sclx::array<T, 1>& destination,
+        sclx::array<T, 1> field,
+        sclx::array<T, 1> destination,
         T centering_offset = T{0}
     ) const {
         if (field.shape()[0] != source_points_size_) {
@@ -205,26 +207,90 @@ class radial_point_method {
             );
         }
 
-        auto weights    = weights_;
-        auto indices    = indices_;
-        auto group_size = group_size_;
+        if (!cusparse_enabled_) {
+            auto weights    = weights_;
+            auto indices    = indices_;
+            auto group_size = group_size_;
 
-        return sclx::execute_kernel([=](const sclx::kernel_handler& handler
-                                    ) mutable {
-            handler.launch(
-                sclx::md_range_t<1>{destination.shape()[0]},
-                destination,
-                [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                    T sum = 0;
-                    for (uint i = 0; i < weights.shape()[0]; ++i) {
-                        sum += weights(i, idx[0])
-                             * (field(indices(i, idx[0] / group_size))
-                                - centering_offset);
+            return sclx::execute_kernel([=](const sclx::kernel_handler& handler
+                                        ) mutable {
+                handler.launch(
+                    sclx::md_range_t<1>{destination.shape()[0]},
+                    destination,
+                    [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                        T sum = 0;
+                        for (uint i = 0; i < weights.shape()[0]; ++i) {
+                            sum += weights(i, idx[0])
+                                 * (field(indices(i, idx[0] / group_size))
+                                    - centering_offset);
+                        }
+                        destination(idx[0]) = sum + centering_offset;
                     }
-                    destination(idx[0]) = sum + centering_offset;
-                }
+                );
+            });
+        }
+
+        if (centering_offset != T{0}) {
+            sclx::fill(destination, centering_offset);
+        }
+
+        auto& A        = cusparse_desc_->A;
+        auto& mat_mult = cusparse_desc_->mat_mult;
+        vector_type X(field);
+        vector_type Y(destination);
+        auto fut = mat_mult(1.0, centering_offset == T{0} ? 0. : -1., A, X, Y);
+        if (centering_offset == T{0}) {
+            return fut;
+        }
+
+        return std::async(
+            std::launch::async,
+            [=, fut = std::move(fut)]() mutable {
+                fut.get();
+                auto Y_values = Y.values();
+                sclx::algorithm::transform(
+                    Y_values,
+                    Y_values,
+                    centering_offset,
+                    thrust::plus<T>{}
+                )
+                    .get();
+            }
+        );
+    }
+
+    void enable_cusparse_algorithm() {
+        if (sclx::cuda::traits::device_count() > 1) {
+            std::cerr
+                << "Warning: cusparse algorithm only supports single GPU, \n"
+                   "but multiple GPUs are available. For any arrays \n"
+                   "distributed across multiple devices, the algorithm will \n"
+                   "perform less efficiently than the default algorithm which "
+                   "\n"
+                   "distributes the computation across all available "
+                   "devices.\n";
+        }
+
+        if (cusparse_desc_ == nullptr) {
+            if (group_size_ != 1) {
+                sclx::throw_exception<std::invalid_argument>(
+                    "cusparse algorithm only supports group_size = 1",
+                    "naga::interpolation::radial_point_method::"
+                );
+            }
+            cusparse_desc_    = std::make_shared<cusparse_algo_desc>();
+            cusparse_desc_->A = matrix_type::create_from_index_stencil(
+                source_points_size_,
+                indices_,
+                weights_
             );
-        });
+            cusparse_enabled_ = true;
+        }
+    }
+
+    void disable_cusparse_algorithm() {
+        cusparse_desc_    = nullptr;
+        cusparse_enabled_ = false;
     }
 
     template<class Archive>
@@ -252,7 +318,19 @@ class radial_point_method {
     uint group_size_{};
     size_t source_points_size_{};
     sclx::array<T, 2> weights_{};
-    sclx::array<const size_t, 2> indices_{};
+    sclx::array<size_t, 2> indices_{};
+
+    using matrix_type
+        = naga::linalg::matrix<T, naga::linalg::storage_type::sparse_csr>;
+    using vector_type
+        = naga::linalg::vector<T, naga::linalg::storage_type::dense>;
+    struct cusparse_algo_desc {
+        matrix_type A;
+        naga::linalg::matrix_mult<matrix_type, vector_type, vector_type>
+            mat_mult;
+    };
+    std::shared_ptr<cusparse_algo_desc> cusparse_desc_{nullptr};
+    bool cusparse_enabled_{false};
 };
 
 }  // namespace naga::interpolation

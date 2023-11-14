@@ -51,12 +51,14 @@ __host__ __device__ value_type expected_divergence_function(const PointType& x
 }
 
 int main() {
-    size_t grid_size       = 80;
+    size_t grid_size       = 103;
     value_type grid_length = 2 * naga::math::pi<value_type>;
     value_type grid_spacing
         = grid_length / (static_cast<value_type>(grid_size) - 1.0f);
 
     sclx::array<value_type, 2> source_grid{2, grid_size * grid_size};
+    value_type vector_scaler[2] = {1.0f, 0.0f};
+    sclx::array<value_type, 1> source_values_scalar{grid_size * grid_size};
     sclx::array<value_type, 2> source_values{2, grid_size * grid_size};
     sclx::array<value_type, 1> expected_divergence{grid_size * grid_size};
 
@@ -89,10 +91,21 @@ int main() {
     sclx::execute_kernel([&](sclx::kernel_handler& handle) {
         handle.launch(
             sclx::md_range_t<1>{grid_size * grid_size},
+            source_values_scalar,
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                const auto& field_value
+                    = field_function(&source_grid(0, idx[0]));
+                source_values_scalar(idx[0]) = field_value[0];
+            }
+        );
+    });
+    sclx::execute_kernel([&](sclx::kernel_handler& handle) {
+        handle.launch(
+            sclx::md_range_t<1>{grid_size * grid_size},
             expected_divergence,
             [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
                 expected_divergence[idx]
-                    = expected_divergence_function(&source_grid(0, idx[0]));
+                    = expected_divergence_function(&source_grid(idx[0]));
             }
         );
     });
@@ -102,21 +115,31 @@ int main() {
 
     auto divergence
         = builder.create<naga::nonlocal_calculus::divergence_operator>();
+    divergence.enable_cusparse_algorithm();
 
     sclx::array<value_type, 1> divergence_values{grid_size * grid_size};
 
     auto start = std::chrono::high_resolution_clock::now();
-    divergence.apply(source_values, divergence_values);
+    divergence.apply_v2(vector_scaler, source_values_scalar, divergence_values);
     auto end1 = std::chrono::high_resolution_clock::now();
 
-    divergence.apply(source_values, divergence_values);
+    divergence.apply_v2(vector_scaler, source_values_scalar, divergence_values);
     auto end2 = std::chrono::high_resolution_clock::now();
+
+    divergence.apply_v2(vector_scaler, source_values_scalar, divergence_values);
+    auto end3 = std::chrono::high_resolution_clock::now();
+
+    sclx::array<value_type, 1> divergence_values_no_cusparse{grid_size * grid_size};
+    divergence.disable_cusparse_algorithm();
+    divergence.apply(source_values, divergence_values_no_cusparse);
 
     std::chrono::duration<double> elapsed_ms1 = (end1 - start) * 1000;
     std::chrono::duration<double> elapsed_ms2 = (end2 - end1) * 1000;
+    std::chrono::duration<double> elapsed_ms3 = (end3 - end2) * 1000;
 
     std::cout << "First run: " << elapsed_ms1.count() << " ms\n";
     std::cout << "Second run: " << elapsed_ms2.count() << " ms\n";
+    std::cout << "Third run: " << elapsed_ms3.count() << " ms\n";
 
     auto results_path
         = get_examples_results_dir() / "nonlocal_divergence_results";
@@ -132,7 +155,14 @@ int main() {
     file << "x,y,divergence\n";
     for (size_t i = 0; i < grid_size * grid_size; ++i) {
         file << source_grid(0, i) << "," << source_grid(1, i) << ","
-             << expected_divergence(i) << "\n";
+             << expected_divergence[i] << "\n";
+    }
+    file.close();
+    file = std::ofstream(results_path / "nonlocal_divergence_no_cusparse.csv");
+    file << "x,y,divergence\n";
+    for (size_t i = 0; i < grid_size * grid_size; ++i) {
+        file << source_grid(0, i) << "," << source_grid(1, i) << ","
+             << divergence_values_no_cusparse(i) << "\n";
     }
 
     return 0;

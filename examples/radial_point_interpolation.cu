@@ -46,13 +46,13 @@
 #include <scalix/filesystem.hpp>
 
 __device__ float field_function(const float* x) {
-    return naga::math::sin(x[0]) * naga::math::cos(x[1]);
+    return naga::math::sin(x[0]) * naga::math::cos(x[1]) + 1.0f;
 }
 
 int main() {
     uint support_size = 32;  // number of support nodes used for interpolation
 
-    size_t grid_size   = 500;
+    size_t grid_size   = 1000;
     float grid_length  = 2 * naga::math::pi<float>;
     float grid_spacing = grid_length / (static_cast<float>(grid_size) - 1.0f);
 
@@ -126,12 +126,13 @@ int main() {
 
     // construct the interpolator
     auto interpolator
-        = naga::interpolation::radial_point_method<>::create_interpolator(
+        = naga::interpolation::radial_point_method<float>::create_interpolator(
             source_grid,
             indices,
             naga::default_point_map<float, 2>{interp_grid},
             grid_spacing
         );
+    interpolator.enable_cusparse_algorithm();
     auto end_interpolator = std::chrono::high_resolution_clock::now();
 
     // Now we interpolate the field values
@@ -139,14 +140,23 @@ int main() {
     // Note that we run it 3 times. We do this to show how the unified memory
     // driver improves performance over successive runs. This is especially
     // noticeable when running multiple devices.
-    interpolator.interpolate(source_values, interp_values);
+    interpolator.interpolate(source_values, interp_values).get();
     auto end_interpolate = std::chrono::high_resolution_clock::now();
 
-    interpolator.interpolate(source_values, interp_values);
+    interpolator.interpolate(source_values, interp_values).get();
     auto end_interpolate2 = std::chrono::high_resolution_clock::now();
 
-    interpolator.interpolate(source_values, interp_values);
+    interpolator.interpolate(source_values, interp_values).get();
     auto end_interpolate3 = std::chrono::high_resolution_clock::now();
+
+    interpolator.interpolate(source_values, interp_values).get();
+    auto end_interpolate4 = std::chrono::high_resolution_clock::now(
+    );
+
+    interpolator.interpolate(source_values, interp_values).get();
+    auto end_interpolate5 = std::chrono::high_resolution_clock::now(
+    );  // first call where we don't have to allocate memory, since the max
+        // parallel threads is 4
 
     // compute the l2 error
     auto interp_errors
@@ -187,6 +197,10 @@ int main() {
         = (end_interpolate2 - end_interpolate) * 1000.f;
     std::chrono::duration<double> interpolate_time3
         = (end_interpolate3 - end_interpolate2) * 1000.f;
+    std::chrono::duration<double> interpolate_time4
+        = (end_interpolate4 - end_interpolate3) * 1000.f;
+    std::chrono::duration<double> interpolate_time5
+        = (end_interpolate5 - end_interpolate4) * 1000.f;
 
     std::cout << "Time to construct segmentation: " << partition_time.count()
               << " ms" << std::endl;
@@ -200,6 +214,10 @@ int main() {
               << " ms" << std::endl;
     std::cout << "Time to interpolate (3rd run): " << interpolate_time3.count()
               << " ms" << std::endl;
+    std::cout << "Time to interpolate (4th run): " << interpolate_time4.count()
+              << " ms" << std::endl;
+    std::cout << "Time to interpolate (5th run): " << interpolate_time5.count()
+                << " ms" << std::endl;
 
     // save the results to view in paraview
     auto save_dir = get_examples_results_dir() / "radial_point_method_results";
