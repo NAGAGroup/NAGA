@@ -349,14 +349,14 @@ class pml_absorption_operator<d2q9_lattice<T>> {
 
             engine_->advection_operator_ptr_->divergence_op().apply(
                 field_map,
-                engine_->temporary_distribution_
+                engine_->temporary_distributions_[alpha]
             );
 
             sclx::algorithm::elementwise_reduce(
                 sclx::algorithm::plus<>{},
                 engine_->solution_.lattice_distributions[alpha],
                 engine_->solution_.lattice_distributions[alpha],
-                engine_->temporary_distribution_
+                engine_->temporary_distributions_[alpha]
             );
         }
 
@@ -785,14 +785,14 @@ class pml_absorption_operator<d3q27_lattice<T>> {
 
             engine_->advection_operator_ptr_->divergence_op().apply(
                 field_map_Q1,
-                engine_->temporary_distribution_
+                engine_->temporary_distributions_[alpha]
             );
 
             sclx::algorithm::elementwise_reduce(
                 sclx::algorithm::plus<>{},
                 engine_->solution_.lattice_distributions[alpha],
                 engine_->solution_.lattice_distributions[alpha],
-                engine_->temporary_distribution_
+                engine_->temporary_distributions_[alpha]
             );
 
             const auto& Q2 = lattice_Q2_values_[alpha];
@@ -807,14 +807,14 @@ class pml_absorption_operator<d3q27_lattice<T>> {
 
             engine_->advection_operator_ptr_->divergence_op().apply(
                 field_map_Q2,
-                engine_->temporary_distribution_
+                engine_->temporary_distributions_[alpha]
             );
 
             sclx::algorithm::elementwise_reduce(
                 sclx::algorithm::plus<>{},
                 engine_->solution_.lattice_distributions[alpha],
                 engine_->solution_.lattice_distributions[alpha],
-                engine_->temporary_distribution_
+                engine_->temporary_distributions_[alpha]
             );
         }
 
