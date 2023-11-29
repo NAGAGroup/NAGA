@@ -81,6 +81,7 @@ class circular_init_peak : public density_source_t {
     std::future<void> add_density_source(
         const simulation_domain_t& domain,
         const problem_parameters_t& params,
+        const solution_t& state,
         const value_type& time,
         sclx::array<value_type, 1>& source_terms
     ) final {

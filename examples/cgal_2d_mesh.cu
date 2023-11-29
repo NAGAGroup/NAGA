@@ -38,7 +38,7 @@ using lattice_t    = naga::fluids::nonlocal_lbm::d2q9_lattice<value_type>;
 using sim_engine_t = problem_traits<lattice_t>::sim_engine_t;
 using simulation_domain_t = problem_traits<lattice_t>::simulation_domain_t;
 using node_provider_t     = problem_traits<lattice_t>::node_provider_t;
-using audio_source_t      = problem_traits<lattice_t>::spherical_audio_source;
+using audio_source_t      = problem_traits<lattice_t>::pulse_density_source;
 
 // The time scaling done after the user-defined simulation parameters
 // are to ensure that the desired audio frequency can be resolved.
@@ -127,14 +127,14 @@ int main() {
         = get_resources_dir() / "lbm_example_domains" / "circles_in_rectangle";
     sclx::filesystem::path domain_obj       = obj_resources_dir / "domain.obj";
     double outer_absorption_layer_thickness = 0.2;
-    double outer_absorption_coefficient     = 0.1;
+    double outer_absorption_coefficient     = 0.01;
 
     // immersed boundary obj files and absorption parameters
     std::vector<sclx::filesystem::path> immersed_boundary_objs
         = {obj_resources_dir / "circle1.obj",
            obj_resources_dir / "circle2.obj"};
-    std::vector<double> immersed_absorption_layer_thicknesses = {0.08, 0.};
-    std::vector<double> immersed_absorption_coefficients      = {0.01, 0.};
+    std::vector<double> immersed_absorption_layer_thicknesses = {0.0, 0.};
+    std::vector<double> immersed_absorption_coefficients      = {0.0, 0.};
     //    std::vector<sclx::filesystem::path> immersed_boundary_objs = {};
     //    std::vector<double> immersed_absorption_layer_thicknesses  = {};
     //    std::vector<double> immersed_absorption_coefficients       = {};
@@ -151,7 +151,7 @@ int main() {
     auto wav_resource_dir        = get_resources_dir() / "wav_files";
     auto wav_file                = wav_resource_dir / "sample1_low_freq.wav";
     uint node_resolution         = 8;
-    value_type max_wav_frequency = 850;
+    value_type max_wav_frequency = 25;
     value_type audio_amplitude   = 5e-4;
     value_type source_radius     = 0.08;
     size_t frame_offset          = 0;
@@ -176,7 +176,7 @@ int main() {
 
     // observer types
     bool enable_vtk_observer = true;
-    bool enable_wav_observer = true;
+    bool enable_wav_observer = false;
 
     // ----------------- Simulation Code Below, Don't Touch ----------------- //
 
@@ -184,8 +184,10 @@ int main() {
         characteristic_velocity,
         lattice_characteristic_velocity
     );
+    value_type pulse_frequency
+        = speed_of_sound / nodal_spacing / node_resolution;
     value_type min_allowed_wavelength = nodal_spacing * node_resolution;
-    value_type min_wavelength         = speed_of_sound / max_wav_frequency;
+    value_type min_wavelength         = speed_of_sound / pulse_frequency;
     value_type time_multiplier        = 1.0;
     if (min_wavelength < min_allowed_wavelength) {
         time_multiplier = min_wavelength / min_allowed_wavelength;
@@ -223,25 +225,18 @@ int main() {
     characteristic_length_at_300ms
         = characteristic_length * 300.f / new_speed_of_sound;
 
+
     audio_source_t source{
-        wav_file,
         audio_amplitude,
+        speed_of_sound / pulse_frequency,
+        speed_of_sound,
         source_radius,
-        time_multiplier,
-        frame_offset};
-    auto sample_rate = static_cast<value_type>(source.sample_rate());
+        audio_source_t::point_t{{-2.6, 0.}},
+        time_multiplier};
 
     // this ensures that the time step of the simulation will be stable
     // and is an integer multiple of the audio source sample rate
-    value_type max_allowed_time_step = 0.5f * nodal_spacing * nodal_spacing;
-    if (max_allowed_time_step * speed_of_sound > 0.1f * nodal_spacing) {
-        max_allowed_time_step = 0.1f * nodal_spacing / speed_of_sound;
-    }
-    value_type unscaled_time_step = 1.f / sample_rate;
-    if (unscaled_time_step > max_allowed_time_step) {
-        unscaled_time_step
-            /= std::ceil(unscaled_time_step / max_allowed_time_step);
-    }
+    value_type unscaled_time_step = nodal_spacing / speed_of_sound / 5.f;
 
     // need to adjust min wavelength for new parameters
     value_type max_resolved_frequency
@@ -260,12 +255,8 @@ int main() {
               << " s\n";
     std::cout << "    Characteristic length: " << characteristic_length_at_300ms
               << " m\n\n";
-
-    std::cout << "Audio samples will be added to the simulation every "
-              << 1.
-                     / (static_cast<value_type>(source.sample_rate())
-                        * unscaled_time_step * time_multiplier)
-              << " frames\n\n";
+    std::cout << "    Pulse wavelength: " << 300.f / pulse_frequency
+              << " m\n\n";
 
     sim_engine_t engine;
     engine.set_problem_parameters(
@@ -300,21 +291,10 @@ int main() {
     sclx::filesystem::remove_all(results_path);
     sclx::filesystem::create_directories(results_path);
 
-    auto full_wav_save_path = results_path / wav_save_file;
-    naga::fluids::nonlocal_lbm::audio_sink_observer<lattice_t, channel_config>
-        audio_sink(
-            full_wav_save_path,
-            sample_rate,
-            sink_location,
-            fluid_density,
-            engine.domain(),
-            time_multiplier,
-            audio_sink_history_size
-        );
-    if (enable_wav_observer) {
-        engine.attach_observer(audio_sink);
+    if (visualization_fps == 0) {
+        visualization_fps = 1.f / engine.problem_parameters().time_step
+                          / time_multiplier / visualization_time_multiplier;
     }
-
     naga::fluids::nonlocal_lbm::vtk_observer<lattice_t> viz_observer(
         results_path,
         time_multiplier * visualization_time_multiplier,

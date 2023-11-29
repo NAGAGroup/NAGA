@@ -34,7 +34,7 @@
 #include <numeric>
 #include <scalix/filesystem.hpp>
 
-using value_type = double;
+using value_type = float;
 
 template<class PointType>
 __host__ __device__ value_type field_function(const PointType& x) {
@@ -48,7 +48,7 @@ __host__ __device__ value_type field_function(const PointType& x) {
 }
 
 int main() {
-    size_t grid_size       = 120;
+    size_t grid_size       = 131;
     value_type grid_length = 1.f;
     value_type grid_spacing
         = grid_length / (static_cast<value_type>(grid_size) - 1.0f);
@@ -84,6 +84,7 @@ int main() {
 
     auto results_path
         = get_examples_results_dir() / "nonlocal_advection_results";
+    sclx::filesystem::remove_all(results_path);
     sclx::filesystem::create_directories(results_path);
     std::ofstream file(results_path / "initial_condition.csv");
     file << "x,y,value\n";
@@ -93,27 +94,73 @@ int main() {
     }
     file.close();
 
-    value_type time_step = naga::math::loopless::pow<2>(grid_spacing) * 2.f;
+    value_type time_step = naga::math::loopless::pow<1>(grid_spacing) / std::sqrt(2.f) / 5.f;
 
     sclx::array<value_type, 1> advection_result{grid_size * grid_size};
-    value_type velocity[2] = {0.1f, 0.1f};
+    value_type velocity[2] = {.1f, .1f};
     auto velocity_field    = naga::nonlocal_calculus::
         constant_velocity_field<value_type, 2>::create(velocity);
+
     auto advection_op
         = naga::nonlocal_calculus::advection_operator<value_type, 2>::create(
             source_grid
         );
 
+    advection_op.enable_implicit(velocity, time_step);
+//    auto start = std::chrono::high_resolution_clock::now();
+//
+//    advection_op
+//        .step_forward(
+//            velocity_field,
+//            source_values,
+//            advection_result,
+//            time_step
+//        )
+//        .get();
+//    auto end1 = std::chrono::high_resolution_clock::now();
+//
+//    advection_op
+//        .step_forward(
+//            velocity_field,
+//            source_values,
+//            advection_result,
+//            time_step
+//        )
+//        .get();
+//    auto end2 = std::chrono::high_resolution_clock::now();
+//
+//    advection_op
+//        .step_forward(
+//            velocity_field,
+//            source_values,
+//            advection_result,
+//            time_step
+//        )
+//        .get();
+//    auto end3 = std::chrono::high_resolution_clock::now();
+//
+//    std::chrono::duration<double> elapsed_ms1 = (end1 - start) * 1000;
+//    std::chrono::duration<double> elapsed_ms2 = (end2 - end1) * 1000;
+//    std::chrono::duration<double> elapsed_ms3 = (end3 - end2) * 1000;
+//
+//    std::cout << "First run: " << elapsed_ms1.count() << " ms\n";
+//    std::cout << "Second run: " << elapsed_ms2.count() << " ms\n";
+//    std::cout << "Third run: " << elapsed_ms3.count() << " ms\n";
+//
     value_type time = 0.0f;
     uint save_frame = 0;
     value_type fps  = 60.0f;
-    while (time < 1.f) {
-        advection_op.step_forward(
-            velocity_field,
-            source_values,
-            advection_result,
-            time_step
-        );
+    sclx::array<int, 1> node_types{grid_size * grid_size};
+    sclx::fill(node_types, 0);
+    for (auto& global_idx: advection_op.explicit_indices_) {
+        node_types[global_idx] = 1;
+    }
+    while (time < 2.f) {
+        advection_op
+            .apply_implicit(
+                source_values,
+                advection_result
+            );
         time += time_step;
         if (time * fps >= static_cast<value_type>(save_frame)) {
             std::cout << "Time: " << time << "\n";
@@ -122,10 +169,10 @@ int main() {
                 / (std::string("advection_result.csv.")
                    + std::to_string(save_frame))
             );
-            file << "x,y,value\n";
+            file << "x,y,value,type\n";
             for (size_t i = 0; i < grid_size * grid_size; ++i) {
                 file << source_grid(0, i) << "," << source_grid(1, i) << ","
-                     << advection_result(i) << "\n";
+                     << advection_result(i) << "," << node_types(i) << "\n";
             }
             file.close();
             ++save_frame;
