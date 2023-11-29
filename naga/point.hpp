@@ -33,6 +33,7 @@
 #pragma once
 #include "compatability.h"
 #include <type_traits>
+#include <ostream>
 
 namespace naga {
 
@@ -167,5 +168,31 @@ class point_t {
     T data_[Dimensions];
     static_assert(!std::is_const<T>::value, "point_t cannot have const T");
 };
+
+template <class T, uint Dimensions>
+NAGA_HOST std::ostream& operator<<(std::ostream& os, const point_t<T, Dimensions>& p)  {
+    os << "(";
+    for (uint i = 0; i < Dimensions; ++i) {
+        os << p[i];
+        if (i != Dimensions - 1) {
+            os << ", ";
+        }
+    }
+    os << ")";
+    return os;
+}
+
+template <class T, uint Dimensions>
+NAGA_HOST std::ostream& operator<<(std::ostream& os, const point_view_t<T, Dimensions>& p)  {
+    os << "(";
+    for (uint i = 0; i < Dimensions; ++i) {
+        os << p[i];
+        if (i != Dimensions - 1) {
+            os << ", ";
+        }
+    }
+    os << ")";
+    return os;
+}
 
 }  // namespace naga
