@@ -38,6 +38,249 @@
 
 namespace naga::linalg {
 
+namespace detail {
+template<class T>
+class batched_matrix_inverse_executor{
+  public:
+    std::future<void> static submit(
+        int device_id,
+        sclx::array<T, 3>& A,
+        sclx::array<T, 3>& A_inv,
+        bool copy_A,
+        std::experimental::source_location current) {
+        auto& device_executor = get_executor_for_device(device_id);
+        auto expected = false;
+        while (!device_executor.problem_definition_->is_preparing.compare_exchange_weak(expected, true)) {
+            expected = false;
+            std::this_thread::yield();
+        }
+        while (device_executor.problem_definition_->is_task_submitted.load()) {
+            std::this_thread::yield();
+        }
+        device_executor.problem_definition_->A = A;
+        device_executor.problem_definition_->A_inv = A_inv;
+        device_executor.problem_definition_->copy_A = copy_A;
+        device_executor.problem_definition_->current = current;
+        device_executor.problem_definition_->promise = std::promise<void>();
+        auto fut = device_executor.problem_definition_->promise.get_future();
+        device_executor.problem_definition_->is_task_submitted.store(true);
+        device_executor.problem_definition_->is_preparing.store(false);
+        return fut;
+    }
+
+    ~batched_matrix_inverse_executor() {
+        if (problem_definition_ == nullptr) {
+            return;
+        }
+        while (problem_definition_->is_preparing.load()) {
+            std::this_thread::yield();
+        }
+        while (problem_definition_->is_task_submitted.load()) {
+            std::this_thread::yield();
+        }
+        problem_definition_->stop_thread.store(true);
+        while (problem_definition_->is_running.load()) {
+            std::this_thread::yield();
+        }
+    }
+
+
+    struct problem_definition{
+        std::atomic<bool> is_running{false};
+        std::atomic<bool> is_task_submitted{false};
+        std::atomic<bool> stop_thread{false};
+        std::atomic<bool> is_preparing{false};
+        sclx::array<T, 3> A;
+        sclx::array<T, 3> A_inv;
+        std::experimental::source_location current;
+        bool copy_A;
+        std::promise<void> promise;
+    };
+
+    static void thread_function(problem_definition* raw_problem_ptr, int device_id) {
+        sclx::cuda::set_device(device_id);
+        auto handle = naga::detail::cublas::handle_t::create();
+        sclx::array<T, 3> A_copy;
+        sclx::array<T, 1> A_copy_flat;
+        sclx::array<T*, 1> A_ptr;
+        sclx::array<T*, 1> A_inv_ptr;
+        sclx::array<int, 1> info;
+        sclx::array<int, 1> pivot;
+        raw_problem_ptr->is_running.store(true);
+        while (!raw_problem_ptr->stop_thread.load()) {
+            if (raw_problem_ptr->is_task_submitted.load()) {
+                auto A = raw_problem_ptr->A;
+                auto A_inv = raw_problem_ptr->A_inv;
+                auto current = raw_problem_ptr->current;
+                auto copy_A = raw_problem_ptr->copy_A;
+
+                int dims       = A.shape()[0];
+                int batch_size = A.shape()[2];
+                if (info.elements() < batch_size) {
+                    info = sclx::array<int, 1>(sclx::shape_t<1>{static_cast<size_t>(batch_size)}, false);
+                    info.set_primary_devices(std::vector<int>{device_id});
+                }
+                if (pivot.elements() < batch_size * dims) {
+                    pivot = sclx::array<int, 1>(sclx::shape_t<1>{static_cast<size_t>(batch_size * dims)}, false);
+                    pivot.set_primary_devices(std::vector<int>{device_id});
+                }
+
+                std::future<void> copy_future;
+                if (copy_A) {
+                    if (A_copy_flat.elements() < A.elements()) {
+                        A_copy_flat = sclx::array<T, 1>(
+                            sclx::shape_t<1>{static_cast<size_t>(A.elements())},
+                            false
+                        );
+                        A_copy = sclx::array<T, 3>(A.shape(), A_copy_flat.data());
+                        A_copy.set_primary_devices(
+                            std::vector<int>{device_id}
+                        );
+                    }
+                    auto copy_future_
+                        = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+                              handler.launch(
+                                  sclx::md_range_t<3>(A_copy.shape()),
+                                  A_copy,
+                                  [=] __device__(sclx::md_index_t<3> & idx, auto&) {
+                                      A_copy[idx] = A[idx];
+                                  }
+                              );
+                          });
+                    copy_future = std::move(copy_future_);
+                } else {
+                    A_copy = A;
+                    copy_future = std::async(std::launch::deferred, []() {});
+                }
+
+
+                if (A_ptr.elements() < A.shape()[2]){
+                    A_ptr = sclx::array<T*, 1>(
+                        sclx::shape_t<1>{static_cast<size_t>(A.shape()[2])},
+                        false
+                    );
+                    A_ptr.set_primary_devices(
+                        std::vector<int>{device_id}
+                    );
+                }
+                if (A_inv_ptr.elements() < A_inv.shape()[2]){
+                    A_inv_ptr = sclx::array<T*, 1>(
+                        sclx::shape_t<1>{static_cast<size_t>(A_inv.shape()[2])},
+                        false
+                    );
+                    A_inv_ptr.set_primary_devices(
+                        std::vector<int>{device_id}
+                    );
+                }
+
+                auto ptr_setup_future
+                    = sclx::execute_kernel([=](sclx::kernel_handler& handler) {
+                          sclx::array_list<T*, 1, 2> ptrs
+                              = {A_ptr, A_inv_ptr};
+
+                          handler.launch(
+                              sclx::md_range_t<1>(A_ptr.shape()),
+                              ptrs,
+                              [=] __device__(sclx::md_index_t<1> & idx, auto&) {
+                                  A_ptr[idx] = &A_copy(0, 0, idx[0]);
+                                  A_inv_ptr[idx] = &A_inv(0, 0, idx[0]);
+                              }
+                          );
+                      });
+
+                copy_future.get();
+                ptr_setup_future.get();
+                A_copy.unset_read_mostly();
+                auto status_getrf = detail::cublas_getrf_batched<T>::compute(
+                    handle,
+                    dims,
+                    A_ptr.data().get(),
+                    dims,
+                    pivot.data().get(),
+                    info.data().get(),
+                    batch_size
+                );
+
+                A_inv.unset_read_mostly();
+                auto status_getri = detail::cublas_getri_batched<T>::compute(
+                    handle,
+                    dims,
+                    A_ptr.data().get(),
+                    dims,
+                    pivot.data().get(),
+                    A_inv_ptr.data().get(),
+                    dims,
+                    info.data().get(),
+                    batch_size
+                );
+
+                if (status_getrf != CUBLAS_STATUS_SUCCESS) {
+                    sclx::throw_exception<std::runtime_error>(
+                        "CUBLAS error on getrf: "
+                            + std::string(cublasGetStatusString(
+                                static_cast<cublasStatus_t>(status_getrf)
+                            )),
+                        "naga::linalg::",
+                        current
+                    );
+                }
+
+                if (status_getri != CUBLAS_STATUS_SUCCESS) {
+                    sclx::throw_exception<std::runtime_error>(
+                        "CUBLAS error on getri: "
+                            + std::string(cublasGetStatusString(
+                                static_cast<cublasStatus_t>(status_getri)
+                            )),
+                        "naga::linalg::",
+                        current
+                    );
+                }
+
+                sclx::cuda::stream_synchronize();
+                raw_problem_ptr->promise.set_value();
+                raw_problem_ptr->is_task_submitted.store(false);
+            } else {
+                std::this_thread::yield();
+            }
+        }
+        raw_problem_ptr->is_running.store(false);
+    }
+
+    batched_matrix_inverse_executor() = default;
+    batched_matrix_inverse_executor(const batched_matrix_inverse_executor&) = delete;
+    batched_matrix_inverse_executor& operator=(const batched_matrix_inverse_executor&) = delete;
+    batched_matrix_inverse_executor(batched_matrix_inverse_executor&&) = default;
+    batched_matrix_inverse_executor& operator=(batched_matrix_inverse_executor&&) = default;
+
+  private:
+
+    void init_thread(int device_id) {
+        problem_definition_ = std::make_unique<problem_definition>();
+        problem_definition* raw_problem_ptr = problem_definition_.get();
+        std::thread([raw_problem_ptr, device_id](){
+            thread_function(raw_problem_ptr, device_id);
+        }).detach();
+        while (!problem_definition_->is_running.load()) {
+            std::this_thread::yield();
+        }
+    }
+
+    static std::vector<batched_matrix_inverse_executor>* create_executors() {
+        auto* executors = new std::vector<batched_matrix_inverse_executor>(sclx::cuda::traits::device_count());
+        for (int device_id = 0; device_id < sclx::cuda::traits::device_count(); ++device_id) {
+            (*executors)[device_id].init_thread(device_id);
+        }
+        return executors;
+    }
+
+    static batched_matrix_inverse_executor& get_executor_for_device(int device_id) {
+        static std::unique_ptr<std::vector<batched_matrix_inverse_executor>> executors(create_executors());
+        return (*executors)[device_id];
+    }
+    std::unique_ptr<problem_definition> problem_definition_{nullptr};
+};
+}
+
 template<class T>
 __host__ void batched_matrix_inverse(
     sclx::array<T, 3>& A,
@@ -78,157 +321,20 @@ __host__ void batched_matrix_inverse(
         size_t slice_start = std::get<1>(split);
         size_t slice_len   = std::get<2>(split);
 
-        auto task_lambda = [=]() {
-            auto handle = naga::detail::cublas::handle_t::create();
 
-            auto A_slice
-                = A.get_range({slice_start}, {slice_start + slice_len});
-            auto A_inv_slice
-                = A_inv.get_range({slice_start}, {slice_start + slice_len});
+        auto A_slice
+            = A.get_range({slice_start}, {slice_start + slice_len});
+        auto A_inv_slice
+            = A_inv.get_range({slice_start}, {slice_start + slice_len});
 
-            int *info, *pivot;
-            int dims       = A_slice.shape()[0];
-            int batch_size = A_slice.shape()[2];
-            auto error     = cudaMallocManaged(&info, batch_size * sizeof(int));
-            sclx::cuda::cuda_exception::raise_if_not_success(
-                error,
-                current,
-                "naga::linalg::"
-            );
-            error = cudaMallocManaged(&pivot, batch_size * dims * sizeof(int));
-            sclx::cuda::cuda_exception::raise_if_not_success(
-                error,
-                current,
-                "naga::linalg::"
-            );
-
-            sclx::array<T, 3> A_slice_copy;
-            std::future<void> prefetched_future1;
-            if (copy_A) {
-                A_slice_copy = sclx::array<T, 3>(
-                    {static_cast<size_t>(dims),
-                     static_cast<size_t>(dims),
-                     static_cast<size_t>(batch_size)},
-                    false
-                );
-
-                A_slice_copy.set_primary_devices(
-                    std::vector<int>{device_id},
-                    false
-                );
-                prefetched_future1 = std::move(A_slice_copy.prefetch_async());
-            } else {
-                A_slice_copy       = A_slice;
-                prefetched_future1 = std::async(std::launch::deferred, []() {});
-            }
-
-            sclx::array<T*, 1> A_slice_ptr({A_slice.shape()[2]}, false);
-            sclx::array<T*, 1> A_inv_slice_ptr({A_inv_slice.shape()[2]}, false);
-
-            A_slice_ptr.set_primary_devices(std::vector<int>{device_id}, false);
-            auto prefetched_future2 = A_slice_ptr.prefetch_async();
-
-            A_inv_slice_ptr.set_primary_devices(
-                std::vector<int>{device_id},
-                false
-            );
-            auto prefetched_future3 = A_inv_slice_ptr.prefetch_async();
-
-            prefetched_future1.get();
-            prefetched_future2.get();
-            prefetched_future3.get();
-
-            std::future<void> copy_future;
-            if (copy_A) {
-                auto copy_future_
-                    = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-                          handler.launch(
-                              sclx::md_range_t<3>(A_slice_copy.shape()),
-                              A_slice_copy,
-                              [=] __device__(sclx::md_index_t<3> & idx, auto&) {
-                                  A_slice_copy[idx] = A_slice[idx];
-                              }
-                          );
-                      });
-                copy_future = std::move(copy_future_);
-            } else {
-                copy_future = std::async(std::launch::deferred, []() {});
-            }
-
-            auto ptr_setup_future
-                = sclx::execute_kernel([=](sclx::kernel_handler& handler) {
-                      sclx::array_list<T*, 1, 2> ptrs
-                          = {A_slice_ptr, A_inv_slice_ptr};
-
-                      handler.launch(
-                          sclx::md_range_t<1>(A_slice_ptr.shape()),
-                          ptrs,
-                          [=] __device__(sclx::md_index_t<1> & idx, auto&) {
-                              A_slice_ptr[idx] = &A_slice_copy(0, 0, idx[0]);
-                              A_inv_slice_ptr[idx] = &A_inv_slice(0, 0, idx[0]);
-                          }
-                      );
-                  });
-
-            copy_future.get();
-            ptr_setup_future.get();
-            A_slice_copy.unset_read_mostly();
-            auto status_getrf = detail::cublas_getrf_batched<T>::compute(
-                handle,
-                dims,
-                A_slice_ptr.data().get(),
-                dims,
-                pivot,
-                info,
-                batch_size
-            );
-
-            A_inv_slice.unset_read_mostly();
-            auto status_getri = detail::cublas_getri_batched<T>::compute(
-                handle,
-                dims,
-                A_slice_ptr.data().get(),
-                dims,
-                pivot,
-                A_inv_slice_ptr.data().get(),
-                dims,
-                info,
-                batch_size
-            );
-
-            cudaFree(info);
-            cudaFree(pivot);
-
-            if (status_getrf != CUBLAS_STATUS_SUCCESS) {
-                sclx::throw_exception<std::runtime_error>(
-                    "CUBLAS error on getrf: "
-                        + std::string(cublasGetStatusString(
-                            static_cast<cublasStatus_t>(status_getrf)
-                        )),
-                    "naga::linalg::",
-                    current
-                );
-            }
-
-            if (status_getri != CUBLAS_STATUS_SUCCESS) {
-                sclx::throw_exception<std::runtime_error>(
-                    "CUBLAS error on getri: "
-                        + std::string(cublasGetStatusString(
-                            static_cast<cublasStatus_t>(status_getri)
-                        )),
-                    "naga::linalg::",
-                    current
-                );
-            }
-        };
-
-        //        sclx::cuda::set_device(device_id);
-        //        task_lambda();
-        //        sclx::cuda::set_device(0);
-
-        futures.emplace_back(
-            sclx::cuda::task_scheduler::submit_task(device_id, task_lambda)
+        auto fut = detail::batched_matrix_inverse_executor<T>::submit(
+            device_id,
+            A_slice,
+            A_inv_slice,
+            copy_A,
+            current
         );
+        futures.push_back(std::move(fut));
     }
 
     for (auto& future : futures) {
