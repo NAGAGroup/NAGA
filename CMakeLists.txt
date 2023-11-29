@@ -29,15 +29,13 @@ find_package(OpenMP REQUIRED)
 find_package(VTK REQUIRED COMPONENTS IOXML)
 
 add_library(
-  naga-lib SHARED
+  naga-lib STATIC
   source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.cpp
 )
 target_include_directories(
   naga-lib PRIVATE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}
                    ${NANOFLANN_INCLUDE_DIR})
 target_link_libraries(naga-lib PRIVATE scalix sdf)
-set_target_properties(naga-lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(sdf PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # naga is a mostly header only library
 add_library(naga INTERFACE)
