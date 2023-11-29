@@ -212,6 +212,8 @@ class conforming_point_cloud_provider<
         using closed_contour_t = typename detail::conforming_point_cloud_t<
             dimensions>::input_domain_data_t;
 
+        std::mutex distance_mutex;
+
         if (domain_absorption_layer_thickness > 0) {
             closed_contour_t domain_contour = conforming_point_cloud.domain();
 #pragma omp parallel for
@@ -224,8 +226,10 @@ class conforming_point_cloud_provider<
                 );
                 distance_to_domain_contour
                     = std::abs(distance_to_domain_contour);
+                std::lock_guard<std::mutex> lock(distance_mutex);
                 if (distance_to_domain_contour
-                    < domain_absorption_layer_thickness) {
+                    < domain_absorption_layer_thickness && distance_to_domain_contour
+                        < contour_distances(i)) {
                     contour_distances(i) = distance_to_domain_contour;
                     absorption_rates(i)
                         = ::naga::math::loopless::pow<2>(
@@ -255,7 +259,7 @@ class conforming_point_cloud_provider<
                     );
                 distance_to_immersed_boundary_contour
                     = std::abs(distance_to_immersed_boundary_contour);
-
+                std::lock_guard<std::mutex> lock(distance_mutex);
                 if (distance_to_immersed_boundary_contour
                         <= immersed_boundary_layer_thicknesses[i]
                     && distance_to_immersed_boundary_contour
@@ -285,18 +289,18 @@ class conforming_point_cloud_provider<
             bulk_points.begin(),
             bulk_points.end(),
             [&](const auto& point) {
-                return contour_distances(&point - &bulk_points[0])
-                    == std::numeric_limits<value_type>::max();
+                return absorption_rates[&point - &bulk_points[0]] == 0;
             }
         );
         std::stable_partition(
             absorption_rates.begin(),
             absorption_rates.end(),
-            [](const auto& rate) { return rate > 0; }
+            [](const auto& rate) { return rate == 0; }
         );
         absorption_rates = sclx::array<value_type, 1>(
             sclx::shape_t<1>{num_layer_points},
-            absorption_rates.data()
+            absorption_rates.data().get() + nodes_.num_bulk_points
+                - num_layer_points
         );
         for (size_t i = 0; i < bulk_points.size(); ++i) {
             for (size_t j = 0; j < dimensions; ++j) {
