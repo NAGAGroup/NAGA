@@ -81,12 +81,13 @@ class vtk_observer : public simulation_observer<Lattice> {
     void update(
         const value_type& time,
         const simulation_domain_t& domain,
-        const problem_parameters_t&,
+        const problem_parameters_t& parameters,
         const solution_t& solution
     ) {
         const auto& results_path = output_directory_;
         auto save_frame
             = static_cast<size_t>(time_multiplier_ * time * frame_rate_);
+        save_frame = frame_rate_ != 0. ? save_frame : static_cast<size_t>(std::ceil(time / parameters.time_step));
         if (frame_rate_ != 0 && save_frame < current_frame_) {
             return;
         }
