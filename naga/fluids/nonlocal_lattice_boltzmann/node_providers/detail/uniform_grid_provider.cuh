@@ -48,7 +48,7 @@ __host__ void assign_boundary_info(
     const uniform_grid_provider<Lattice>& provider,
     sclx::array<typename Lattice::value_type, 2>& points,
     sclx::array<typename Lattice::value_type, 2>& normals,
-    size_t boundary_offset
+    uint boundary_offset
 );
 
 template<class Lattice>
@@ -62,7 +62,7 @@ __host__ void assign_bulk_and_layer_info(
     const uniform_grid_provider<Lattice>& provider,
     const sclx::array<typename Lattice::value_type, 2>&
         boundary_distances_squared,
-    const size_t& layer_points_offset,
+    const uint& layer_points_offset,
     const sclx::array<typename Lattice::value_type, 2>& old_points,
     sclx::array<typename Lattice::value_type, 2>& points,
     sclx::array<typename Lattice::value_type, 1>& absorption_coefficients
@@ -74,7 +74,7 @@ struct boundary_count_criteria_functor {
     constexpr static uint dimensions = Lattice::dimensions;
     using range_type = typename ranges::uniform_grid<value_type, dimensions>;
 
-    __host__ __device__ bool operator()(const size_t& i) const {
+    __host__ __device__ bool operator()(const uint& i) const {
         return ranges::uniform_grid_inspector<value_type, dimensions>::
             is_boundary_index(grid_range_, i);
     }

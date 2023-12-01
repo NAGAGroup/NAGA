@@ -70,7 +70,7 @@ class conforming_point_cloud_t<2> {
   public:
     using point_t  = ::naga::point_t<double, 2>;
     using normal_t = point_t;
-    using index_t  = size_t;
+    using index_t  = uint;
 
     conforming_point_cloud_t() = default;
 
@@ -90,11 +90,11 @@ class conforming_point_cloud_t<2> {
 
     const std::vector<normal_t>& normals() const;
 
-    const size_t& num_bulk_points() const;
+    const uint& num_bulk_points() const;
 
-    const size_t& num_boundary_points() const;
+    const uint& num_boundary_points() const;
 
-    size_t size() const;
+    uint size() const;
 
     bool is_boundary(const index_t& i) const;
 
@@ -122,7 +122,7 @@ class conforming_point_cloud_t<3> {
     static constexpr uint dimensions = 3;
     using point_t                    = ::naga::point_t<double, dimensions>;
     using normal_t                   = point_t;
-    using index_t                    = size_t;
+    using index_t                    = uint;
 
     conforming_point_cloud_t() = default;
 

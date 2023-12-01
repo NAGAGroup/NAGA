@@ -53,13 +53,13 @@ struct PointCloud {
     std::vector<Point> pts;
 
     // Must return the number of data points
-    inline size_t kdtree_get_point_count() const { return pts.size(); }
+    inline uint kdtree_get_point_count() const { return pts.size(); }
 
     // Returns the dim'th component of the idx'th point in the class:
     // Since this is inlined and the "dim" argument is typically an immediate
     // value, the
     //  "if/else's" are actually solved at compile time.
-    inline T kdtree_get_pt(const size_t idx, const size_t dim) const {
+    inline T kdtree_get_pt(const uint idx, const uint dim) const {
         if (dim == 0)
             return pts[idx].x;
         else if (dim == 1)
@@ -82,14 +82,14 @@ struct PointCloud {
 template<typename T>
 void generateRandomPointCloudRanges(
     PointCloud<T>& pc,
-    const size_t N,
+    const uint N,
     const T max_range_x,
     const T max_range_y,
     const T max_range_z
 ) {
     // Generating Random Point Cloud
     pc.pts.resize(N);
-    for (size_t i = 0; i < N; i++) {
+    for (uint i = 0; i < N; i++) {
         pc.pts[i].x = max_range_x * (rand() % 1000) / T(1000);
         pc.pts[i].y = max_range_y * (rand() % 1000) / T(1000);
         pc.pts[i].z = max_range_z * (rand() % 1000) / T(1000);
@@ -99,7 +99,7 @@ void generateRandomPointCloudRanges(
 template<typename T>
 void generateRandomPointCloud(
     PointCloud<T>& pc,
-    const size_t N,
+    const uint N,
     const T max_range = 10
 ) {
     generateRandomPointCloudRanges(pc, N, max_range, max_range, max_range);
@@ -115,13 +115,13 @@ struct PointCloud_Quat {
     std::vector<Point> pts;
 
     // Must return the number of data points
-    inline size_t kdtree_get_point_count() const { return pts.size(); }
+    inline uint kdtree_get_point_count() const { return pts.size(); }
 
     // Returns the dim'th component of the idx'th point in the class:
     // Since this is inlined and the "dim" argument is typically an immediate
     // value, the
     //  "if/else's" are actually solved at compile time.
-    inline T kdtree_get_pt(const size_t idx, const size_t dim) const {
+    inline T kdtree_get_pt(const uint idx, const uint dim) const {
         if (dim == 0)
             return pts[idx].w;
         else if (dim == 1)
@@ -144,11 +144,11 @@ struct PointCloud_Quat {
 };
 
 template<typename T>
-void generateRandomPointCloud_Quat(PointCloud_Quat<T>& point, const size_t N) {
+void generateRandomPointCloud_Quat(PointCloud_Quat<T>& point, const uint N) {
     // Generating Random Quaternions
     point.pts.resize(N);
     T theta, X, Y, Z, sinAng, cosAng, mag;
-    for (size_t i = 0; i < N; i++) {
+    for (uint i = 0; i < N; i++) {
         theta = static_cast<T>(
             nanoflann::pi_const<double>() * ((( double ) rand()) / RAND_MAX)
         );
@@ -179,13 +179,13 @@ struct PointCloud_Orient {
     std::vector<Point> pts;
 
     // Must return the number of data points
-    inline size_t kdtree_get_point_count() const { return pts.size(); }
+    inline uint kdtree_get_point_count() const { return pts.size(); }
 
     // Returns the dim'th component of the idx'th point in the class:
     // Since this is inlined and the "dim" argument is typically an immediate
     // value, the
     //  "if/else's" are actually solved at compile time.
-    inline T kdtree_get_pt(const size_t idx, const size_t dim = 0) const {
+    inline T kdtree_get_pt(const uint idx, const uint dim = 0) const {
         return pts[idx].theta;
     }
 
@@ -203,11 +203,11 @@ struct PointCloud_Orient {
 template<typename T>
 void generateRandomPointCloud_Orient(
     PointCloud_Orient<T>& point,
-    const size_t N
+    const uint N
 ) {
     // Generating Random Orientations
     point.pts.resize(N);
-    for (size_t i = 0; i < N; i++) {
+    for (uint i = 0; i < N; i++) {
         point.pts[i].theta = static_cast<T>(
             (2 * nanoflann::pi_const<double>()
              * ((( double ) rand()) / RAND_MAX))
@@ -221,7 +221,7 @@ inline void dump_mem_usage() {
     if (!f)
         return;
     char str[300];
-    size_t n = fread(str, 1, 200, f);
+    uint n = fread(str, 1, 200, f);
     str[n]   = 0;
     printf("MEM: %s\n", str);
     fclose(f);

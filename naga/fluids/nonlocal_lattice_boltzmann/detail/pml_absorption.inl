@@ -67,8 +67,8 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
         const value_type* c0,
         const sclx::array<const value_type, 1>& absorption_coeff,
         const sclx::array<const value_type, 1>& Q1,
-        size_t pml_start_index,
-        size_t pml_end_index
+        uint pml_start_index,
+        uint pml_end_index
     )
         : absorption_coeff(absorption_coeff),
           Q1(Q1),
@@ -87,7 +87,7 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
                 c[d] = 0.f;
             }
         } else {
-            size_t pml_index = i - pml_start_index;
+            uint pml_index = i - pml_start_index;
             value_type sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
                 c[d] = -c0[d] * sigma * Q1[pml_index];
@@ -102,7 +102,7 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
         return (*this)[index[0]];
     }
 
-    __host__ __device__ size_t size() const {
+    __host__ __device__ uint size() const {
         return absorption_coeff.elements();
     }
 
@@ -110,8 +110,8 @@ class pml_div_Q1_field_map<d2q9_lattice<T>> {
     value_type c0[dimensions];
     sclx::array<const value_type, 1> absorption_coeff;
     sclx::array<const value_type, 1> Q1;
-    size_t pml_start_index;
-    size_t pml_end_index;
+    uint pml_start_index;
+    uint pml_end_index;
 };
 
 template<class T>
@@ -410,8 +410,8 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
         const value_type* c0,
         const sclx::array<const value_type, 1>& absorption_coeff,
         const sclx::array<const value_type, 1>& Q1,
-        size_t pml_start_index,
-        size_t pml_end_index
+        uint pml_start_index,
+        uint pml_end_index
     )
         : absorption_coeff(absorption_coeff),
           Q1(Q1),
@@ -430,7 +430,7 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
                 c[d] = 0.f;
             }
         } else {
-            size_t pml_index = i - pml_start_index;
+            uint pml_index = i - pml_start_index;
             value_type sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
                 c[d] = -2.f * c0[d] * sigma * Q1[pml_index];
@@ -445,7 +445,7 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
         return (*this)[index[0]];
     }
 
-    __host__ __device__ size_t size() const {
+    __host__ __device__ uint size() const {
         return absorption_coeff.elements();
     }
 
@@ -453,8 +453,8 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
     value_type c0[dimensions];
     sclx::array<const value_type, 1> absorption_coeff;
     sclx::array<const value_type, 1> Q1;
-    size_t pml_start_index;
-    size_t pml_end_index;
+    uint pml_start_index;
+    uint pml_end_index;
 };
 
 template<class T>
@@ -471,8 +471,8 @@ class pml_div_Q2_field_map {
         const value_type* c0,
         const sclx::array<const value_type, 1>& absorption_coeff,
         const sclx::array<const value_type, 1>& Q2,
-        size_t pml_start_index,
-        size_t pml_end_index
+        uint pml_start_index,
+        uint pml_end_index
     )
         : absorption_coeff(absorption_coeff),
           Q2(Q2),
@@ -491,7 +491,7 @@ class pml_div_Q2_field_map {
                 c[d] = 0.f;
             }
         } else {
-            size_t pml_index = i - pml_start_index;
+            uint pml_index = i - pml_start_index;
             value_type sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
                 c[d] = c0[d] * sigma * sigma * Q2[pml_index];
@@ -506,7 +506,7 @@ class pml_div_Q2_field_map {
         return (*this)[index[0]];
     }
 
-    __host__ __device__ size_t size() const {
+    __host__ __device__ uint size() const {
         return absorption_coeff.elements();
     }
 
@@ -514,8 +514,8 @@ class pml_div_Q2_field_map {
     value_type c0[dimensions];
     sclx::array<const value_type, 1> absorption_coeff;
     sclx::array<const value_type, 1> Q2;
-    size_t pml_start_index;
-    size_t pml_end_index;
+    uint pml_start_index;
+    uint pml_end_index;
 };
 
 template<class T>

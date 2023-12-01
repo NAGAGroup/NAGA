@@ -120,12 +120,12 @@ __host__ void compute_partition_sizes(
 
 template<uint Dimensions>
 __host__ void compute_index_offsets(
-    sclx::array<size_t, Dimensions>& partition_index_offsets,
+    sclx::array<uint, Dimensions>& partition_index_offsets,
     const sclx::array<const uint, Dimensions>& partition_sizes
 ) {
     partition_index_offsets
-        = sclx::array<size_t, Dimensions>(partition_sizes.shape());
-    sclx::array<size_t, Dimensions> part_sizes_scan_result(
+        = sclx::array<uint, Dimensions>(partition_sizes.shape());
+    sclx::array<uint, Dimensions> part_sizes_scan_result(
         partition_sizes.shape()
     );
     sclx::algorithm::inclusive_scan(
@@ -139,7 +139,7 @@ __host__ void compute_index_offsets(
             sclx::md_range_t<Dimensions>(partition_index_offsets.shape()),
             partition_index_offsets,
             [=] __device__(const sclx::md_index_t<Dimensions>& index, const auto&) {
-                size_t flat_index
+                uint flat_index
                     = index.as_linear(partition_index_offsets.shape());
                 if (flat_index == 0) {
                     partition_index_offsets[index] = 0;
@@ -156,13 +156,13 @@ __host__ void compute_index_offsets(
 
 template<class T, uint Dimensions>
 __host__ void assign_indices(
-    sclx::array<size_t, 1>& indices_,
+    sclx::array<uint, 1>& indices_,
     const sclx::array<const uint, Dimensions>& partition_sizes_,
-    const sclx::array<const size_t, Dimensions>& partition_index_offsets_,
+    const sclx::array<const uint, Dimensions>& partition_index_offsets_,
     const sclx::array<const T, 2>& points_,
     const nd_cubic_segmentation<T, Dimensions>& segmentation
 ) {
-    indices_ = sclx::array<size_t, 1>{points_.shape()[1]};
+    indices_ = sclx::array<uint, 1>{points_.shape()[1]};
 
     std::vector<std::tuple<int, size_t, size_t>> indices_device_split;
     auto offset_device_split
@@ -175,7 +175,7 @@ __host__ void assign_indices(
     // To make sure that the writes are local to each device, we update
     // the memory split info according to the split info of the partition
     // and the index offset metadata.
-    size_t last_index_slice_idx{};
+    uint last_index_slice_idx{};
     for (int d = 0; d < offset_device_split.size() - 1; ++d) {
         const auto& [device_id, slice_idx, slice_len] = offset_device_split[d];
         auto start_slice
@@ -206,7 +206,7 @@ __host__ void assign_indices(
     sclx::array<uint, Dimensions> indices_assigned(segmentation.shape());
     sclx::fill(indices_assigned, uint{0});
 
-    sclx::array<size_t*, Dimensions> indices_container(segmentation.shape());
+    sclx::array<uint*, Dimensions> indices_container(segmentation.shape());
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         auto index_start_ptr = &indices_[0];
         handler.launch(

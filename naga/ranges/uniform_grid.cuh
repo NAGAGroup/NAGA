@@ -49,7 +49,7 @@ template<class T, uint Dimensions>
 class uniform_grid_iterator {
   public:
     using value_type        = point_t<T, Dimensions>;
-    using difference_type   = size_t;
+    using difference_type   = uint;
     using iterator_category = std::random_access_iterator_tag;
 
     __host__ __device__ uniform_grid_iterator(
@@ -88,7 +88,7 @@ class uniform_grid_iterator {
 
     __host__ __device__ value_type operator*() const {
         value_type result;
-        size_t index = current_index_;
+        uint index = current_index_;
         for (uint i = 0; i < Dimensions; ++i) {
             result[i] = min_[i] + (index % grid_size_[i]) * grid_spacing_[i];
             index /= grid_size_[i];
@@ -96,7 +96,7 @@ class uniform_grid_iterator {
         return result;
     }
 
-    __host__ __device__ value_type operator[](const sclx::index_t& n) const {
+    __host__ __device__ value_type operator[](const uint& n) const {
         return *(*this + n);
     }
 
@@ -187,8 +187,8 @@ class uniform_grid_iterator {
     friend class uniform_grid<T, Dimensions>;
     friend struct uniform_grid_inspector<T, Dimensions>;
 
-    size_t current_index_{0};
-    size_t grid_size_[Dimensions];
+    uint current_index_{0};
+    uint grid_size_[Dimensions];
     T grid_spacing_[Dimensions];
     point_t<T, Dimensions> min_;
 };
@@ -217,15 +217,15 @@ class uniform_grid {
 
     __host__ __device__ iterator end() const { return begin_ + size(); }
 
-    __host__ __device__ size_t size() const {
-        size_t result = 1;
+    __host__ __device__ uint size() const {
+        uint result = 1;
         for (uint i = 0; i < Dimensions; ++i) {
             result *= begin_.grid_size_[i];
         }
         return result;
     }
 
-    __host__ __device__ value_type operator[](const sclx::index_t& n) const {
+    __host__ __device__ value_type operator[](const uint& n) const {
         return begin_[n];
     }
 
@@ -240,7 +240,7 @@ struct uniform_grid_inspector {
     using grid_t = uniform_grid<T, Dimensions>;
 
     __host__ __device__ static bool
-    is_boundary_index(const grid_t& grid, sclx::index_t n) {
+    is_boundary_index(const grid_t& grid, uint n) {
         for (uint i = 0; i < Dimensions; ++i) {
             if (n % grid.begin_.grid_size_[i] == 0
                 || n % grid.begin_.grid_size_[i]
@@ -253,7 +253,7 @@ struct uniform_grid_inspector {
     }
 
     __host__ __device__ static typename grid_t::value_type
-    get_boundary_normal(const grid_t& grid, sclx::index_t boundary_index) {
+    get_boundary_normal(const grid_t& grid, uint boundary_index) {
         if (!is_boundary_index(grid, boundary_index)) {
 #ifdef __CUDA_ARCH__
             printf("get_boundary_normal called with non-boundary index\n");
@@ -266,7 +266,7 @@ struct uniform_grid_inspector {
 #endif
         }
 
-        size_t dim_indices[Dimensions];
+        uint dim_indices[Dimensions];
         for (uint i = 0; i < Dimensions; ++i) {
             dim_indices[i] = boundary_index % grid.begin_.grid_size_[i];
             boundary_index /= grid.begin_.grid_size_[i];

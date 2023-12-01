@@ -46,7 +46,7 @@ template<class T, uint Dimensions>
 class partition_iterator {
   public:
     using value_type        = point_view_t<const T, Dimensions>;
-    using difference_type   = sclx::index_t;
+    using difference_type   = uint;
     using iterator_category = std::random_access_iterator_tag;
 
     __host__ __device__ operator bool() const {
@@ -142,14 +142,14 @@ class partition_iterator {
 
   private:
     const sclx::array<const T, 2>* points_;
-    const size_t* indices_;
+    const uint* indices_;
     uint partition_size_;
 
     uint counter_ = 0;
 
     __host__ __device__ partition_iterator(
         const sclx::array<const T, 2>* points,
-        const size_t* indices,
+        const uint* indices,
         const uint& partition_size
     )
         : points_(points),
@@ -170,7 +170,7 @@ class partition_t {
         return &((*points_)(0, indices_[index]));
     }
 
-    __host__ __device__ const size_t& point_dimensions() const {
+    __host__ __device__ const uint& point_dimensions() const {
         return points_->shape()[0];
     }
 
@@ -187,18 +187,18 @@ class partition_t {
 
     __host__ __device__ bool empty() const { return partition_size_ == 0; }
 
-    __host__ __device__ const size_t* indices() const { return indices_; }
+    __host__ __device__ const uint* indices() const { return indices_; }
 
     friend class nd_cubic_segmentation<T, Dimensions>;
 
   private:
     const sclx::array<const T, 2>* points_;
-    const size_t* indices_;
+    const uint* indices_;
     uint partition_size_;
 
     __host__ __device__ partition_t(
         const sclx::array<const T, 2>* points,
-        const size_t* indices,
+        const uint* indices,
         const uint& partition_size
     )
         : points_(points),
@@ -328,7 +328,7 @@ class nd_cubic_segmentation {
             partition_sizes_[index]};
     }
 
-    __host__ __device__ partition_type get_partition(sclx::index_t index
+    __host__ __device__ partition_type get_partition(uint index
     ) const {
         return {
             &points_,
@@ -346,11 +346,11 @@ class nd_cubic_segmentation {
         return partition_sizes_.shape();
     }
 
-    __host__ __device__ size_t partition_count() const {
+    __host__ __device__ uint partition_count() const {
         return partition_sizes_.elements();
     }
 
-    __host__ __device__ size_t point_count() const {
+    __host__ __device__ uint point_count() const {
         return points_.shape()[1];
     }
 
@@ -375,9 +375,9 @@ class nd_cubic_segmentation {
 
   private:
     sclx::array<uint, Dimensions> partition_sizes_;
-    sclx::array<size_t, Dimensions> partition_index_offsets_;
+    sclx::array<uint, Dimensions> partition_index_offsets_;
     sclx::array<const T, 2> points_;
-    sclx::array<size_t, 1> indices_;
+    sclx::array<uint, 1> indices_;
 
     T lower_bounds_[Dimensions];
     T upper_bounds_[Dimensions];
@@ -391,7 +391,7 @@ class nd_cubic_segmentation_iterator {
     using partition_type    = typename segmentation_type::partition_type;
 
     using value_type        = partition_type;
-    using difference_type   = sclx::index_t;
+    using difference_type   = uint;
     using iterator_category = std::random_access_iterator_tag;
 
     __host__ __device__ operator bool() const {
@@ -476,7 +476,7 @@ class nd_cubic_segmentation_iterator {
 
     __host__ __device__ nd_cubic_segmentation_iterator(
         const segmentation_type* segmentation,
-        size_t counter
+        uint counter
     )
         : segmentation_(segmentation),
           counter_(counter) {}
@@ -489,7 +489,7 @@ class nd_cubic_segmentation_iterator {
   private:
     const segmentation_type* segmentation_;
 
-    size_t counter_;
+    uint counter_;
 };
 
 template<class T, uint Dimensions>

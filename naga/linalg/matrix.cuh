@@ -178,14 +178,14 @@ class vector<T, storage_type::dense> {
   public:
     vector() = default;
 
-    __host__ vector(size_t size) : vector(std::move(sclx::array<T, 1>{size})) {}
+    __host__ vector(uint size) : vector(std::move(sclx::array<T, 1>{size})) {}
 
     __host__ vector(sclx::array<T, 1> values)
         : desc_(std::make_shared<description_info>(description_info{
             std::move(values)})) {
         cusparseDnVecDescr_t desc = nullptr;
         if (desc_->values_.elements()
-            > static_cast<size_t>(std::numeric_limits<int>::max())) {
+            > static_cast<uint>(std::numeric_limits<int>::max())) {
             sclx::throw_exception<std::invalid_argument>(
                 "values.elements() > std::numeric_limits<int>::max()",
                 "naga::linalg::vector::"
@@ -312,9 +312,9 @@ class matrix<T, storage_type::sparse_csr> {
         check_index_stencil(index_stencil);
         sclx::array<int, 1> row_offsets{index_stencil.shape()[1] + 1};
         if (index_stencil.shape()[0]
-                > static_cast<size_t>(std::numeric_limits<int>::max())
+                > static_cast<uint>(std::numeric_limits<int>::max())
             || index_stencil.shape()[1]
-                   > static_cast<size_t>(std::numeric_limits<int>::max())) {
+                   > static_cast<uint>(std::numeric_limits<int>::max())) {
             sclx::throw_exception<std::invalid_argument>(
                 "index_stencil.shape()[0] > std::numeric_limits<int>::max() || "
                 "index_stencil.shape()[1] > std::numeric_limits<int>::max()",
@@ -351,7 +351,7 @@ class matrix<T, storage_type::sparse_csr> {
         }
 
         if (index_stencil.shape()[1]
-            > static_cast<size_t>(std::numeric_limits<int>::max())) {
+            > static_cast<uint>(std::numeric_limits<int>::max())) {
             sclx::throw_exception<std::invalid_argument>(
                 "index_stencil.shape()[1] > std::numeric_limits<int>::max()",
                 "naga::linalg::square_matrix::"
@@ -688,7 +688,7 @@ class matrix_mult<
                         // init C
                         cusparseSpMatDescr_t matC       = nullptr;
                         problem_->C.desc_->row_offsets_ = sclx::array<int, 1>{
-                            static_cast<size_t>(problem_->A.rows() + 1)};
+                            static_cast<uint>(problem_->A.rows() + 1)};
                         problem_->C.desc_->rows    = problem_->A.rows();
                         problem_->C.desc_->columns = problem_->B.columns();
                         auto error                 = cusparseCreateCsr(
@@ -847,9 +847,9 @@ class matrix_mult<
                         }
 
                         problem_->C.desc_->values_
-                            = sclx::array<T, 1>{static_cast<size_t>(C_nnz1)};
+                            = sclx::array<T, 1>{static_cast<uint>(C_nnz1)};
                         problem_->C.desc_->column_indices_
-                            = sclx::array<int, 1>{static_cast<size_t>(C_nnz1)};
+                            = sclx::array<int, 1>{static_cast<uint>(C_nnz1)};
 
                         // update matC with the new pointers
                         error = cusparseCsrSetPointers(

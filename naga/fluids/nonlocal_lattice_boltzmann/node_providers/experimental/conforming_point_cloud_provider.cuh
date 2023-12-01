@@ -98,9 +98,9 @@ T get_distance_to_contour(
     const T* p_new,
     const std::vector<U>& vertices,
     const std::vector<U>& vertex_normals,
-    const std::vector<size_t>& edges
+    const std::vector<uint>& edges
 ) {
-    std::vector<size_t> edge = {edges[0], edges[1]};
+    std::vector<uint> edge = {edges[0], edges[1]};
     auto min_distance        = distance_to_edge<T>(
         p_new,
         {vertices[2 * edge[0]], vertices[2 * edge[0] + 1]},
@@ -108,7 +108,7 @@ T get_distance_to_contour(
         {vertices[2 * edge[1]], vertices[2 * edge[1] + 1]},
         {vertex_normals[2 * edge[1]], vertex_normals[2 * edge[1] + 1]}
     );
-    for (size_t e = 1; e < edges.size() / 2; e++) {
+    for (uint e = 1; e < edges.size() / 2; e++) {
         edge          = {edges[2 * e], edges[2 * e + 1]};
         auto distance = distance_to_edge<T>(
             p_new,
@@ -173,8 +173,8 @@ class conforming_point_cloud_provider<
         nodes_.points = sclx::array<value_type, 2>{
             dimensions,
             conforming_point_cloud.points().size()};
-        for (size_t i = 0; i < conforming_point_cloud.points().size(); ++i) {
-            for (size_t j = 0; j < dimensions; ++j) {
+        for (uint i = 0; i < conforming_point_cloud.points().size(); ++i) {
+            for (uint j = 0; j < dimensions; ++j) {
                 nodes_.points(j, i) = conforming_point_cloud.points()[i][j];
             }
         }
@@ -182,8 +182,8 @@ class conforming_point_cloud_provider<
         nodes_.boundary_normals = sclx::array<value_type, 2>{
             dimensions,
             conforming_point_cloud.normals().size()};
-        for (size_t i = 0; i < conforming_point_cloud.normals().size(); ++i) {
-            for (size_t j = 0; j < dimensions; ++j) {
+        for (uint i = 0; i < conforming_point_cloud.normals().size(); ++i) {
+            for (uint j = 0; j < dimensions; ++j) {
                 nodes_.boundary_normals(j, i)
                     = conforming_point_cloud.normals()[i][j];
             }
@@ -217,7 +217,7 @@ class conforming_point_cloud_provider<
         if (domain_absorption_layer_thickness > 0) {
             closed_contour_t domain_contour = conforming_point_cloud.domain();
 #pragma omp parallel for
-            for (size_t i = 0; i < nodes_.num_bulk_points; ++i) {
+            for (uint i = 0; i < nodes_.num_bulk_points; ++i) {
                 auto distance_to_domain_contour = get_distance_to_contour(
                     &bulk_points[i][0],
                     domain_contour.vertices(),
@@ -242,14 +242,14 @@ class conforming_point_cloud_provider<
             }
         }
 
-        for (size_t i = 0; i < immersed_boundaries.size(); ++i) {
+        for (uint i = 0; i < immersed_boundaries.size(); ++i) {
             if (immersed_boundary_layer_thicknesses[i] == 0) {
                 continue;
             }
             closed_contour_t immersed_boundary_contour
                 = conforming_point_cloud.immersed_boundaries()[i];
 #pragma omp parallel for
-            for (size_t j = 0; j < nodes_.num_bulk_points; ++j) {
+            for (uint j = 0; j < nodes_.num_bulk_points; ++j) {
                 auto distance_to_immersed_boundary_contour
                     = get_distance_to_contour(
                         &bulk_points[j][0],
@@ -276,7 +276,7 @@ class conforming_point_cloud_provider<
                 }
             }
         }
-        size_t num_layer_points = std::count_if(
+        uint num_layer_points = std::count_if(
             absorption_rates.begin(),
             absorption_rates.end(),
             [](const auto& rate) { return rate > 0; }
@@ -302,8 +302,8 @@ class conforming_point_cloud_provider<
             absorption_rates.data().get() + nodes_.num_bulk_points
                 - num_layer_points
         );
-        for (size_t i = 0; i < bulk_points.size(); ++i) {
-            for (size_t j = 0; j < dimensions; ++j) {
+        for (uint i = 0; i < bulk_points.size(); ++i) {
+            for (uint j = 0; j < dimensions; ++j) {
                 nodes_.points(j, i) = bulk_points[i][j];
             }
         }
@@ -343,11 +343,11 @@ class conforming_point_cloud_provider<
                 immersed_boundaries
             );
 
-        size_t num_bulk_and_layer_points
+        uint num_bulk_and_layer_points
             = conforming_point_cloud.bulk_points().size();
-        size_t num_boundary_points
+        uint num_boundary_points
             = conforming_point_cloud.boundary_points().size();
-        size_t num_points = num_bulk_and_layer_points + num_boundary_points;
+        uint num_points = num_bulk_and_layer_points + num_boundary_points;
 
         nodes_.nodal_spacing       = approximate_spacing;
         nodes_.num_boundary_points = num_boundary_points;
@@ -400,7 +400,7 @@ class conforming_point_cloud_provider<
             bulk_points.begin(),
             bulk_points.end(),
             [&](const naga::point_t<double, 3>& x) {
-                size_t i = &x - &bulk_points[0];
+                uint i = &x - &bulk_points[0];
                 return absorption_coefficients[i] == 0.0;
             }
         );
@@ -408,17 +408,17 @@ class conforming_point_cloud_provider<
             absorption_coefficients.begin(),
             absorption_coefficients.end(),
             [&](const double& x) {
-                size_t i = &x - &absorption_coefficients[0];
+                uint i = &x - &absorption_coefficients[0];
                 return absorption_coefficients[i] == 0.0;
             }
         );
-        size_t num_layer_points = std::count_if(
+        uint num_layer_points = std::count_if(
             absorption_coefficients.begin(),
             absorption_coefficients.end(),
             [](const auto& rate) { return rate > 0; }
         );
 
-        size_t num_bulk_points  = num_bulk_and_layer_points - num_layer_points;
+        uint num_bulk_points  = num_bulk_and_layer_points - num_layer_points;
         nodes_.num_bulk_points  = num_bulk_points;
         nodes_.num_layer_points = num_layer_points;
 
@@ -427,14 +427,14 @@ class conforming_point_cloud_provider<
                 = sclx::array<value_type, 1>{num_layer_points};
         }
 
-        for (size_t i = 0; i < num_bulk_points; ++i) {
-            for (size_t j = 0; j < dimensions; ++j) {
+        for (uint i = 0; i < num_bulk_points; ++i) {
+            for (uint j = 0; j < dimensions; ++j) {
                 nodes_.points(j, i) = bulk_points[i][j];
             }
         }
 
-        for (size_t i = 0; i < num_layer_points; ++i) {
-            for (size_t j = 0; j < dimensions; ++j) {
+        for (uint i = 0; i < num_layer_points; ++i) {
+            for (uint j = 0; j < dimensions; ++j) {
                 nodes_.points(j, i + num_bulk_points)
                     = bulk_points[i + num_bulk_points][j];
                 nodes_.layer_absorption(i)
@@ -443,8 +443,8 @@ class conforming_point_cloud_provider<
         }
 
         const auto& boundary_points = conforming_point_cloud.boundary_points();
-        for (size_t i = 0; i < num_boundary_points; ++i) {
-            for (size_t j = 0; j < dimensions; ++j) {
+        for (uint i = 0; i < num_boundary_points; ++i) {
+            for (uint j = 0; j < dimensions; ++j) {
                 nodes_.points(j, i + num_bulk_and_layer_points)
                     = boundary_points[i][j];
                 nodes_.boundary_normals(j, i)

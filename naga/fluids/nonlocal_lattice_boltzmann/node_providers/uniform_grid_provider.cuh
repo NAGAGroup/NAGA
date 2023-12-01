@@ -71,7 +71,7 @@ class uniform_grid_provider : public node_provider<Lattice> {
             = sclx::array<value_type, 2>{dimensions, grid_range_.size()};
         sclx::array<value_type, 2> normals{dimensions, grid_range_.size()};
 
-        size_t boundary_size = count_boundary_points();
+        uint boundary_size = count_boundary_points();
 
         assign_boundary_info(
             result.points,
@@ -123,7 +123,7 @@ class uniform_grid_provider : public node_provider<Lattice> {
                 point_map_t{bulk_slice},
                 boundary_segmentation
             );
-        size_t num_layer_points
+        uint num_layer_points
             = count_layer_points(boundary_distances_squared);
 
         sclx::array<value_type, 2> bulk_points_new(
@@ -132,7 +132,7 @@ class uniform_grid_provider : public node_provider<Lattice> {
         sclx::array<value_type, 1> absorption_rates{
             grid_range_.size() - boundary_size};
 
-        size_t layer_points_offset
+        uint layer_points_offset
             = grid_range_.size() - boundary_size - num_layer_points;
 
         assign_bulk_and_layer_info(
@@ -166,8 +166,8 @@ class uniform_grid_provider : public node_provider<Lattice> {
     value_type absorption_layer_thickness_;
     value_type peak_absorption_rate_;
 
-    __host__ size_t count_boundary_points() const {
-        sclx::array<size_t, 1> iota_range{grid_range_.size()};
+    __host__ uint count_boundary_points() const {
+        sclx::array<uint, 1> iota_range{grid_range_.size()};
         sclx::iota(iota_range, 0);
         return sclx::algorithm::count_if(
             iota_range,
@@ -175,7 +175,7 @@ class uniform_grid_provider : public node_provider<Lattice> {
         );
     }
 
-    __host__ size_t count_layer_points(
+    __host__ uint count_layer_points(
         const sclx::array<value_type, 2>& boundary_distances_squared
     ) const {
         return sclx::algorithm::count_if(
@@ -189,13 +189,13 @@ class uniform_grid_provider : public node_provider<Lattice> {
         const uniform_grid_provider<Lattice>& provider,
         sclx::array<value_type, 2>& points,
         sclx::array<value_type, 2>& normals,
-        size_t boundary_offset
+        uint boundary_offset
     );
 
     __host__ void assign_boundary_info(
         sclx::array<value_type, 2>& points,
         sclx::array<value_type, 2>& normals,
-        size_t boundary_offset
+        uint boundary_offset
     ) const {
         detail::assign_boundary_info(*this, points, normals, boundary_offset);
     }
@@ -212,7 +212,7 @@ class uniform_grid_provider : public node_provider<Lattice> {
     friend __host__ void detail::assign_bulk_and_layer_info<Lattice>(
         const uniform_grid_provider<Lattice>& provider,
         const sclx::array<value_type, 2>& boundary_distances_squared,
-        const size_t& layer_points_offset,
+        const uint& layer_points_offset,
         const sclx::array<value_type, 2>& old_points,
         sclx::array<value_type, 2>& points,
         sclx::array<value_type, 1>& absorption_coefficients
@@ -220,7 +220,7 @@ class uniform_grid_provider : public node_provider<Lattice> {
 
     __host__ void assign_bulk_and_layer_info(
         const sclx::array<value_type, 2>& boundary_distances_squared,
-        const size_t& layer_points_offset,
+        const uint& layer_points_offset,
         const sclx::array<value_type, 2>& old_points,
         sclx::array<value_type, 2>& points,
         sclx::array<value_type, 1>& absorption_coefficients

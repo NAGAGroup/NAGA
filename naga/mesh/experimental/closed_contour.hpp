@@ -41,17 +41,17 @@ namespace naga::experimental::mesh {
 
 template<class T>
 bool is_edge_shared(
-    size_t face,
+    uint face,
     const int* face_edge,
     const triangular_mesh_t<T>& mesh
 ) {
-    for (size_t face_check = 0; face_check < mesh.faces().size();
+    for (uint face_check = 0; face_check < mesh.faces().size();
          face_check += 3) {
         if (face_check == face) {
             continue;
         }
-        for (size_t fe = 0; fe < 3; fe++) {
-            size_t face_edge_check[2] = {fe, (fe + 1) % 3};
+        for (uint fe = 0; fe < 3; fe++) {
+            uint face_edge_check[2] = {fe, (fe + 1) % 3};
             if (mesh.faces()[face_check + face_edge_check[0]]
                     == mesh.faces()[face + face_edge[0]]
                 && mesh.faces()[face_check + face_edge_check[1]]
@@ -94,7 +94,7 @@ calc_v12_edge_normal_of_tri(const T* v1, const T* v2, const T* v3) {
 
 template<class T>
 std::vector<T> calc_edge_normal_of_face(
-    size_t face,
+    uint face,
     const int* face_edge,
     const triangular_mesh_t<T>& mesh
 ) {
@@ -115,9 +115,9 @@ std::vector<T> calc_edge_normal_of_face(
 
 template<class T>
 void populate_contour_data(
-    const std::vector<size_t>& mesh_edges,
+    const std::vector<uint>& mesh_edges,
     const std::vector<T>& mesh_edge_normals,
-    std::vector<size_t>& contour_edges,
+    std::vector<uint>& contour_edges,
     std::vector<T>& contour_vertices,
     std::vector<T>& contour_vertex_normals,
     const triangular_mesh_t<T>& mesh,
@@ -131,7 +131,7 @@ void populate_contour_data(
     contour_vertex_normals.reserve(mesh.vertices().size() / 3 * 2);
 
     // get unique vertex ids from mesh edges
-    std::vector<size_t> unique_vertex_ids(mesh_edges.begin(), mesh_edges.end());
+    std::vector<uint> unique_vertex_ids(mesh_edges.begin(), mesh_edges.end());
     std::sort(unique_vertex_ids.begin(), unique_vertex_ids.end());
     auto last = std::unique(unique_vertex_ids.begin(), unique_vertex_ids.end());
     unique_vertex_ids.erase(last, unique_vertex_ids.end());
@@ -172,9 +172,9 @@ void populate_contour_data(
     }
 
     auto num_edges = contour_edges.size() / 2;
-    for (size_t e = 0; e < num_edges; e++) {
-        size_t edge_start = contour_edges[e * 2];
-        size_t edge_end   = contour_edges[e * 2 + 1];
+    for (uint e = 0; e < num_edges; e++) {
+        uint edge_start = contour_edges[e * 2];
+        uint edge_end   = contour_edges[e * 2 + 1];
         T edge_start_pos[2]
             = {contour_vertices[edge_start * 2],
                contour_vertices[edge_start * 2 + 1]};
@@ -195,7 +195,7 @@ void populate_contour_data(
         edge_dir[0] /= edge_length;
         edge_dir[1] /= edge_length;
 
-        for (size_t s = 1; s < num_subdivisions; s++) {
+        for (uint s = 1; s < num_subdivisions; s++) {
             T sub_div_pos[2]
                 = {edge_start_pos[0] + edge_dir[0] * length_sub_div * s,
                    edge_start_pos[1] + edge_dir[1] * length_sub_div * s};
@@ -219,7 +219,7 @@ void populate_contour_data(
 template<class T>
 class closed_contour_t {
   public:
-    using index_t = size_t;
+    using index_t = uint;
 
     closed_contour_t(
         std::vector<T> vertices,
@@ -280,7 +280,7 @@ class closed_contour_t {
             {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()}
         );
 
-        for (size_t i = 0; i < contour_vertices.size(); i += 2) {
+        for (uint i = 0; i < contour_vertices.size(); i += 2) {
             lower_bound[0] = std::min(lower_bound[0], contour_vertices[i]);
             lower_bound[1] = std::min(lower_bound[1], contour_vertices[i + 1]);
             upper_bound[0] = std::max(upper_bound[0], contour_vertices[i]);

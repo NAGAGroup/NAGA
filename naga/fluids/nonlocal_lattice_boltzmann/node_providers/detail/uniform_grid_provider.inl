@@ -39,7 +39,7 @@ __host__ void assign_boundary_info(
     const uniform_grid_provider<Lattice>& provider,
     sclx::array<typename Lattice::value_type, 2>& points,
     sclx::array<typename Lattice::value_type, 2>& normals,
-    size_t boundary_offset
+    uint boundary_offset
 ) {
     using value_type          = typename Lattice::value_type;
     constexpr uint dimensions = Lattice::dimensions;
@@ -113,7 +113,7 @@ __host__ void assign_bulk_and_layer_info(
     const uniform_grid_provider<Lattice>& provider,
     const sclx::array<typename Lattice::value_type, 2>&
         boundary_distances_squared,
-    const size_t& layer_points_offset,
+    const uint& layer_points_offset,
     const sclx::array<typename Lattice::value_type, 2>& old_points,
     sclx::array<typename Lattice::value_type, 2>& points,
     sclx::array<typename Lattice::value_type, 1>& absorption_coefficients

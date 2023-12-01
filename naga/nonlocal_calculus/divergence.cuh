@@ -62,17 +62,17 @@ class divergence_operator {
             Dimensions,
             detail::num_interp_support,
             domain.shape()[1]};
-        result.support_indices_ = sclx::array<size_t, 2>{
+        result.support_indices_ = sclx::array<uint, 2>{
             detail::num_interp_support,
             domain.shape()[1]};
 
-        size_t total_available_mem = 0;
+        uint total_available_mem = 0;
         int device_count           = sclx::cuda::traits::device_count();
         for (int d = 0; d < device_count; ++d) {
             sclx::cuda::memory_status_info info
                 = sclx::cuda::query_memory_status(d);
-            size_t allocated_mem = info.total - info.free;
-            size_t reduced_total_mem
+            uint allocated_mem = info.total - info.free;
+            uint reduced_total_mem
                 = info.total * 95 / 100;  // reduced to be safe
             if (reduced_total_mem < allocated_mem) {
                 sclx::throw_exception<std::runtime_error>(
@@ -84,28 +84,29 @@ class divergence_operator {
             total_available_mem += reduced_total_mem - allocated_mem;
         }
 
-        size_t builder_scratchpad_size
+        uint builder_scratchpad_size
             = operator_builder<T, Dimensions>::get_scratchpad_size(domain.shape(
             )[1]);
 
         // indices size excluded from self_scratchpad_size because it's
         // included in the builder_scratchpad_size
-        size_t max_domain_copy_size = domain.elements() * sizeof(T);
-        size_t self_scratchpad_size = sizeof(T) * Dimensions
+        uint max_domain_copy_size = domain.elements() * sizeof(T);
+        uint self_scratchpad_size = sizeof(T) * Dimensions
                                         * detail::num_interp_support
                                         * domain.shape()[1]
                                     + max_domain_copy_size;
 
-        size_t total_scratchpad_size
+        uint total_scratchpad_size
             = builder_scratchpad_size + self_scratchpad_size;
 
-        size_t batch_scratch_pad_size
+        uint batch_scratch_pad_size
             = std::min(total_available_mem, total_scratchpad_size);
-        size_t batch_size = domain.shape()[1] * batch_scratch_pad_size
+        uint batch_size = domain.shape()[1] * batch_scratch_pad_size
                           / total_scratchpad_size;
 
-        for (size_t i = 0; i < domain.shape()[1]; i += batch_size) {
-            size_t batch_end = std::min(i + batch_size, domain.shape()[1]);
+        for (uint i = 0; i < domain.shape()[1]; i += batch_size) {
+            uint batch_end = std::min(i + batch_size, static_cast<uint>(
+                domain.shape()[1]));
             sclx::array<T, 2> batch_domain{domain.shape()[0], batch_end - i};
             auto domain_slice = domain.get_range({i}, {batch_end});
             sclx::assign_array(domain_slice, batch_domain);
@@ -257,7 +258,7 @@ class divergence_operator {
 
     [[nodiscard]] sclx::array<const T, 3> weights() const { return weights_; }
 
-    [[nodiscard]] sclx::array<const sclx::index_t, 2> support_indices() const {
+    [[nodiscard]] sclx::array<const uint, 2> support_indices() const {
         return support_indices_;
     }
 
@@ -327,14 +328,14 @@ class divergence_operator {
         );
 
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-            auto max_total_threads_per_dev = std::numeric_limits<size_t>::min();
+            auto max_total_threads_per_dev = std::numeric_limits<uint>::min();
             int device_count               = sclx::cuda::traits::device_count();
             int current_device = sclx::cuda::traits::current_device();
             for (int d = 0; d < device_count; ++d) {
                 sclx::cuda::set_device(d);
                 cudaDeviceProp props{};
                 cudaGetDeviceProperties(&props, d);
-                size_t total_threads_per_dev = props.maxThreadsPerMultiProcessor
+                uint total_threads_per_dev = props.maxThreadsPerMultiProcessor
                                              * props.multiProcessorCount;
                 max_total_threads_per_dev = std::max(
                     max_total_threads_per_dev,
@@ -349,11 +350,11 @@ class divergence_operator {
             sclx::shape_t<2> block_shape{
                 detail::num_interp_support,
                 num_nodes_per_block};
-            size_t problem_size = result.elements() * detail::num_interp_support
+            uint problem_size = result.elements() * detail::num_interp_support
                                 / num_grid_strides;
-            size_t total_threads
+            uint total_threads
                 = std::min(max_total_threads_per_dev, problem_size);
-            size_t grid_size = total_threads / (block_shape.elements());
+            uint grid_size = total_threads / (block_shape.elements());
 
             sclx::local_array<T, 2> divergence_tmp{handler, block_shape};
 
@@ -499,7 +500,7 @@ class divergence_operator {
   private:
     static divergence_operator create(
         const sclx::array<T, 2>& domain,
-        const sclx::array<sclx::index_t, 2>& support_indices,
+        const sclx::array<uint, 2>& support_indices,
         const sclx::array<T, 2>& quad_interp_weights,
         const sclx::array<T, 1>& interaction_radii
     ) {
@@ -522,7 +523,7 @@ class divergence_operator {
     }
 
     sclx::array<T, 3> weights_;
-    sclx::array<sclx::index_t, 2> support_indices_;
+    sclx::array<uint, 2> support_indices_;
     using matrix_type
         = naga::linalg::matrix<T, naga::linalg::storage_type::sparse_csr>;
     using vector_type

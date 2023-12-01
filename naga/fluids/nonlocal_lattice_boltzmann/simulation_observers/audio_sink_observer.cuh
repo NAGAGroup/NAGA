@@ -87,7 +87,7 @@ class audio_sink_observer : public simulation_observer<Lattice> {
         const location_type& location,
         const simulation_domain_t& domain,
         const value_type& time_multiplier = 1,
-        size_t save_frequency             = 10
+        uint save_frequency             = 10
     )
         : sample_rate_(sample_rate),
           output_wav_file_(std::move(output_wav_file)),
@@ -150,7 +150,7 @@ class audio_sink_observer : public simulation_observer<Lattice> {
         const solution_t& solution
     ) {
         auto frame
-            = static_cast<size_t>(time_multiplier_ * time * sample_rate_);
+            = static_cast<uint>(time_multiplier_ * time * sample_rate_);
         if (frame < audio_buffer_[0].size()) {
             return;
         }
@@ -246,7 +246,7 @@ class audio_sink_observer : public simulation_observer<Lattice> {
     typename AudioFile<value_type>::AudioBuffer audio_buffer_;
     sclx::filesystem::path output_wav_file_;
     value_type sample_rate_;
-    size_t save_frequency_;
+    uint save_frequency_;
     value_type max_signal_ = 0.0;
 };
 

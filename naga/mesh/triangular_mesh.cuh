@@ -44,8 +44,8 @@ template<class T>
 struct triangular_mesh_t {
     sclx::array<T, 2> vertices;
     sclx::array<T, 2> normals;
-    sclx::array<sclx::index_t, 2> faces;
-    sclx::array<sclx::index_t, 2>
+    sclx::array<uint, 2> faces;
+    sclx::array<uint, 2>
         face_normals;  // (3 x faces) array of indices into normals
 
     static triangular_mesh_t import(const sclx::filesystem::path& path) {
@@ -59,8 +59,8 @@ struct triangular_mesh_t {
 
         std::vector<T> vertices;
         std::vector<T> normals;
-        std::vector<sclx::index_t> faces;
-        std::vector<sclx::index_t> face_normals;
+        std::vector<uint> faces;
+        std::vector<uint> face_normals;
 
         std::string line;
         while (std::getline(file, line)) {
@@ -104,11 +104,11 @@ struct triangular_mesh_t {
                 sclx::shape_t<2>{3, normals.size() / 3},
                 normals.data()
             ),
-            sclx::array<sclx::index_t, 2>(
+            sclx::array<uint, 2>(
                 sclx::shape_t<2>{3, faces.size() / 3},
                 faces.data()
             ),
-            sclx::array<sclx::index_t, 2>(
+            sclx::array<uint, 2>(
                 sclx::shape_t<2>{3, face_normals.size() / 3},
                 face_normals.data()
             )};

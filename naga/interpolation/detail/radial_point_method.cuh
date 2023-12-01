@@ -36,9 +36,9 @@ namespace naga::interpolation::detail::radial_point_method {
 
 template<class T>
 size_t get_scratchpad_size_per_group(
-    uint support_size,
-    uint dimensions,
-    uint group_size
+    size_t support_size,
+    size_t dimensions,
+    size_t group_size
 ) {
 
     // in order to match the paper, I will be using the same notation
@@ -92,7 +92,7 @@ size_t get_scratchpad_size_per_group(
 template<class T, class PointMapType, class ShapeFunctionType>
 static sclx::array<T, 2> compute_weights(
     const sclx::array<const T, 2>& source_points,
-    const sclx::array<const size_t, 2>& interpolating_indices,
+    const sclx::array<const uint, 2>& interpolating_indices,
     const PointMapType& query_points,
     const T& approx_particle_spacing,
     uint group_size                         = 1,
@@ -217,24 +217,24 @@ static sclx::array<T, 2> compute_weights(
         )
     );
     for (int i = 1; i < device_split_info.size(); ++i) {
-        size_t old_split_start = std::get<1>(device_split_info[i]);
-        size_t old_split_len   = std::get<2>(device_split_info[i]);
-        size_t old_split_end   = old_split_start + old_split_len;
+        uint old_split_start = std::get<1>(device_split_info[i]);
+        uint old_split_len   = std::get<2>(device_split_info[i]);
+        uint old_split_end   = old_split_start + old_split_len;
 
-        size_t prev_split_end = std::get<1>(modified_device_split_info.back())
+        uint prev_split_end = std::get<1>(modified_device_split_info.back())
                               + std::get<2>(modified_device_split_info.back());
 
-        size_t new_split_start = prev_split_end;
+        uint new_split_start = prev_split_end;
         if (new_split_start == weights.shape()[1]) {
             break;
         }
 
-        size_t new_split_end = std::min(
+        uint new_split_end = std::min(
             (old_split_end + group_size - 1) / group_size * group_size,
-            weights.shape()[1]
+            static_cast<uint>(weights.shape()[1])
         );
 
-        size_t new_split_len = new_split_end - new_split_start;
+        uint new_split_len = new_split_end - new_split_start;
 
         modified_device_split_info.emplace_back(
             std::get<0>(device_split_info[i]),

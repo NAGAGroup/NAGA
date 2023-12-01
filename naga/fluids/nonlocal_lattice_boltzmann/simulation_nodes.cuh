@@ -43,9 +43,9 @@ struct simulation_nodes {
     sclx::array<T, 2> boundary_normals{};
     sclx::array<T, 1> layer_absorption{};  // absorption coefficient for each
                                            // layer, with size num_layer_points
-    size_t num_bulk_points{};
-    size_t num_layer_points{};
-    size_t num_boundary_points{};
+    uint num_bulk_points{};
+    uint num_layer_points{};
+    uint num_boundary_points{};
 
     T nodal_spacing{};
 

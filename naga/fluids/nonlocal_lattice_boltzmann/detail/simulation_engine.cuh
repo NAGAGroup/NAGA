@@ -53,7 +53,7 @@ __device__ void compute_unitless_macroscopic_quants(
     typename lattice_traits<Lattice>::value_type* velocity_result,
     sclx::local_array<typename lattice_traits<Lattice>::value_type, 2>&
         f_shared,
-    const sclx::index_t linear_thread_id,
+    const uint linear_thread_id,
     sclx::local_array<typename lattice_traits<Lattice>::value_type, 2>&
         lattice_velocities
 ) {
@@ -120,7 +120,7 @@ class simulation_engine {
                 "naga::fluids::nonlocal_lbm::simulation_engine::"
             );
         }
-        size_t total_points = domain.num_bulk_points + domain.num_layer_points
+        uint total_points = domain.num_bulk_points + domain.num_layer_points
                             + domain.num_boundary_points;
         if (domain.points.shape()[1] != total_points) {
             sclx::throw_exception<std::invalid_argument>(

@@ -86,8 +86,8 @@ class vtk_observer : public simulation_observer<Lattice> {
     ) {
         const auto& results_path = output_directory_;
         auto save_frame
-            = static_cast<size_t>(time_multiplier_ * time * frame_rate_);
-        save_frame = frame_rate_ != 0. ? save_frame : static_cast<size_t>(std::ceil(time / parameters.time_step));
+            = static_cast<uint>(time_multiplier_ * time * frame_rate_);
+        save_frame = frame_rate_ != 0. ? save_frame : static_cast<uint>(std::ceil(time / parameters.time_step));
         if (frame_rate_ != 0 && save_frame < current_frame_) {
             return;
         }
@@ -250,7 +250,7 @@ class vtk_observer : public simulation_observer<Lattice> {
     value_type time_multiplier_;
     value_type frame_rate_;
     std::future<void> previous_frame_future_;
-    size_t current_frame_ = 0;
+    uint current_frame_ = 0;
 };
 
 }  // namespace naga::fluids::nonlocal_lbm

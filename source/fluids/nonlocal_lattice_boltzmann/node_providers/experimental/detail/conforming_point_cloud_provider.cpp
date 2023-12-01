@@ -41,8 +41,8 @@
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
 struct hashable_edge {
-    size_t i;
-    size_t j;
+    uint i;
+    uint j;
 };
 
 bool operator==(const hashable_edge& lhs, const hashable_edge& rhs) {
@@ -57,8 +57,8 @@ template<>
 struct hash<naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge> {
     using hashable_edge
         = naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge;
-    size_t operator()(const hashable_edge& e) const {
-        return std::hash<size_t>()(e.i) ^ std::hash<size_t>()(e.j) << 1;
+    uint operator()(const hashable_edge& e) const {
+        return std::hash<uint>()(e.i) ^ std::hash<uint>()(e.j) << 1;
     }
 };
 }  // namespace std
@@ -86,10 +86,10 @@ struct edge_info_t {
 };
 
 edge_info_t get_edge_info(
-    size_t edge_index,
+    uint edge_index,
     const std::vector<double>& vertices,
     const std::vector<double>& vertex_normals,
-    const std::vector<size_t>& edges
+    const std::vector<uint>& edges
 ) {
     edge_info_t edge_info{};
     using point_t  = edge_info_t::point_t;
@@ -129,7 +129,7 @@ void subdivide_edges_and_cache_edge_info(
     double target_length,
     std::vector<double>& vertices,
     std::vector<double>& vertex_normals,
-    std::vector<size_t>& edges,
+    std::vector<uint>& edges,
     std::vector<edge_info_t>& input_edge_info
 ) {
     input_edge_info.clear();
@@ -137,7 +137,7 @@ void subdivide_edges_and_cache_edge_info(
     auto vertices_copy       = vertices;
     auto vertex_normals_copy = vertex_normals;
     auto edges_copy          = edges;
-    for (size_t e = 0; e < edges_copy.size(); e += 2) {
+    for (uint e = 0; e < edges_copy.size(); e += 2) {
         auto edge_info
             = get_edge_info(e, vertices_copy, vertex_normals_copy, edges_copy);
         input_edge_info.push_back(edge_info);
@@ -147,12 +147,12 @@ void subdivide_edges_and_cache_edge_info(
         if (edge_len2target_len < 1 + acceptable_epsilon) {
             continue;
         }
-        size_t num_nodes_to_add
-            = static_cast<size_t>(std::ceil(edge_len2target_len)) - 1;
+        uint num_nodes_to_add
+            = static_cast<uint>(std::ceil(edge_len2target_len)) - 1;
         double actual_length
             = edge_info.length / static_cast<double>(num_nodes_to_add + 1);
 
-        size_t old_edge_end = edges_copy[e + 1];
+        uint old_edge_end = edges_copy[e + 1];
         naga::point_t<double, 2> new_vertex{
             {edge_info.v1[0] + edge_info.normalized_edge_dir[0] * actual_length,
              edge_info.v1[1]
@@ -268,16 +268,16 @@ std::tuple<double, double> distance_to_edge(
     return {signed_distance_to_line, naga::math::pi<double> / 2.};
 }
 
-std::pair<size_t, double> distance_to_boundary(
+std::pair<uint, double> distance_to_boundary(
     const naga::point_t<double, 2>& xi,
     const std::vector<edge_info_t>& edge_info
 ) {
     double min_distance              = std::numeric_limits<double>::max();
     double associated_incident_angle = 0;
-    size_t edge_index                = 0;
+    uint edge_index                = 0;
     std::mutex min_distance_mutex;
 #pragma omp parallel for
-    for (size_t e = 0; e < edge_info.size(); ++e) {
+    for (uint e = 0; e < edge_info.size(); ++e) {
         auto [distance, incident_angle] = distance_to_edge(xi, edge_info[e]);
         double diff_from_min
             = std::abs(std::abs(distance) - std::abs(min_distance));
@@ -308,11 +308,11 @@ std::vector<point_t<double, 2>> generate_2d_hexagonal_grid(
         return potential_bulk_points;
     }
 
-    size_t approx_grid_size[2]{
-        static_cast<size_t>(std::ceil(
+    uint approx_grid_size[2]{
+        static_cast<uint>(std::ceil(
             (upper_bound[0] - lower_bound[0]) / approx_point_spacing + 1
         )),
-        static_cast<size_t>(std::ceil(
+        static_cast<uint>(std::ceil(
             (upper_bound[1] - lower_bound[1]) / approx_point_spacing + 1
         ))};
     potential_bulk_points.reserve(approx_grid_size[0] * approx_grid_size[1]);
@@ -365,13 +365,13 @@ std::vector<point_t<double, 2>> generate_2d_hexagonal_grid(
     return potential_bulk_points;
 }
 
-std::vector<std::pair<size_t, double>> remove_points_outside_2d_contours(
+std::vector<std::pair<uint, double>> remove_points_outside_2d_contours(
     std::vector<point_t<double, 2>>& potential_bulk_points,
     const double& approx_point_spacing,
     const std::vector<edge_info_t>& boundary_edge_info,
     double min_bound_dist_scale = min_bound_dist_scale_2d
 ) {
-    std::vector<std::pair<size_t, double>> distances_to_edges(
+    std::vector<std::pair<uint, double>> distances_to_edges(
         potential_bulk_points.size()
     );
     std::transform(
@@ -394,7 +394,7 @@ std::vector<std::pair<size_t, double>> remove_points_outside_2d_contours(
         }
     );
 
-    size_t num_bulk = std::accumulate(
+    uint num_bulk = std::accumulate(
         valid_bulk_points.begin(),
         valid_bulk_points.end(),
         0
@@ -404,7 +404,7 @@ std::vector<std::pair<size_t, double>> remove_points_outside_2d_contours(
         potential_bulk_points.end(),
         [&](const auto& p) {
             const auto get_index = [&]() {
-                return static_cast<size_t>(&p - &potential_bulk_points[0]);
+                return static_cast<uint>(&p - &potential_bulk_points[0]);
             };
             return valid_bulk_points[get_index()];
         }
@@ -416,7 +416,7 @@ std::vector<std::pair<size_t, double>> remove_points_outside_2d_contours(
         distances_to_edges.end(),
         [&](const auto& d) {
             const auto get_index = [&]() {
-                return static_cast<size_t>(&d - &distances_to_edges[0]);
+                return static_cast<uint>(&d - &distances_to_edges[0]);
             };
             return valid_bulk_points[get_index()];
         }
@@ -431,7 +431,7 @@ class conforming_point_cloud_impl_t<2> {
   public:
     using point_t  = naga::point_t<double, 2>;
     using normal_t = point_t;
-    using index_t  = size_t;
+    using index_t  = uint;
 
     using closed_contour_t = conforming_point_cloud_t<2>::input_domain_data_t;
 
@@ -443,12 +443,12 @@ class conforming_point_cloud_impl_t<2> {
         std::vector<closed_contour_t> immersed_boundary_contours;
         std::vector<double> boundary_vertices;
         std::vector<double> boundary_normals;
-        std::vector<size_t> boundary_edges;
+        std::vector<uint> boundary_edges;
         for (auto& im_obj_file : immersed_boundaries) {
             immersed_boundary_contours.emplace_back(
                 closed_contour_t::import(im_obj_file)
             );
-            size_t prev_vertex_count = boundary_vertices.size() / 2;
+            uint prev_vertex_count = boundary_vertices.size() / 2;
             for (auto& vertex : immersed_boundary_contours.back().vertices()) {
                 boundary_vertices.push_back(vertex);
             }
@@ -462,7 +462,7 @@ class conforming_point_cloud_impl_t<2> {
         }
 
         closed_contour_t domain_contour = closed_contour_t::import(domain);
-        size_t prev_vertex_count        = boundary_vertices.size() / 2;
+        uint prev_vertex_count        = boundary_vertices.size() / 2;
         for (auto& vertex : domain_contour.vertices()) {
             boundary_vertices.push_back(vertex);
         }
@@ -516,7 +516,7 @@ class conforming_point_cloud_impl_t<2> {
             boundary_edge_info
         );
 
-        auto num_bulk                = potential_bulk_points.size();
+        uint num_bulk                = static_cast<uint>(potential_bulk_points.size());
         std::vector<point_t>& points = potential_bulk_points;
         points.resize(points.size() + boundary_vertices.size() / 2);
         std::vector<normal_t> normals(boundary_vertices.size() / 2);
@@ -526,7 +526,7 @@ class conforming_point_cloud_impl_t<2> {
             points.begin() + num_bulk,
             [&](const auto& p) {
                 const auto get_index = [&]() {
-                    return static_cast<size_t>(&p - &points[num_bulk]);
+                    return static_cast<uint>(&p - &points[num_bulk]);
                 };
                 return naga::point_t<double, 2>{
                     {boundary_vertices[get_index() * 2 + 0],
@@ -539,7 +539,7 @@ class conforming_point_cloud_impl_t<2> {
             normals.begin(),
             [&](const auto& n) {
                 const auto get_index
-                    = [&]() { return static_cast<size_t>(&n - &normals[0]); };
+                    = [&]() { return static_cast<uint>(&n - &normals[0]); };
                 return naga::point_t<double, 2>{
                     {boundary_normals[get_index() * 2 + 0],
                      boundary_normals[get_index() * 2 + 1]}};
@@ -549,7 +549,7 @@ class conforming_point_cloud_impl_t<2> {
         //        std::ofstream
         //        points_file("/home/gpu-dev/naga-result-data/points.csv");
         //        points_file << "x,y,distance_to_edge\n";
-        //        for (size_t i = 0; i < potential_bulk_points.size();
+        //        for (uint i = 0; i < potential_bulk_points.size();
         //        ++i) {
         //            points_file << potential_bulk_points[i][0] << ","
         //                        << potential_bulk_points[i][1] << ","
@@ -558,7 +558,7 @@ class conforming_point_cloud_impl_t<2> {
         //        }
         //        points_file.close();
 
-        size_t num_boundaries = normals.size();
+        uint num_boundaries = normals.size();
 
         return {
             domain_contour,
@@ -582,15 +582,15 @@ class conforming_point_cloud_impl_t<2> {
         return normals_;
     }
 
-    [[nodiscard]] const size_t& num_bulk_points() const {
+    [[nodiscard]] const uint& num_bulk_points() const {
         return num_bulk_points_;
     }
 
-    [[nodiscard]] const size_t& num_boundary_points() const {
+    [[nodiscard]] const uint& num_boundary_points() const {
         return num_boundary_points_;
     }
 
-    [[nodiscard]] size_t size() const { return points_.size(); }
+    [[nodiscard]] uint size() const { return points_.size(); }
 
     [[nodiscard]] bool is_boundary(const index_t& i) const {
         return i >= num_bulk_points_;
@@ -609,8 +609,8 @@ class conforming_point_cloud_impl_t<2> {
         std::vector<closed_contour_t> immersed_boundaries,
         std::vector<point_t> points,
         std::vector<normal_t> normals,
-        size_t num_bulk_points,
-        size_t num_boundary_points
+        uint num_bulk_points,
+        uint num_boundary_points
     )
         : domain_(std::move(domain)),
           immersed_boundaries_(std::move(immersed_boundaries)),
@@ -625,9 +625,9 @@ class conforming_point_cloud_impl_t<2> {
     std::vector<point_t> points_;
     std::vector<normal_t> normals_;  // size matches num_boundary_points_
 
-    size_t num_bulk_points_;  // points vector is arranged with bulk first then
+    uint num_bulk_points_;  // points vector is arranged with bulk first then
                               // boundary
-    size_t num_boundary_points_;
+    uint num_boundary_points_;
 };
 
 conforming_point_cloud_t<2> conforming_point_cloud_t<2>::create(
@@ -667,15 +667,15 @@ conforming_point_cloud_t<2>::normals() const {
     return impl->normals();
 }
 
-const size_t& conforming_point_cloud_t<2>::num_bulk_points() const {
+const uint& conforming_point_cloud_t<2>::num_bulk_points() const {
     return impl->num_bulk_points();
 }
 
-const size_t& conforming_point_cloud_t<2>::num_boundary_points() const {
+const uint& conforming_point_cloud_t<2>::num_boundary_points() const {
     return impl->num_boundary_points();
 }
 
-size_t conforming_point_cloud_t<2>::size() const {
+uint conforming_point_cloud_t<2>::size() const {
     return impl->num_boundary_points();
 }
 
@@ -709,7 +709,7 @@ struct sdf_metadata {
 };
 
 sdf_metadata
-build_sdf(const std::vector<double>& points, const std::vector<size_t>& faces) {
+build_sdf(const std::vector<double>& points, const std::vector<uint>& faces) {
     std::unique_ptr<sdf::Points> sdf_points
         = std::make_unique<sdf::Points>(points.size() / 3, 3);
     for (u_int32_t p = 0; p < points.size() / 3; p++) {
@@ -740,7 +740,7 @@ get_sdf_to_points(const sdf::Points& points, const sdf::SDF& surface) {
 std::tuple<std::vector<point_t<double, 3>>, std::vector<point_t<double, 3>>>
 fill_face_with_nodes(
     double nodal_spacing,
-    size_t f,
+    uint f,
     const triangular_mesh_t& boundary_mesh,
     std::vector<int> excluded_edges = {},
     double min_dist_scale           = min_bound_dist_scale_2d,
@@ -863,7 +863,7 @@ fill_face_with_nodes(
     point2_t v2_normal2d{{edge_vert_normals2d[2], edge_vert_normals2d[3]}};
     point2_t v3_normal2d{{edge_vert_normals2d[4], edge_vert_normals2d[5]}};
 
-    using index_t = size_t;
+    using index_t = uint;
     std::vector<index_t> edge1{0, 1};
     std::vector<index_t> edge2{1, 2};
     std::vector<index_t> edge3{2, 0};
@@ -1024,7 +1024,7 @@ fill_face_with_nodes(
 
     std::vector<point3_t> edge_points3d;
     edge_points3d.reserve(edge_verts2d.size() / 2);
-    for (size_t i = 0; i < edge1_verts2d.size(); i += 2) {
+    for (uint i = 0; i < edge1_verts2d.size(); i += 2) {
         if (std::find(excluded_edges.begin(), excluded_edges.end(), 0)
             != excluded_edges.end()) {
             break;
@@ -1048,7 +1048,7 @@ fill_face_with_nodes(
         }
         edge_points3d.push_back(point3_t{{p[0], p[1], 0.}});
     }
-    for (size_t i = 0; i < edge2_verts2d.size(); i += 2) {
+    for (uint i = 0; i < edge2_verts2d.size(); i += 2) {
         if (std::find(excluded_edges.begin(), excluded_edges.end(), 1)
             != excluded_edges.end()) {
             break;
@@ -1072,7 +1072,7 @@ fill_face_with_nodes(
         }
         edge_points3d.push_back(point3_t{{p[0], p[1], 0.}});
     }
-    for (size_t i = 0; i < edge3_verts2d.size(); i += 2) {
+    for (uint i = 0; i < edge3_verts2d.size(); i += 2) {
         if (std::find(excluded_edges.begin(), excluded_edges.end(), 2)
             != excluded_edges.end()) {
             break;
@@ -1190,14 +1190,14 @@ void fill_surface_with_nodes(
     std::atomic<uint> processed_edges_size{0};
 
     unsigned int processed_edge_cleanup_interval = max_threads * 10;
-    std::vector<std::vector<size_t>> indices_to_erase(max_threads);
+    std::vector<std::vector<uint>> indices_to_erase(max_threads);
 
     std::vector<std::vector<point_t>> points_to_insert(max_threads);
     std::vector<std::vector<point_t>> normals_to_insert(max_threads);
 
-    std::vector<std::future<size_t>> futures;
+    std::vector<std::future<uint>> futures;
 
-    for (size_t f = 0; f < boundary_mesh.faces().size() / 3; f++) {
+    for (uint f = 0; f < boundary_mesh.faces().size() / 3; f++) {
         if (futures.size() == max_threads) {
             {
                 auto processed_face = futures[0].get();
@@ -1221,7 +1221,7 @@ void fill_surface_with_nodes(
             }
         }
 
-        std::promise<size_t> fill_promise;
+        std::promise<uint> fill_promise;
         auto fill_fut = fill_promise.get_future();
 
         std::thread([&, f, fill_promise = std::move(fill_promise)]() mutable {
@@ -1296,7 +1296,7 @@ void fill_surface_with_nodes(
     }
     futures.clear();
 
-    for (size_t i = 0; i < boundary_mesh.vertices().size(); i += 3) {
+    for (uint i = 0; i < boundary_mesh.vertices().size(); i += 3) {
 //        if (points.size() < boundary_mesh.vertices().size() / 2) {
 //            break;
 //        }
@@ -1341,7 +1341,7 @@ class conforming_point_cloud_impl_t<3> {
   public:
     using point_t  = naga::point_t<double, 3>;
     using normal_t = point_t;
-    using index_t  = size_t;
+    using index_t  = uint;
 
     using triangular_mesh_t = conforming_point_cloud_t<3>::input_domain_data_t;
 
@@ -1378,7 +1378,7 @@ class conforming_point_cloud_impl_t<3> {
             {domain_mesh.vertices()[0],
              domain_mesh.vertices()[1],
              domain_mesh.vertices()[2]}};
-        for (size_t i = 0; i < domain_mesh.vertices().size(); i += 3) {
+        for (uint i = 0; i < domain_mesh.vertices().size(); i += 3) {
             lower_bound[0]
                 = std::min(lower_bound[0], domain_mesh.vertices()[i + 0]);
             lower_bound[1]
@@ -1392,14 +1392,14 @@ class conforming_point_cloud_impl_t<3> {
             upper_bound[2]
                 = std::max(upper_bound[2], domain_mesh.vertices()[i + 2]);
         }
-        size_t approx_grid_size[3]{
-            static_cast<size_t>(
+        uint approx_grid_size[3]{
+            static_cast<uint>(
                 std::ceil((upper_bound[0] - lower_bound[0]) / nodal_spacing)
             ),
-            static_cast<size_t>(
+            static_cast<uint>(
                 std::ceil((upper_bound[1] - lower_bound[1]) / nodal_spacing)
             ),
-            static_cast<size_t>(
+            static_cast<uint>(
                 std::ceil((upper_bound[2] - lower_bound[2]) / nodal_spacing)
             )};
 
@@ -1433,14 +1433,14 @@ class conforming_point_cloud_impl_t<3> {
 
         auto potential_grid_size = 2 * approx_grid_size[0] * approx_grid_size[1]
                                  * approx_grid_size[2];
-        size_t batch_bytes        = naga::math::loopless::pow<30>(size_t{2});
-        size_t elements_per_batch = batch_bytes / sizeof(point_t);
-        size_t batch_size = (potential_grid_size + elements_per_batch - 1)
+        uint batch_bytes        = naga::math::loopless::pow<30>(uint{2});
+        uint elements_per_batch = batch_bytes / sizeof(point_t);
+        uint batch_size = (potential_grid_size + elements_per_batch - 1)
                           / elements_per_batch;
         std::vector<point_t> bulk_points;
         std::vector<double> bulk_to_boundary_distances;
         std::vector<index_t> closest_boundary_to_bulk;
-        for (size_t b = 0; b < batch_size; ++b) {
+        for (uint b = 0; b < batch_size; ++b) {
             sdf::Points potential_bulk_points;
             std::vector<point_t> fill_points(std::min(
                 elements_per_batch,
@@ -1448,7 +1448,7 @@ class conforming_point_cloud_impl_t<3> {
             ));
             potential_bulk_points = sdf::Points(fill_points.size(), 3);
 #pragma omp parallel for
-            for (size_t p = 0; p < fill_points.size(); ++p) {
+            for (uint p = 0; p < fill_points.size(); ++p) {
                 auto linear_id = (p / 2) + b * elements_per_batch;
                 auto i         = linear_id % approx_grid_size[0];
                 auto j
@@ -1487,7 +1487,7 @@ class conforming_point_cloud_impl_t<3> {
                 std::vector<double> distance_to_boundary
                     = get_sdf_to_points(potential_bulk_points, *sdf.sdf);
 #pragma omp parallel for
-                for (size_t i = 0; i < distance_to_boundary.size(); ++i) {
+                for (uint i = 0; i < distance_to_boundary.size(); ++i) {
                     distance_to_boundary[i] *= -1;
                     constexpr double epsilon = 1e-6;
                     const auto& distance     = distance_to_boundary[i];
@@ -1507,7 +1507,7 @@ class conforming_point_cloud_impl_t<3> {
                     distance_to_boundary.end(),
                     min_distance_to_boundary.begin(),
                     [&](const double& distance) {
-                        size_t i = &distance - &distance_to_boundary[0];
+                        uint i = &distance - &distance_to_boundary[0];
                         return closest_boundary_indices[i] == boundary_index
                                  ? distance
                                  : min_distance_to_boundary[i];

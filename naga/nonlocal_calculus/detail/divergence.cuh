@@ -50,7 +50,7 @@ void compute_divergence_weights(
     const sclx::array<T, 2>& domain,
     const sclx::array<T, 1>& interaction_radii,
     const sclx::array<T, 2>& quad_interp_weights,
-    const sclx::array<sclx::index_t, 2>& support_indices
+    const sclx::array<uint, 2>& support_indices
 );
 
 }  // namespace naga::nonlocal_calculus::detail

@@ -73,7 +73,7 @@ static bool is_quad_points_3d_init = false;
 
 template<class PointType>
 __host__ __device__ void
-calc_unscaled_quad_point_2d(size_t q_idx, PointType&& x_k) {
+calc_unscaled_quad_point_2d(uint q_idx, PointType&& x_k) {
 
     uint r_idx = q_idx % num_radial_quad_points;
     uint t_idx = q_idx / num_radial_quad_points;
@@ -126,7 +126,7 @@ calc_unscaled_quad_point_2d(size_t q_idx, PointType&& x_k) {
 
 template<class PointType>
 __host__ __device__ void
-calc_unscaled_quad_point_3d(size_t q_idx, PointType&& x_k) {
+calc_unscaled_quad_point_3d(uint q_idx, PointType&& x_k) {
 
     uint r_idx   = q_idx % num_radial_quad_points;
     uint t_idx   = (q_idx / num_radial_quad_points) % num_theta_quad_points;
@@ -235,7 +235,7 @@ class quadrature_point_map {
         //        }
     }
 
-    __host__ __device__ point_type operator[](const sclx::index_t& index
+    __host__ __device__ point_type operator[](const uint& index
     ) const {
         //        const T* unscaled_quad_points;
         // #ifdef __CUDA_ARCH__
@@ -267,7 +267,7 @@ class quadrature_point_map {
         return (*this)[index[0]];
     }
 
-    __host__ __device__ size_t size() const {
+    __host__ __device__ uint size() const {
         return query_points_.shape()[1] * num_quad_points_;
     }
 

@@ -117,11 +117,11 @@ class batched_matrix_inverse_executor{
                 int dims       = A.shape()[0];
                 int batch_size = A.shape()[2];
                 if (info.elements() < batch_size) {
-                    info = sclx::array<int, 1>(sclx::shape_t<1>{static_cast<size_t>(batch_size)}, false);
+                    info = sclx::array<int, 1>(sclx::shape_t<1>{static_cast<uint>(batch_size)}, false);
                     info.set_primary_devices(std::vector<int>{device_id});
                 }
                 if (pivot.elements() < batch_size * dims) {
-                    pivot = sclx::array<int, 1>(sclx::shape_t<1>{static_cast<size_t>(batch_size * dims)}, false);
+                    pivot = sclx::array<int, 1>(sclx::shape_t<1>{static_cast<uint>(batch_size * dims)}, false);
                     pivot.set_primary_devices(std::vector<int>{device_id});
                 }
 
@@ -129,7 +129,7 @@ class batched_matrix_inverse_executor{
                 if (copy_A) {
                     if (A_copy_flat.elements() < A.elements()) {
                         A_copy_flat = sclx::array<T, 1>(
-                            sclx::shape_t<1>{static_cast<size_t>(A.elements())},
+                            sclx::shape_t<1>{static_cast<uint>(A.elements())},
                             false
                         );
                         A_copy = sclx::array<T, 3>(A.shape(), A_copy_flat.data());
@@ -156,7 +156,7 @@ class batched_matrix_inverse_executor{
 
                 if (A_ptr.elements() < A.shape()[2]){
                     A_ptr = sclx::array<T*, 1>(
-                        sclx::shape_t<1>{static_cast<size_t>(A.shape()[2])},
+                        sclx::shape_t<1>{static_cast<uint>(A.shape()[2])},
                         false
                     );
                     A_ptr.set_primary_devices(
@@ -165,7 +165,7 @@ class batched_matrix_inverse_executor{
                 }
                 if (A_inv_ptr.elements() < A_inv.shape()[2]){
                     A_inv_ptr = sclx::array<T*, 1>(
-                        sclx::shape_t<1>{static_cast<size_t>(A_inv.shape()[2])},
+                        sclx::shape_t<1>{static_cast<uint>(A_inv.shape()[2])},
                         false
                     );
                     A_inv_ptr.set_primary_devices(
@@ -318,8 +318,8 @@ __host__ void batched_matrix_inverse(
 
     for (const auto& split : split_info) {
         int device_id      = std::get<0>(split);
-        size_t slice_start = std::get<1>(split);
-        size_t slice_len   = std::get<2>(split);
+        uint slice_start = std::get<1>(split);
+        uint slice_len   = std::get<2>(split);
 
 
         auto A_slice

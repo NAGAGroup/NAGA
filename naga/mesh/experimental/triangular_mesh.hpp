@@ -43,7 +43,7 @@ namespace naga::experimental::mesh {
 template<class T>
 class triangular_mesh_t {
   public:
-    using index_t = size_t;
+    using index_t = uint;
 
     triangular_mesh_t() = default;
 

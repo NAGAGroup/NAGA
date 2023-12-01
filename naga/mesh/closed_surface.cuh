@@ -42,7 +42,7 @@ template<class T>
 struct closed_surface_t {
     sclx::array<T, 2> vertices;
     sclx::array<T, 2> vertex_normals;
-    sclx::array<sclx::index_t, 2> faces;
+    sclx::array<uint, 2> faces;
 
     static closed_surface_t import(const sclx::filesystem::path& path) {
         auto mesh = triangular_mesh_t<T>::import(path);
@@ -50,15 +50,15 @@ struct closed_surface_t {
             mesh.vertices.data().get(),
             mesh.vertices.data().get() + mesh.vertices.elements()
         );
-        std::vector<size_t> faces(
+        std::vector<uint> faces(
             mesh.faces.data().get(),
             mesh.faces.data().get() + mesh.faces.elements()
         );
         std::vector<T> vertex_normals(mesh.vertices.shape()[1] * 3, 0);
         std::vector<bool> vertex_normal_set(mesh.vertices.shape()[1], false);
-        for (size_t f = 0; f < mesh.face_normals.shape()[1]; f++) {
+        for (uint f = 0; f < mesh.face_normals.shape()[1]; f++) {
             for (uint v = 0; v < 3; v++) {
-                size_t global_v = faces[f * 3 + v];
+                uint global_v = faces[f * 3 + v];
                 if (!vertex_normal_set[global_v]) {
                     vertex_normal_set[global_v] = true;
                     for (uint d = 0; d < 3; d++) {
@@ -78,7 +78,7 @@ struct closed_surface_t {
                 sclx::shape_t<2>{3, mesh.vertices.shape()[1]},
                 vertex_normals.data()
             ),
-            sclx::array<sclx::index_t, 2>(
+            sclx::array<uint, 2>(
                 sclx::shape_t<2>{3, mesh.faces.shape()[1]},
                 faces.data()
             )};

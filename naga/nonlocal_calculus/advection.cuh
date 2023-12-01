@@ -69,7 +69,7 @@ class constant_velocity_field {
         return map;
     }
 
-    __host__ __device__ point_type operator[](const sclx::index_t& index
+    __host__ __device__ point_type operator[](const uint& index
     ) const {
         point_type vector_value;
         for (uint i = 0; i < Dimensions; ++i) {
@@ -114,7 +114,7 @@ class advection_operator {
               scalar_field_(scalar_field),
               centering_offset_(centering_offset) {}
 
-        __host__ __device__ point_type operator[](const sclx::index_t& index
+        __host__ __device__ point_type operator[](const uint& index
         ) const {
             point_type velocity = velocity_field_[index];
             T scalar            = scalar_field_[index];
@@ -130,7 +130,7 @@ class advection_operator {
             return (*this)[index[0]];
         }
 
-        __host__ __device__ size_t size() const {
+        __host__ __device__ uint size() const {
             return scalar_field_.elements();
         }
 
@@ -160,7 +160,7 @@ class advection_operator {
             sclx::array<T, 1> f,
             T dt,
             T centering_offset,
-            sclx::array<size_t, 1>* explicit_indices = nullptr,
+            sclx::array<uint, 1>* explicit_indices = nullptr,
             matrix_type* implicit_matrix             = nullptr,
             mat_mult_type* mat_mult                  = nullptr
         )
@@ -204,7 +204,7 @@ class advection_operator {
 
             index_generator(
                 const sclx::shape_t<1>& target_shape,
-                sclx::array<size_t, 1>& explicit_indices
+                sclx::array<uint, 1>& explicit_indices
             )
                 : generator_shape_(explicit_indices.shape()),
                   target_shape_(target_shape),
@@ -232,7 +232,7 @@ class advection_operator {
           private:
             sclx::shape_t<range_rank> generator_shape_;
             sclx::shape_t<index_rank> target_shape_;
-            sclx::array<size_t, range_rank> indices_;
+            sclx::array<uint, range_rank> indices_;
         };
 
         template<class FieldMap>
@@ -359,7 +359,7 @@ class advection_operator {
         T centering_offset_;
         std::shared_ptr<divergence_operator<T, Dimensions>> divergence_op_;
 
-        sclx::array<size_t, 1>* explicit_indices_;
+        sclx::array<uint, 1>* explicit_indices_;
         matrix_type* implicit_matrix_;
         mat_mult_type* mat_mult;
     };
@@ -382,7 +382,7 @@ class advection_operator {
             sclx::array<T, 1>& f,
             T dt,
             T centering_offset,
-            sclx::array<size_t, 1>* explicit_indices = nullptr,
+            sclx::array<uint, 1>* explicit_indices = nullptr,
             matrix_type* implicit_matrix             = nullptr,
             mat_mult_type* mat_mult                  = nullptr
         ) {
@@ -717,42 +717,42 @@ class advection_operator {
     void enable_implicit(
         const T (&velocity)[Dimensions],
         T dt,
-        size_t boundary_start_idx,
+        uint boundary_start_idx,
         sclx::array<T, 2> boundary_normals
     ) {
         sclx::array<const T, 3> weights = divergence_op_->weights();
-        sclx::array<const sclx::index_t, 2> indices
+        sclx::array<const uint, 2> indices
             = divergence_op_->support_indices();
         std::vector<int> implicit_points(
             indices.shape()[1],
             0
         );  // 0 is undetermined, 1 is implicit, -1 is explicit
-        std::vector<std::vector<size_t>> parent_nodes;
+        std::vector<std::vector<uint>> parent_nodes;
 
-        size_t processed_points = 0;
-        size_t num_matrices     = 0;
-        for (size_t p = boundary_start_idx; p < implicit_points.size(); ++p) {
+        uint processed_points = 0;
+        uint num_matrices     = 0;
+        for (uint p = boundary_start_idx; p < implicit_points.size(); ++p) {
             if (implicit_points[p] != 0) {
                 continue;
             }
 
             bool valid_parent = true;
             for (uint j = 0; j < detail::num_interp_support; ++j) {
-                const sclx::index_t& ij = indices(j, p);
+                const uint& ij = indices(j, p);
                 if (implicit_points[ij] != 0) {
                     valid_parent = false;
                     break;
                 }
 
                 for (uint k = 0; k < detail::num_interp_support; ++k) {
-                    const sclx::index_t& ijk = indices(k, ij);
+                    const uint& ijk = indices(k, ij);
                     if (implicit_points[ijk] == 1) {
                         valid_parent = false;
                         break;
                     }
 
                     for (uint l = 0; l < detail::num_interp_support; ++l) {
-                        const sclx::index_t& ijkl = indices(l, ijk);
+                        const uint& ijkl = indices(l, ijk);
                         if (implicit_points[ijkl] == 1) {
                             valid_parent = false;
                             break;
@@ -779,7 +779,7 @@ class advection_operator {
 
             for (uint dependent_p = 0; dependent_p < detail::num_interp_support;
                  ++dependent_p) {
-                const sclx::index_t& i = indices(dependent_p, p);
+                const uint& i = indices(dependent_p, p);
                 implicit_points[i]     = 1;
                 dependent_explicit_nodes.push_back(i);
                 ++processed_points;
@@ -787,10 +787,10 @@ class advection_operator {
 
             for (uint dependent_p = 0; dependent_p < detail::num_interp_support;
                  ++dependent_p) {
-                const sclx::index_t& i = indices(dependent_p, p);
+                const uint& i = indices(dependent_p, p);
                 for (uint support_p = 0; support_p < detail::num_interp_support;
                      ++support_p) {
-                    const sclx::index_t& k = indices(support_p, i);
+                    const uint& k = indices(support_p, i);
                     if (implicit_points[k] == 0) {
                         implicit_points[k] = -1;
                         ++processed_points;
@@ -799,8 +799,8 @@ class advection_operator {
             }
         }
 
-        std::vector<size_t> explicit_indices;
-        for (size_t p = 0; p < implicit_points.size(); ++p) {
+        std::vector<uint> explicit_indices;
+        for (uint p = 0; p < implicit_points.size(); ++p) {
             if (implicit_points[p] == 0) {
                 implicit_points[p] = -1;
                 if (p < boundary_start_idx) {
@@ -813,28 +813,28 @@ class advection_operator {
         std::vector<int> has_been_processed(processed_points, 0);
 
         struct matrix_meta {
-            std::vector<size_t> indices;
-            std::vector<std::unordered_map<size_t, T>> weights;
+            std::vector<uint> indices;
+            std::vector<std::unordered_map<uint, T>> weights;
         };
 
         struct implicit_matrix {
             Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> mat;
-            std::vector<size_t> global_indices;
+            std::vector<uint> global_indices;
         };
 
         std::vector<implicit_matrix> implicit_matrices_(num_matrices);
 
-        std::atomic<size_t> total_weights{0};
+        std::atomic<uint> total_weights{0};
 #pragma omp parallel for
-        for (size_t m = 0; m < num_matrices; ++m) {
+        for (uint m = 0; m < num_matrices; ++m) {
             auto& dependent_explicit_nodes = parent_nodes[m];
             matrix_meta matrix;
 
-            std::unordered_map<size_t, uint> indices_map;
+            std::unordered_map<uint, uint> indices_map;
             for (auto& dependent_p : dependent_explicit_nodes) {
                 auto i = matrix.indices.size();
                 matrix.indices.push_back(dependent_p);
-                matrix.weights.push_back(std::unordered_map<size_t, T>{});
+                matrix.weights.push_back(std::unordered_map<uint, T>{});
                 matrix.weights.back()[i]        = T{1.};
                 indices_map[dependent_p]        = static_cast<uint>(i);
                 has_been_processed[dependent_p] = 1;
@@ -842,7 +842,7 @@ class advection_operator {
             for (auto& dependent_p : dependent_explicit_nodes) {
                 auto i = indices_map[dependent_p];
                 for (uint s = 0; s < detail::num_interp_support; ++s) {
-                    const sclx::index_t& support_node = indices(s, dependent_p);
+                    const uint& support_node = indices(s, dependent_p);
                     if (indices_map.find(support_node) == indices_map.end()) {
                         if (implicit_points[support_node] != -1) {
                             sclx::throw_exception<std::runtime_error>(
@@ -852,7 +852,7 @@ class advection_operator {
                         }
                         auto j = matrix.indices.size();
                         matrix.indices.push_back(support_node);
-                        matrix.weights.push_back(std::unordered_map<size_t, T>{}
+                        matrix.weights.push_back(std::unordered_map<uint, T>{}
                         );
                         matrix.weights.back()[j]  = T{1.};
                         indices_map[support_node] = j;
@@ -973,7 +973,7 @@ class advection_operator {
             sparse_column_indices
         );
 
-        explicit_indices_ = sclx::array<size_t, 1>{explicit_indices.size()};
+        explicit_indices_ = sclx::array<uint, 1>{explicit_indices.size()};
         std::copy(
             explicit_indices.begin(),
             explicit_indices.end(),
@@ -1072,11 +1072,11 @@ class advection_operator {
 
   public:
     std::shared_ptr<divergence_operator<T, Dimensions>> divergence_op_;
-    size_t domain_size_;
+    uint domain_size_;
     bool is_implicit_{false};
     T implicit_velocity_[Dimensions];
     T implicit_dt_;
-    sclx::array<size_t, 1> explicit_indices_;
+    sclx::array<uint, 1> explicit_indices_;
     matrix_type implicit_matrix_;
     mat_mult_type mat_mult;
 

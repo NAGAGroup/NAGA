@@ -48,23 +48,23 @@ class operator_builder {
     );
 
   public:
-    static size_t get_scratchpad_size(size_t domain_size) {
+    static uint get_scratchpad_size(uint domain_size) {
         constexpr auto num_quad_points = (Dimensions == 2)
                                            ? detail::num_quad_points_2d
                                            : detail::num_quad_points_3d;
 
-        size_t interpolating_weights_scratchpad_size
+        uint interpolating_weights_scratchpad_size
             = interpolation::radial_point_method<T>::get_scratchpad_size(
                 domain_size * num_quad_points,
                 detail::num_interp_support,
                 Dimensions,
                 num_quad_points
             );
-        size_t quadrature_weights_size = domain_size * num_quad_points
+        uint quadrature_weights_size = domain_size * num_quad_points
                                        * detail::num_interp_support * sizeof(T);
-        size_t interaction_radii_size = domain_size * sizeof(T);
-        size_t indices_size
-            = domain_size * detail::num_interp_support * sizeof(size_t);
+        uint interaction_radii_size = domain_size * sizeof(T);
+        uint indices_size
+            = domain_size * detail::num_interp_support * sizeof(uint);
 
         return interpolating_weights_scratchpad_size + quadrature_weights_size
              + interaction_radii_size + indices_size;
@@ -139,7 +139,7 @@ class operator_builder {
         quadrature_interpolating_weights_ = sclx::array<T, 2>{};
         domain_                           = sclx::array<T, 2>{};
         query_points_                     = sclx::array<T, 2>{};
-        support_indices_                  = sclx::array<sclx::index_t, 2>{};
+        support_indices_                  = sclx::array<uint, 2>{};
         interaction_radii_                = sclx::array<T, 2>{};
     }
 
@@ -160,7 +160,7 @@ class operator_builder {
   private:
     sclx::array<T, 2> domain_;
     sclx::array<T, 2> query_points_;
-    sclx::array<sclx::index_t, 2> support_indices_;
+    sclx::array<uint, 2> support_indices_;
     sclx::array<T, 2> quadrature_interpolating_weights_;
     sclx::array<T, 1> interaction_radii_;
 };

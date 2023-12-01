@@ -62,7 +62,7 @@ class default_point_map {
 #endif
     }
 
-    __host__ __device__ point_type operator[](const sclx::index_t& index
+    __host__ __device__ point_type operator[](const uint& index
     ) const {
         return point_type(&source_points_(0, index));
     }
@@ -72,7 +72,7 @@ class default_point_map {
         return (*this)[index[0]];
     }
 
-    __host__ __device__ size_t size() const {
+    __host__ __device__ uint size() const {
         return source_points_.shape()[1];
     }
 
