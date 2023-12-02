@@ -151,11 +151,6 @@ class simulation_engine {
             );
         }
 
-        advection_operator_ptr_ = std::make_shared<advection_operator_t>(
-            advection_operator_t::create(domain.points)
-        );
-        advection_operator_ptr_->set_max_concurrent_threads(8);
-
         {
             // We use the nearest neighbors algorithm to provide the
             // interpolation indices to the radial point method.
@@ -190,6 +185,11 @@ class simulation_engine {
                 )
             );
         }
+
+        advection_operator_ptr_ = std::make_shared<advection_operator_t>(
+            advection_operator_t::create(domain.points)
+        );
+        advection_operator_ptr_->set_max_concurrent_threads(8);
 
         for (auto& f_alpha : solution_.lattice_distributions) {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
@@ -541,15 +541,8 @@ class simulation_engine {
         value_type time_step
             = parameters_.time_step / time_scale * length_scale / 2.f;
 
-        if (implicit_operators_.empty()) {
-            implicit_operators_.push_back(*advection_operator_ptr_);
-            implicit_operators_.back().enable_implicit(
-                lattice_velocities.vals[0],
-                time_step,
-                domain_.num_bulk_points + domain_.num_layer_points,
-                domain_.boundary_normals
-            );
-        }
+        size_t boundary_start
+            = domain_.num_bulk_points + domain_.num_layer_points;
 
         std::vector<std::future<void>> streaming_futures;
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
@@ -562,8 +555,14 @@ class simulation_engine {
 
             value_type centering_offset = lattice_weights.vals[alpha];
 
-            auto fut = implicit_operators_[0]
-                           .apply_implicit(velocity_map, f_alpha0, f_alpha, centering_offset);
+            auto fut = advection_operator_ptr_->step_forward(
+                velocity_map,
+                f_alpha0,
+                f_alpha,
+                time_step,
+                centering_offset,
+                boundary_start
+            );
 
             streaming_futures.push_back(std::move(fut));
         }
@@ -754,7 +753,6 @@ class simulation_engine {
     using advection_operator_t
         = nonlocal_calculus::advection_operator<value_type, dimensions>;
     std::shared_ptr<advection_operator_t> advection_operator_ptr_{};
-    std::vector<advection_operator_t> implicit_operators_{};
 
     using interpolater_t = interpolation::radial_point_method<value_type>;
     std::shared_ptr<interpolater_t> boundary_interpolator_ptr_{};

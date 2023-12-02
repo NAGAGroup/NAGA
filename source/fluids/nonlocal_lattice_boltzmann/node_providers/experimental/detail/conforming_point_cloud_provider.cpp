@@ -68,33 +68,37 @@ namespace naga::experimental::fluids::nonlocal_lbm::detail {
 constexpr float min_bound_dist_scale_2d = 1.f;
 constexpr float min_bound_dist_scale_3d = .6f;
 
+template <class T>
 struct edge_info_t {
-    using point_t  = naga::point_t<double, 2>;
-    using vector_t = naga::point_t<double, 2>;
-    using normal_t = naga::point_t<double, 2>;
+    using value_type = T;
+    using point_t  = naga::point_t<value_type , 2>;
+    using vector_t = naga::point_t<value_type , 2>;
+    using normal_t = naga::point_t<value_type , 2>;
 
     point_t v1;
     point_t v2;
 
     vector_t v12;
     vector_t normalized_edge_dir;
-    double length;
+    value_type length;
 
     normal_t n1;
     normal_t n2;
     normal_t edge_normal;
 };
 
-edge_info_t get_edge_info(
+template <class T>
+edge_info_t<T> get_edge_info(
     size_t edge_index,
-    const std::vector<double>& vertices,
-    const std::vector<double>& vertex_normals,
+    const std::vector<T >& vertices,
+    const std::vector<T >& vertex_normals,
     const std::vector<size_t>& edges
 ) {
-    edge_info_t edge_info{};
-    using point_t  = edge_info_t::point_t;
-    using vector_t = edge_info_t::vector_t;
-    using normal_t = edge_info_t::normal_t;
+    using value_type = T;
+    edge_info_t<T> edge_info{};
+    using point_t  = typename edge_info_t<T>::point_t;
+    using vector_t = typename edge_info_t<T>::vector_t;
+    using normal_t = typename edge_info_t<T>::normal_t;
     edge_info.v1   = point_t{
           {vertices[edges[edge_index] * 2 + 0],
            vertices[edges[edge_index] * 2 + 1]}};
@@ -118,19 +122,20 @@ edge_info_t get_edge_info(
          vertex_normals[edges[edge_index + 1] * 2 + 1]}};
     naga::math::loopless::normalize<2>(edge_info.n2);
     edge_info.edge_normal = normal_t{
-        {(edge_info.n1[0] + edge_info.n2[0]) / 2.,
-         (edge_info.n1[1] + edge_info.n2[1]) / 2.}};
+        {(edge_info.n1[0] + edge_info.n2[0]) / 2.f,
+         (edge_info.n1[1] + edge_info.n2[1]) / 2.f}};
     naga::math::loopless::normalize<2>(edge_info.edge_normal);
 
     return edge_info;
 }
 
+template <class T>
 void subdivide_edges_and_cache_edge_info(
-    double target_length,
-    std::vector<double>& vertices,
-    std::vector<double>& vertex_normals,
+    T target_length,
+    std::vector<T>& vertices,
+    std::vector<T>& vertex_normals,
     std::vector<size_t>& edges,
-    std::vector<edge_info_t>& input_edge_info
+    std::vector<edge_info_t<T>>& input_edge_info
 ) {
     input_edge_info.clear();
     input_edge_info.reserve(edges.size() / 2);
@@ -142,18 +147,18 @@ void subdivide_edges_and_cache_edge_info(
             = get_edge_info(e, vertices_copy, vertex_normals_copy, edges_copy);
         input_edge_info.push_back(edge_info);
 
-        double edge_len2target_len = edge_info.length / target_length;
-        double acceptable_epsilon  = 0.5;
+        T edge_len2target_len = edge_info.length / target_length;
+        T acceptable_epsilon  = 0.5;
         if (edge_len2target_len < 1 + acceptable_epsilon) {
             continue;
         }
         size_t num_nodes_to_add
             = static_cast<size_t>(std::ceil(edge_len2target_len)) - 1;
-        double actual_length
-            = edge_info.length / static_cast<double>(num_nodes_to_add + 1);
+        T actual_length
+            = edge_info.length / static_cast<T>(num_nodes_to_add + 1);
 
         size_t old_edge_end = edges_copy[e + 1];
-        naga::point_t<double, 2> new_vertex{
+        naga::point_t<T, 2> new_vertex{
             {edge_info.v1[0] + edge_info.normalized_edge_dir[0] * actual_length,
              edge_info.v1[1]
                  + edge_info.normalized_edge_dir[1] * actual_length}};
@@ -177,9 +182,10 @@ void subdivide_edges_and_cache_edge_info(
     }
 }
 
+template <class T>
 class line_t {
   public:
-    using point_t = naga::point_t<double, 2>;
+    using point_t = naga::point_t<T, 2>;
     line_t(point_t p1, point_t p2) : p1_(std::move(p1)), p2_(std::move(p2)) {}
 
     // constructs a perpendicular line that passes through perp_line_p1
@@ -205,7 +211,7 @@ class line_t {
         return line_t{perp_line_p1, intersection};
     }
 
-    double slope() { return (p2_[1] - p1_[1]) / (p2_[0] - p1_[0]); }
+    T slope() { return (p2_[1] - p1_[1]) / (p2_[0] - p1_[0]); }
 
     const point_t& p1() const { return p1_; }
     const point_t& p2() const { return p2_; }
@@ -215,13 +221,15 @@ class line_t {
     point_t p2_;
 };
 
-int sgn(double x) { return static_cast<int>(x > 0) - static_cast<int>(x < 0); }
+template <class T>
+int sgn(T x) { return static_cast<int>(x > 0) - static_cast<int>(x < 0); }
 
-std::tuple<double, double> distance_to_edge(
-    const naga::point_t<double, 2>& xi,
-    const edge_info_t& edge_info
+template <class T>
+std::tuple<T, T> distance_to_edge(
+    const naga::point_t<T, 2>& xi,
+    const edge_info_t<T>& edge_info
 ) {
-    using vector_t = naga::point_t<double, 2>;
+    using vector_t = naga::point_t<T, 2>;
     line_t edge_line{edge_info.v1, edge_info.v2};
     auto perp_line = edge_line.perpendicular_line(xi);
     vector_t xi_to_intersection{
@@ -245,7 +253,7 @@ std::tuple<double, double> distance_to_edge(
         vector_t v1_to_xi{{xi[0] - edge_info.v1[0], xi[1] - edge_info.v1[1]}};
         auto v1_to_xi_dot_normal
             = naga::math::loopless::dot<2>(v1_to_xi, edge_info.edge_normal);
-        double incident_angle = naga::math::asin(
+        T incident_angle = naga::math::asin(
             naga::math::abs(v1_to_xi_dot_normal)
             / naga::math::loopless::norm<2>(v1_to_xi)
         );
@@ -257,7 +265,7 @@ std::tuple<double, double> distance_to_edge(
         vector_t v2_to_xi{{xi[0] - edge_info.v2[0], xi[1] - edge_info.v2[1]}};
         auto v2_to_xi_dot_normal
             = naga::math::loopless::dot<2>(v2_to_xi, edge_info.edge_normal);
-        double angle_from_perp_line = naga::math::asin(
+        T angle_from_perp_line = naga::math::asin(
             naga::math::abs(v2_to_xi_dot_normal)
             / naga::math::loopless::norm<2>(v2_to_xi)
         );
@@ -265,21 +273,22 @@ std::tuple<double, double> distance_to_edge(
                                    * naga::math::loopless::norm<2>(v2_to_xi);
         return {signed_distance_to_v2, angle_from_perp_line};
     }
-    return {signed_distance_to_line, naga::math::pi<double> / 2.};
+    return {signed_distance_to_line, naga::math::pi<T> / 2.};
 }
 
+template <class T>
 std::pair<size_t, double> distance_to_boundary(
-    const naga::point_t<double, 2>& xi,
-    const std::vector<edge_info_t>& edge_info
+    const naga::point_t<T, 2>& xi,
+    const std::vector<edge_info_t<T>>& edge_info
 ) {
-    double min_distance              = std::numeric_limits<double>::max();
-    double associated_incident_angle = 0;
+    T min_distance              = std::numeric_limits<T>::max();
+    T associated_incident_angle = 0;
     size_t edge_index                = 0;
     std::mutex min_distance_mutex;
 #pragma omp parallel for
     for (size_t e = 0; e < edge_info.size(); ++e) {
         auto [distance, incident_angle] = distance_to_edge(xi, edge_info[e]);
-        double diff_from_min
+        T diff_from_min
             = std::abs(std::abs(distance) - std::abs(min_distance));
         std::lock_guard<std::mutex> lock(min_distance_mutex);
         if (std::abs(distance) < std::abs(min_distance)
@@ -293,12 +302,13 @@ std::pair<size_t, double> distance_to_boundary(
     return {edge_index, min_distance};
 }
 
-std::vector<point_t<double, 2>> generate_2d_hexagonal_grid(
+template <class T>
+std::vector<point_t<T, 2>> generate_2d_hexagonal_grid(
     const double& approx_point_spacing,
-    const point_t<double, 2>& lower_bound,
-    const point_t<double, 2>& upper_bound
+    const point_t<T, 2>& lower_bound,
+    const point_t<T, 2>& upper_bound
 ) {
-    std::vector<naga::point_t<double, 2>> potential_bulk_points;
+    std::vector<naga::point_t<T, 2>> potential_bulk_points;
 
     double acceptable_epsilon = 0.1;
     if ((upper_bound[0] - lower_bound[0]) / approx_point_spacing
@@ -317,24 +327,24 @@ std::vector<point_t<double, 2>> generate_2d_hexagonal_grid(
         ))};
     potential_bulk_points.reserve(approx_grid_size[0] * approx_grid_size[1]);
 
-    const double l = 0.5
+    const T l = 0.5
                        * ((upper_bound[0] - lower_bound[0])
-                          / (static_cast<double>(approx_grid_size[0]) - 1))
+                          / (static_cast<T>(approx_grid_size[0]) - 1))
                    + 0.5
                          * ((upper_bound[1] - lower_bound[1])
-                            / (static_cast<double>(approx_grid_size[1]) - 1));
-    const double w = l * naga::math::sin(naga::math::pi<double> / 6.);
-    const double h = l * naga::math::cos(naga::math::pi<double> / 6.);
+                            / (static_cast<T>(approx_grid_size[1]) - 1));
+    const T w = l * naga::math::sin(naga::math::pi<T> / 6.);
+    const T h = l * naga::math::cos(naga::math::pi<T> / 6.);
     // first hexagonal grid
-    double x_offset  = 0;
-    double y         = lower_bound[1];
+    T x_offset  = 0;
+    T y         = lower_bound[1];
     bool is_even_row = true;
     while (y <= upper_bound[1]) {
-        double x = is_even_row ? lower_bound[0] : lower_bound[0] - w;
+        T x = is_even_row ? lower_bound[0] : lower_bound[0] - w;
         x += x_offset;
         bool is_even_column = is_even_row;
         while (x <= upper_bound[0]) {
-            potential_bulk_points.emplace_back(naga::point_t<double, 2>{{x, y}}
+            potential_bulk_points.emplace_back(naga::point_t<T, 2>{{x, y}}
             );
             x += is_even_column ? l : 2 * w + l;
             is_even_column = !is_even_column;
@@ -347,12 +357,12 @@ std::vector<point_t<double, 2>> generate_2d_hexagonal_grid(
     y           = lower_bound[1];
     is_even_row = true;
     while (y <= upper_bound[1]) {
-        double x = is_even_row ? lower_bound[0] : lower_bound[0] - w;
+        T x = is_even_row ? lower_bound[0] : lower_bound[0] - w;
         x += x_offset;
         bool is_even_column = is_even_row;
         while (x <= upper_bound[0]) {
             if (!is_even_column) {
-                potential_bulk_points.emplace_back(naga::point_t<double, 2>{
+                potential_bulk_points.emplace_back(naga::point_t<T, 2>{
                     {x, y}});
             }
             x += is_even_column ? l : 2 * w + l;
@@ -365,13 +375,14 @@ std::vector<point_t<double, 2>> generate_2d_hexagonal_grid(
     return potential_bulk_points;
 }
 
-std::vector<std::pair<size_t, double>> remove_points_outside_2d_contours(
-    std::vector<point_t<double, 2>>& potential_bulk_points,
-    const double& approx_point_spacing,
-    const std::vector<edge_info_t>& boundary_edge_info,
-    double min_bound_dist_scale = min_bound_dist_scale_2d
+template <class T>
+std::vector<std::pair<size_t, T>> remove_points_outside_2d_contours(
+    std::vector<point_t<T, 2>>& potential_bulk_points,
+    const T& approx_point_spacing,
+    const std::vector<edge_info_t<T>>& boundary_edge_info,
+    T min_bound_dist_scale = min_bound_dist_scale_2d
 ) {
-    std::vector<std::pair<size_t, double>> distances_to_edges(
+    std::vector<std::pair<size_t, T>> distances_to_edges(
         potential_bulk_points.size()
     );
     std::transform(
@@ -426,23 +437,23 @@ std::vector<std::pair<size_t, double>> remove_points_outside_2d_contours(
     return distances_to_edges;
 }
 
-template<>
-class conforming_point_cloud_impl_t<2> {
+template<class T>
+class conforming_point_cloud_impl_t<T, 2> {
   public:
-    using point_t  = naga::point_t<double, 2>;
+    using point_t  = naga::point_t<T, 2>;
     using normal_t = point_t;
     using index_t  = size_t;
 
-    using closed_contour_t = conforming_point_cloud_t<2>::input_domain_data_t;
+    using closed_contour_t = typename conforming_point_cloud_t<T, 2>::input_domain_data_t;
 
     static conforming_point_cloud_impl_t create(
-        const double& approx_point_spacing,
+        const T& approx_point_spacing,
         const std::filesystem::path& domain,
         const std::vector<std::filesystem::path>& immersed_boundaries = {}
     ) {
         std::vector<closed_contour_t> immersed_boundary_contours;
-        std::vector<double> boundary_vertices;
-        std::vector<double> boundary_normals;
+        std::vector<T> boundary_vertices;
+        std::vector<T> boundary_normals;
         std::vector<size_t> boundary_edges;
         for (auto& im_obj_file : immersed_boundaries) {
             immersed_boundary_contours.emplace_back(
@@ -474,7 +485,7 @@ class conforming_point_cloud_impl_t<2> {
             boundary_edges.push_back(prev_vertex_count + edge_index);
         }
 
-        std::vector<edge_info_t> boundary_edge_info;
+        std::vector<edge_info_t<T>> boundary_edge_info;
         subdivide_edges_and_cache_edge_info(
             approx_point_spacing,
             boundary_vertices,
@@ -495,14 +506,14 @@ class conforming_point_cloud_impl_t<2> {
         //        // we also add jitter in hopes it prevents artifacting
         //        std::default_random_engine offset_rng(2);
         //        // use same seed for reproducibility
-        //        std::normal_distribution<double> offset_dist(
+        //        std::normal_distribution<T> offset_dist(
         //            0.0,
         //            0.05 * approx_point_spacing
         //        );
         //        std::default_random_engine angle_rng(456);
         //        // use same seed for reproducibility
-        //        std::uniform_real_distribution<double>
-        //            angle_dist(0., naga::math::pi<double>);
+        //        std::uniform_real_distribution<T>
+        //            angle_dist(0., naga::math::pi<T>);
         //        for (auto& p : potential_bulk_points) {
         //            auto offset = offset_dist(offset_rng);
         //            auto angle  = angle_dist(angle_rng);
@@ -528,7 +539,7 @@ class conforming_point_cloud_impl_t<2> {
                 const auto get_index = [&]() {
                     return static_cast<size_t>(&p - &points[num_bulk]);
                 };
-                return naga::point_t<double, 2>{
+                return naga::point_t<T, 2>{
                     {boundary_vertices[get_index() * 2 + 0],
                      boundary_vertices[get_index() * 2 + 1]}};
             }
@@ -540,7 +551,7 @@ class conforming_point_cloud_impl_t<2> {
             [&](const auto& n) {
                 const auto get_index
                     = [&]() { return static_cast<size_t>(&n - &normals[0]); };
-                return naga::point_t<double, 2>{
+                return naga::point_t<T, 2>{
                     {boundary_normals[get_index() * 2 + 0],
                      boundary_normals[get_index() * 2 + 1]}};
             }
@@ -630,69 +641,80 @@ class conforming_point_cloud_impl_t<2> {
     size_t num_boundary_points_;
 };
 
-conforming_point_cloud_t<2> conforming_point_cloud_t<2>::create(
-    const double& approximate_spacing,
+template <class T>
+conforming_point_cloud_t<T, 2> conforming_point_cloud_t<T, 2>::create(
+    const T& approximate_spacing,
     const std::filesystem::path& domain,
     const std::vector<std::filesystem::path>& immersed_boundaries
 ) {
     conforming_point_cloud_t point_cloud;
-    auto impl = conforming_point_cloud_impl_t<2>::create(
+    auto impl = conforming_point_cloud_impl_t<T, 2>::create(
         approximate_spacing,
         domain,
         immersed_boundaries
     );
     auto impl_ptr
-        = std::make_shared<conforming_point_cloud_impl_t<2>>(std::move(impl));
+        = std::make_shared<conforming_point_cloud_impl_t<T, 2>>(std::move(impl));
     point_cloud.impl = std::move(impl_ptr);
     return point_cloud;
 }
 
-const typename conforming_point_cloud_t<2>::input_domain_data_t&
-conforming_point_cloud_t<2>::domain() const {
+template <class T>
+const typename conforming_point_cloud_t<T, 2>::input_domain_data_t&
+conforming_point_cloud_t<T, 2>::domain() const {
     return impl->domain();
 }
 
-const std::vector<typename conforming_point_cloud_t<2>::input_domain_data_t>&
-conforming_point_cloud_t<2>::immersed_boundaries() const {
+template <class T>
+const std::vector<typename conforming_point_cloud_t<T, 2>::input_domain_data_t>&
+conforming_point_cloud_t<T, 2>::immersed_boundaries() const {
     return impl->immersed_boundaries();
 }
 
-const std::vector<typename conforming_point_cloud_t<2>::point_t>&
-conforming_point_cloud_t<2>::points() const {
+template <class T>
+const std::vector<typename conforming_point_cloud_t<T, 2>::point_t>&
+conforming_point_cloud_t<T, 2>::points() const {
     return impl->points();
 }
 
-const std::vector<typename conforming_point_cloud_t<2>::normal_t>&
-conforming_point_cloud_t<2>::normals() const {
+template <class T>
+const std::vector<typename conforming_point_cloud_t<T, 2>::normal_t>&
+conforming_point_cloud_t<T, 2>::normals() const {
     return impl->normals();
 }
 
-const size_t& conforming_point_cloud_t<2>::num_bulk_points() const {
+template <class T>
+const size_t& conforming_point_cloud_t<T, 2>::num_bulk_points() const {
     return impl->num_bulk_points();
 }
 
-const size_t& conforming_point_cloud_t<2>::num_boundary_points() const {
+template <class T>
+const size_t& conforming_point_cloud_t<T, 2>::num_boundary_points() const {
     return impl->num_boundary_points();
 }
 
-size_t conforming_point_cloud_t<2>::size() const {
+template <class T>
+size_t conforming_point_cloud_t<T, 2>::size() const {
     return impl->num_boundary_points();
 }
 
-bool conforming_point_cloud_t<2>::is_boundary(
+template <class T>
+bool conforming_point_cloud_t<T, 2>::is_boundary(
     const conforming_point_cloud_t::index_t& i
 ) const {
     return impl->is_boundary(i);
 }
 
-typename conforming_point_cloud_t<2>::normal_t
-conforming_point_cloud_t<2>::get_normal(
+template <class T>
+typename conforming_point_cloud_t<T, 2>::normal_t
+conforming_point_cloud_t<T, 2>::get_normal(
     const conforming_point_cloud_t::index_t& i
 ) const {
     return impl->get_normal(i);
 }
 
-template class conforming_point_cloud_t<2>;
+template class conforming_point_cloud_t<float, 2>;
+template class conforming_point_cloud_t<double, 2>;
 
 }  // namespace naga::experimental::fluids::nonlocal_lbm::detail
 
@@ -700,7 +722,8 @@ template class conforming_point_cloud_t<2>;
 
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
-using triangular_mesh_t = naga::experimental::mesh::triangular_mesh_t<double>;
+template <class T>
+using triangular_mesh_t = naga::experimental::mesh::triangular_mesh_t<T>;
 
 struct sdf_metadata {
     std::unique_ptr<sdf::SDF> sdf;
@@ -708,8 +731,9 @@ struct sdf_metadata {
     std::unique_ptr<sdf::Triangles> faces;
 };
 
+template <class T>
 sdf_metadata
-build_sdf(const std::vector<double>& points, const std::vector<size_t>& faces) {
+build_sdf(const std::vector<T>& points, const std::vector<size_t>& faces) {
     std::unique_ptr<sdf::Points> sdf_points
         = std::make_unique<sdf::Points>(points.size() / 3, 3);
     for (u_int32_t p = 0; p < points.size() / 3; p++) {
@@ -730,26 +754,28 @@ build_sdf(const std::vector<double>& points, const std::vector<size_t>& faces) {
         std::move(sdf_faces)};
 }
 
-std::vector<double>
+template <class T>
+std::vector<T>
 get_sdf_to_points(const sdf::Points& points, const sdf::SDF& surface) {
     auto sdfs = surface(points);
     return {sdfs.data(), sdfs.data() + sdfs.size()};
 }
 
 // returns points and normals
-std::tuple<std::vector<point_t<double, 3>>, std::vector<point_t<double, 3>>>
+template <class T>
+std::tuple<std::vector<point_t<T, 3>>, std::vector<point_t<T, 3>>>
 fill_face_with_nodes(
-    double nodal_spacing,
+    T nodal_spacing,
     size_t f,
-    const triangular_mesh_t& boundary_mesh,
+    const triangular_mesh_t<T>& boundary_mesh,
     std::vector<int> excluded_edges = {},
-    double min_dist_scale           = min_bound_dist_scale_2d,
-    double min_edge_dist_scale      = min_bound_dist_scale_2d
+    T min_dist_scale           = min_bound_dist_scale_2d,
+    T min_edge_dist_scale      = min_bound_dist_scale_2d
 ) {
-    using vector3_t = point_t<double, 3>;
-    using normal3_t = point_t<double, 3>;
-    using point3_t  = point_t<double, 3>;
-    using point2_t  = point_t<double, 2>;
+    using vector3_t = point_t<T, 3>;
+    using normal3_t = point_t<T, 3>;
+    using point3_t  = point_t<T, 3>;
+    using point2_t  = point_t<T, 2>;
 
     point3_t v1;
     point3_t v2;
@@ -795,7 +821,7 @@ fill_face_with_nodes(
     auto y  = naga::math::cross(z, x);
     naga::math::loopless::normalize<3>(y);
 
-    std::vector<double> edge_verts2d;
+    std::vector<T> edge_verts2d;
     // v1
     edge_verts2d.push_back(0);
     edge_verts2d.push_back(0);
@@ -810,7 +836,7 @@ fill_face_with_nodes(
     point2_t v2_2d{{edge_verts2d[2], edge_verts2d[3]}};
     point2_t v3_2d{{edge_verts2d[4], edge_verts2d[5]}};
 
-    double area
+    T area
         = 0.5
         * (-v2_2d.y() * v3_2d.x() + v1_2d.y() * (-v2_2d.x() + v3_2d.x())
            + v1_2d.x() * (v2_2d.y() - v3_2d.y()) + v2_2d.x() * v3_2d.y());
@@ -842,7 +868,7 @@ fill_face_with_nodes(
     auto v31_edge_normal
         = calc_v12_edge_normal_of_tri(&v3_2d[0], &v1_2d[0], &v2_2d[0]);
 
-    std::vector<double> edge_vert_normals2d;
+    std::vector<T> edge_vert_normals2d;
     // v1
     edge_vert_normals2d.push_back((v12_edge_normal[0] + v31_edge_normal[0]));
     edge_vert_normals2d.push_back((v12_edge_normal[1] + v31_edge_normal[1]));
@@ -875,10 +901,10 @@ fill_face_with_nodes(
     auto edge3_verts2d        = edge_verts2d;
     auto edge3_vert_normals2d = edge_vert_normals2d;
 
-    std::vector<edge_info_t> edge_metadata;
+    std::vector<edge_info_t<T>> edge_metadata;
 
     {
-        std::vector<edge_info_t> edge1_metadata;
+        std::vector<edge_info_t<T>> edge1_metadata;
         subdivide_edges_and_cache_edge_info(
             nodal_spacing,
             edge1_verts2d,
@@ -894,7 +920,7 @@ fill_face_with_nodes(
         );
     }
     {
-        std::vector<edge_info_t> edge2_metadata;
+        std::vector<edge_info_t<T>> edge2_metadata;
         subdivide_edges_and_cache_edge_info(
             nodal_spacing,
             edge2_verts2d,
@@ -910,7 +936,7 @@ fill_face_with_nodes(
         );
     }
     {
-        std::vector<edge_info_t> edge3_metadata;
+        std::vector<edge_info_t<T>> edge3_metadata;
         subdivide_edges_and_cache_edge_info(
             nodal_spacing,
             edge3_verts2d,
@@ -933,10 +959,6 @@ fill_face_with_nodes(
     edge_metadata[2].edge_normal[0] = -v31_edge_normal[0];
     edge_metadata[2].edge_normal[1] = -v31_edge_normal[1];
 
-    for (int d = 0; d < 2; ++d) {
-        lower_bound2d[d] -= nodal_spacing;
-        upper_bound2d[d] += nodal_spacing;
-    }
     auto potential_face_points2d = generate_2d_hexagonal_grid(
         nodal_spacing,
         lower_bound2d,
@@ -946,7 +968,7 @@ fill_face_with_nodes(
 //    // we also add jitter in hopes it prevents artifacting
 //    static std::default_random_engine offset_rng(2);
 //    // use same seed for reproducibility
-//    std::normal_distribution<double> offset_dist(0.0, 0.05 * nodal_spacing);
+//    std::normal_distribution<T> offset_dist(0.0, 0.05 * nodal_spacing);
 //    static std::default_random_engine angle_rng(456);
 //    // use same seed for reproducibility
 //    std::uniform_real_distribution<double>
@@ -994,15 +1016,15 @@ fill_face_with_nodes(
         std::back_inserter(barycentric_coordinates),
         [&](const auto& p) {
             // barycentric coordinates
-            double s = 1. / (2. * area)
+            T s = 1. / (2. * area)
                      * ((v1_2d.y() * v3_2d.x() - v1_2d.x() * v3_2d.y())
                         + (v3_2d.y() - v1_2d.y()) * p.x()
                         + (v1_2d.x() - v3_2d.x()) * p.y());
-            double t = 1. / (2. * area)
+            T t = 1. / (2. * area)
                      * ((v1_2d.x() * v2_2d.y() - v1_2d.y() * v2_2d.x())
                         + (v1_2d.y() - v2_2d.y()) * p.x()
                         + (v2_2d.x() - v1_2d.x()) * p.y());
-            double u = 1. - s - t;
+            T u = 1. - s - t;
             return point3_t{{s, t, u}};
         }
     );
@@ -1024,7 +1046,7 @@ fill_face_with_nodes(
 
     std::vector<point3_t> edge_points3d;
     edge_points3d.reserve(edge_verts2d.size() / 2);
-    for (size_t i = 0; i < edge1_verts2d.size(); i += 2) {
+    for (size_t i = 6; i < edge1_verts2d.size(); i += 2) {
         if (std::find(excluded_edges.begin(), excluded_edges.end(), 0)
             != excluded_edges.end()) {
             break;
@@ -1048,7 +1070,7 @@ fill_face_with_nodes(
         }
         edge_points3d.push_back(point3_t{{p[0], p[1], 0.}});
     }
-    for (size_t i = 0; i < edge2_verts2d.size(); i += 2) {
+    for (size_t i = 6; i < edge2_verts2d.size(); i += 2) {
         if (std::find(excluded_edges.begin(), excluded_edges.end(), 1)
             != excluded_edges.end()) {
             break;
@@ -1072,7 +1094,7 @@ fill_face_with_nodes(
         }
         edge_points3d.push_back(point3_t{{p[0], p[1], 0.}});
     }
-    for (size_t i = 0; i < edge3_verts2d.size(); i += 2) {
+    for (size_t i = 6; i < edge3_verts2d.size(); i += 2) {
         if (std::find(excluded_edges.begin(), excluded_edges.end(), 2)
             != excluded_edges.end()) {
             break;
@@ -1104,15 +1126,15 @@ fill_face_with_nodes(
         std::back_inserter(barycentric_coordinates),
         [&](const auto& p) {
             // barycentric coordinates
-            double s = 1. / (2. * area)
+            T s = 1. / (2. * area)
                      * ((v1_2d.y() * v3_2d.x() - v1_2d.x() * v3_2d.y())
                         + (v3_2d.y() - v1_2d.y()) * p.x()
                         + (v1_2d.x() - v3_2d.x()) * p.y());
-            double t = 1. / (2. * area)
+            T t = 1. / (2. * area)
                      * ((v1_2d.x() * v2_2d.y() - v1_2d.y() * v2_2d.x())
                         + (v1_2d.y() - v2_2d.y()) * p.x()
                         + (v2_2d.x() - v1_2d.x()) * p.y());
-            double u = 1. - s - t;
+            T u = 1. - s - t;
             return point3_t{{s, t, u}};
         }
     );
@@ -1175,13 +1197,14 @@ fill_face_with_nodes(
     return {points3d, normals3d};
 }
 
+template <class T>
 void fill_surface_with_nodes(
-    std::vector<point_t<double, 3>>& points,
-    std::vector<point_t<double, 3>>& normals,
+    std::vector<point_t<T, 3>>& points,
+    std::vector<point_t<T, 3>>& normals,
     double nodal_spacing,
-    const triangular_mesh_t& boundary_mesh
+    const triangular_mesh_t<T>& boundary_mesh
 ) {
-    using point_t            = point_t<double, 3>;
+    using point_t            = point_t<T, 3>;
     unsigned int max_threads = std::thread::hardware_concurrency();
 
     std::vector<hashable_edge> processed_edges(boundary_mesh.faces().size());
@@ -1259,7 +1282,7 @@ void fill_surface_with_nodes(
                     //                    );
                 }
             }
-            auto [face_points, face_normals] = fill_face_with_nodes(
+            auto [face_points, face_normals] = fill_face_with_nodes<T>(
                 nodal_spacing,
                 f,
                 boundary_mesh,
@@ -1297,9 +1320,9 @@ void fill_surface_with_nodes(
     futures.clear();
 
     for (size_t i = 0; i < boundary_mesh.vertices().size(); i += 3) {
-//        if (points.size() < boundary_mesh.vertices().size() / 2) {
-//            break;
-//        }
+        if (points.size() > boundary_mesh.vertices().size() / 2) {
+            break;
+        }
         std::vector<point_t> shared_normals;
         auto start_search = boundary_mesh.faces().begin();
         while (start_search != boundary_mesh.faces().end()) {
@@ -1336,17 +1359,17 @@ void fill_surface_with_nodes(
     }
 }
 
-template<>
-class conforming_point_cloud_impl_t<3> {
+template<class T>
+class conforming_point_cloud_impl_t<T, 3> {
   public:
-    using point_t  = naga::point_t<double, 3>;
+    using point_t  = naga::point_t<T, 3>;
     using normal_t = point_t;
     using index_t  = size_t;
 
-    using triangular_mesh_t = conforming_point_cloud_t<3>::input_domain_data_t;
+    using triangular_mesh_t = typename conforming_point_cloud_t<T, 3>::input_domain_data_t;
 
     static conforming_point_cloud_impl_t create(
-        const double& nodal_spacing,
+        const T& nodal_spacing,
         const std::filesystem::path& domain_obj,
         const std::vector<std::filesystem::path>& immersed_boundary_objs = {}
     ) {
@@ -1431,16 +1454,16 @@ class conforming_point_cloud_impl_t<3> {
             );
         }
 
-        auto potential_grid_size = 2 * approx_grid_size[0] * approx_grid_size[1]
+        auto potential_grid_size = approx_grid_size[0] * approx_grid_size[1]
                                  * approx_grid_size[2];
         size_t batch_bytes        = naga::math::loopless::pow<30>(size_t{2});
         size_t elements_per_batch = batch_bytes / sizeof(point_t);
-        size_t batch_size = (potential_grid_size + elements_per_batch - 1)
+        size_t num_batches = (potential_grid_size + elements_per_batch - 1)
                           / elements_per_batch;
         std::vector<point_t> bulk_points;
-        std::vector<double> bulk_to_boundary_distances;
+        std::vector<T> bulk_to_boundary_distances;
         std::vector<index_t> closest_boundary_to_bulk;
-        for (size_t b = 0; b < batch_size; ++b) {
+        for (size_t b = 0; b < num_batches; ++b) {
             sdf::Points potential_bulk_points;
             std::vector<point_t> fill_points(std::min(
                 elements_per_batch,
@@ -1449,7 +1472,7 @@ class conforming_point_cloud_impl_t<3> {
             potential_bulk_points = sdf::Points(fill_points.size(), 3);
 #pragma omp parallel for
             for (size_t p = 0; p < fill_points.size(); ++p) {
-                auto linear_id = (p / 2) + b * elements_per_batch;
+                auto linear_id = p + b * elements_per_batch;
                 auto i         = linear_id % approx_grid_size[0];
                 auto j
                     = (linear_id / approx_grid_size[0]) % approx_grid_size[1];
@@ -1457,9 +1480,9 @@ class conforming_point_cloud_impl_t<3> {
                     = (linear_id / (approx_grid_size[0] * approx_grid_size[1]))
                     % (approx_grid_size[2]);
                 point_t new_point{
-                    {lower_bound[0] + static_cast<double>(i) * nodal_spacing,
-                     lower_bound[1] + static_cast<double>(j) * nodal_spacing,
-                     lower_bound[2] + static_cast<double>(k) * nodal_spacing}};
+                    {lower_bound[0] + static_cast<T>(i) * nodal_spacing,
+                     lower_bound[1] + static_cast<T>(j) * nodal_spacing,
+                     lower_bound[2] + static_cast<T>(k) * nodal_spacing}};
                 if (p % 2 == 1) {
                     new_point[0] += nodal_spacing / 2.0;
                     new_point[1] += nodal_spacing / 2.0;
@@ -1475,8 +1498,8 @@ class conforming_point_cloud_impl_t<3> {
                     = static_cast<float>(new_point[2]);
             }
 
-            std::vector<double> min_distance_to_boundary
-                = get_sdf_to_points(potential_bulk_points, *domain_sdf.sdf);
+            std::vector<T> min_distance_to_boundary
+                = get_sdf_to_points<T>(potential_bulk_points, *domain_sdf.sdf);
             std::vector<uint> closest_boundary_indices(
                 potential_bulk_points.rows(),
                 0
@@ -1484,12 +1507,12 @@ class conforming_point_cloud_impl_t<3> {
 
             uint boundary_index = 1;
             for (const auto& sdf : immersed_boundary_sdfs) {
-                std::vector<double> distance_to_boundary
-                    = get_sdf_to_points(potential_bulk_points, *sdf.sdf);
+                std::vector<T> distance_to_boundary
+                    = get_sdf_to_points<T>(potential_bulk_points, *sdf.sdf);
 #pragma omp parallel for
                 for (size_t i = 0; i < distance_to_boundary.size(); ++i) {
                     distance_to_boundary[i] *= -1;
-                    constexpr double epsilon = 1e-6;
+                    constexpr T epsilon = 1e-6;
                     const auto& distance     = distance_to_boundary[i];
                     const auto& min_distance = min_distance_to_boundary[i];
                     if (std::abs(std::abs(distance) - std::abs(min_distance))
@@ -1506,7 +1529,7 @@ class conforming_point_cloud_impl_t<3> {
                     distance_to_boundary.begin(),
                     distance_to_boundary.end(),
                     min_distance_to_boundary.begin(),
-                    [&](const double& distance) {
+                    [&](const T& distance) {
                         size_t i = &distance - &distance_to_boundary[0];
                         return closest_boundary_indices[i] == boundary_index
                                  ? distance
@@ -1542,6 +1565,9 @@ class conforming_point_cloud_impl_t<3> {
             }
         }
 
+        std::cout << "num bulk points: " << bulk_points.size() << std::endl;
+        std::cout << "num boundary points: " << boundary_points.size() << std::endl;
+
         return {
             std::move(bulk_points),
             std::move(bulk_to_boundary_distances),
@@ -1552,7 +1578,7 @@ class conforming_point_cloud_impl_t<3> {
 
     const std::vector<point_t>& bulk_points() const { return bulk_points_; }
 
-    const std::vector<double>& bulk_to_boundary_distances() const {
+    const std::vector<T>& bulk_to_boundary_distances() const {
         return bulk_to_boundary_distances_;
     }
 
@@ -1571,7 +1597,7 @@ class conforming_point_cloud_impl_t<3> {
   private:
     conforming_point_cloud_impl_t(
         std::vector<point_t>&& bulk_points,
-        std::vector<double>&& bulk_to_boundary_distances,
+        std::vector<T>&& bulk_to_boundary_distances,
         std::vector<index_t>&& closest_boundary_to_bulk,
         std::vector<point_t>&& boundary_points,
         std::vector<normal_t>&& boundary_normals
@@ -1583,55 +1609,62 @@ class conforming_point_cloud_impl_t<3> {
           boundary_normals_(std::move(boundary_normals)) {}
 
     std::vector<point_t> bulk_points_;
-    std::vector<double> bulk_to_boundary_distances_;
+    std::vector<T> bulk_to_boundary_distances_;
     std::vector<index_t> closest_boundary_to_bulk_;
     std::vector<point_t> boundary_points_;
     std::vector<normal_t> boundary_normals_;
 };
 
-conforming_point_cloud_t<3> conforming_point_cloud_t<3>::create(
-    const double& approximate_spacing,
+template <class T>
+conforming_point_cloud_t<T, 3> conforming_point_cloud_t<T, 3>::create(
+    const T& approximate_spacing,
     const std::filesystem::path& domain,
     const std::vector<std::filesystem::path>& immersed_boundaries
 ) {
     conforming_point_cloud_t point_cloud;
-    auto impl = conforming_point_cloud_impl_t<dimensions>::create(
+    auto impl = conforming_point_cloud_impl_t<T, dimensions>::create(
         approximate_spacing,
         domain,
         immersed_boundaries
     );
-    auto impl_ptr = std::make_shared<conforming_point_cloud_impl_t<dimensions>>(
+    auto impl_ptr = std::make_shared<conforming_point_cloud_impl_t<T, dimensions>>(
         std::move(impl)
     );
     point_cloud.impl = std::move(impl_ptr);
     return point_cloud;
 }
 
-const std::vector<conforming_point_cloud_t<3>::point_t>&
-conforming_point_cloud_t<3>::bulk_points() const {
+template <class T>
+const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
+conforming_point_cloud_t<T, 3>::bulk_points() const {
     return impl->bulk_points();
 }
 
-const std::vector<double>&
-conforming_point_cloud_t<3>::bulk_to_boundary_distances() const {
+template <class T>
+const std::vector<T>&
+conforming_point_cloud_t<T, 3>::bulk_to_boundary_distances() const {
     return impl->bulk_to_boundary_distances();
 }
 
-const std::vector<conforming_point_cloud_t<3>::index_t>&
-conforming_point_cloud_t<3>::closest_boundary_to_bulk() const {
+template <class T>
+const std::vector<typename conforming_point_cloud_t<T, 3>::index_t>&
+conforming_point_cloud_t<T, 3>::closest_boundary_to_bulk() const {
     return impl->closest_boundary_to_bulk();
 }
 
-const std::vector<conforming_point_cloud_t<3>::point_t>&
-conforming_point_cloud_t<3>::boundary_points() const {
+template <class T>
+const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
+conforming_point_cloud_t<T, 3>::boundary_points() const {
     return impl->boundary_points();
 }
 
-const std::vector<conforming_point_cloud_t<3>::normal_t>&
-conforming_point_cloud_t<3>::boundary_normals() const {
+template <class T>
+const std::vector<typename conforming_point_cloud_t<T, 3>::normal_t>&
+conforming_point_cloud_t<T, 3>::boundary_normals() const {
     return impl->boundary_normals();
 }
 
-template class conforming_point_cloud_t<3>;
+template class conforming_point_cloud_t<float, 3>;
+template class conforming_point_cloud_t<double, 3>;
 
 }  // namespace naga::experimental::fluids::nonlocal_lbm::detail

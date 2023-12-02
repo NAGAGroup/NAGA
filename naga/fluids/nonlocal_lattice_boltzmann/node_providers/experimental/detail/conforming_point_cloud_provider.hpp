@@ -41,23 +41,23 @@
 
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
-template<uint Dimensions>
+template<class T, uint Dimensions>
 class conforming_point_cloud_impl_t;
 
-template<uint Dimensions>
+template<class T, uint Dimensions>
 struct input_domain_data_t {};
 
-template<>
-struct input_domain_data_t<2> {
-    using type = naga::experimental::mesh::closed_contour_t<double>;
+template<class T>
+struct input_domain_data_t<T, 2> {
+    using type = naga::experimental::mesh::closed_contour_t<T>;
 };
 
-template<>
-struct input_domain_data_t<3> {
-    using type = naga::experimental::mesh::triangular_mesh_t<double>;
+template<class T>
+struct input_domain_data_t<T, 3> {
+    using type = naga::experimental::mesh::triangular_mesh_t<T>;
 };
 
-template<uint Dimensions>
+template<class T, uint Dimensions>
 class conforming_point_cloud_t {
     static_assert(
         Dimensions == 2 || Dimensions == 3,
@@ -65,19 +65,20 @@ class conforming_point_cloud_t {
     );
 };
 
-template<>
-class conforming_point_cloud_t<2> {
+template<class T>
+class conforming_point_cloud_t<T, 2> {
   public:
-    using point_t  = ::naga::point_t<double, 2>;
+    using value_type = T;
+    using point_t  = ::naga::point_t<value_type, 2>;
     using normal_t = point_t;
     using index_t  = size_t;
 
     conforming_point_cloud_t() = default;
 
-    using input_domain_data_t = typename input_domain_data_t<2>::type;
+    using input_domain_data_t = typename input_domain_data_t<value_type, 2>::type;
 
     static conforming_point_cloud_t create(
-        const double& approximate_spacing,
+        const value_type& approximate_spacing,
         const std::filesystem::path& domain,
         const std::vector<std::filesystem::path>& immersed_boundaries = {}
     );
@@ -101,8 +102,8 @@ class conforming_point_cloud_t<2> {
     normal_t get_normal(const index_t& i) const;
 
   private:
-    friend class conforming_point_cloud_impl_t<2>;
-    std::shared_ptr<conforming_point_cloud_impl_t<2>> impl{};
+    friend class conforming_point_cloud_impl_t<value_type, 2>;
+    std::shared_ptr<conforming_point_cloud_impl_t<value_type, 2>> impl{};
 };
 
 // this specialization sucks because it's interface is different
@@ -115,28 +116,29 @@ class conforming_point_cloud_t<2> {
 // and subsequently the 2D specialization, conform to the interface
 // below
 
-template<>
-class conforming_point_cloud_t<3> {
+template<class T>
+class conforming_point_cloud_t<T, 3> {
 
   public:
     static constexpr uint dimensions = 3;
-    using point_t                    = ::naga::point_t<double, dimensions>;
+    using value_type                 = T;
+    using point_t                    = ::naga::point_t<value_type, dimensions>;
     using normal_t                   = point_t;
     using index_t                    = size_t;
 
     conforming_point_cloud_t() = default;
 
-    using input_domain_data_t = typename input_domain_data_t<dimensions>::type;
+    using input_domain_data_t = typename input_domain_data_t<value_type, dimensions>::type;
 
     static conforming_point_cloud_t create(
-        const double& approximate_spacing,
+        const value_type& approximate_spacing,
         const std::filesystem::path& domain,
         const std::vector<std::filesystem::path>& immersed_boundaries = {}
     );
 
     const std::vector<point_t>& bulk_points() const;
 
-    const std::vector<double>& bulk_to_boundary_distances() const;
+    const std::vector<value_type>& bulk_to_boundary_distances() const;
 
     const std::vector<point_t>& boundary_points() const;
 
@@ -145,11 +147,13 @@ class conforming_point_cloud_t<3> {
     const std::vector<index_t>& closest_boundary_to_bulk() const;
 
   private:
-    friend class conforming_point_cloud_impl_t<dimensions>;
-    std::shared_ptr<conforming_point_cloud_impl_t<dimensions>> impl{};
+    friend class conforming_point_cloud_impl_t<value_type, dimensions>;
+    std::shared_ptr<conforming_point_cloud_impl_t<value_type, dimensions>> impl{};
 };
 
-extern template class conforming_point_cloud_t<2>;
-extern template class conforming_point_cloud_t<3>;
+extern template class conforming_point_cloud_t<float, 2>;
+extern template class conforming_point_cloud_t<float, 3>;
+extern template class conforming_point_cloud_t<double, 2>;
+extern template class conforming_point_cloud_t<double, 3>;
 
 }  // namespace naga::experimental::fluids::nonlocal_lbm::detail

@@ -132,13 +132,13 @@ class conforming_point_cloud_provider : public node_provider<Lattice> {
     using value_type                 = typename base::value_type;
 
     conforming_point_cloud_provider(
-        const double& approximate_spacing,
+        const value_type & approximate_spacing,
         const sclx::filesystem::path& domain,
         const std::vector<sclx::filesystem::path>& immersed_boundaries = {},
-        const double& domain_absorption_layer_thickness                = 0,
-        const double& domain_boundary_absorption_rate                  = 0,
-        const std::vector<double>& immersed_boundary_layer_thicknesses = {},
-        const std::vector<double>& immersed_boundary_absorption_rates  = {}
+        const value_type & domain_absorption_layer_thickness                = 0,
+        const value_type & domain_boundary_absorption_rate                  = 0,
+        const std::vector<value_type >& immersed_boundary_layer_thicknesses = {},
+        const std::vector<value_type >& immersed_boundary_absorption_rates  = {}
     ) {}
 
     simulation_nodes<value_type> get() const final { return {}; }
@@ -154,17 +154,17 @@ class conforming_point_cloud_provider<
     using value_type                 = typename base::value_type;
 
     conforming_point_cloud_provider(
-        const double& approximate_spacing,
+        const value_type & approximate_spacing,
         const sclx::filesystem::path& domain,
         const std::vector<sclx::filesystem::path>& immersed_boundaries = {},
-        const double& domain_absorption_layer_thickness                = 0,
-        const double& domain_boundary_absorption_rate                  = 0,
-        const std::vector<double>& immersed_boundary_layer_thicknesses = {},
-        const std::vector<double>& immersed_boundary_absorption_rates  = {}
+        const value_type & domain_absorption_layer_thickness                = 0,
+        const value_type & domain_boundary_absorption_rate                  = 0,
+        const std::vector<value_type >& immersed_boundary_layer_thicknesses = {},
+        const std::vector<value_type >& immersed_boundary_absorption_rates  = {}
     ) {
 
         auto conforming_point_cloud
-            = detail::conforming_point_cloud_t<dimensions>::create(
+            = detail::conforming_point_cloud_t<T, dimensions>::create(
                 approximate_spacing,
                 domain,
                 immersed_boundaries
@@ -195,7 +195,7 @@ class conforming_point_cloud_provider<
 
         nodes_.nodal_spacing = approximate_spacing;
 
-        std::vector<point_t<double, dimensions>> bulk_points(
+        std::vector<point_t<value_type , dimensions>> bulk_points(
             conforming_point_cloud.points().begin(),
             conforming_point_cloud.points().begin()
                 + conforming_point_cloud.num_bulk_points()
@@ -209,7 +209,7 @@ class conforming_point_cloud_provider<
             std::numeric_limits<value_type>::max()
         );
 
-        using closed_contour_t = typename detail::conforming_point_cloud_t<
+        using closed_contour_t = typename detail::conforming_point_cloud_t<T,
             dimensions>::input_domain_data_t;
 
         std::mutex distance_mutex;
@@ -328,16 +328,16 @@ class conforming_point_cloud_provider<
     using value_type                 = typename base::value_type;
 
     conforming_point_cloud_provider(
-        const double& approximate_spacing,
+        const value_type & approximate_spacing,
         const sclx::filesystem::path& domain,
         const std::vector<sclx::filesystem::path>& immersed_boundaries = {},
-        const double& domain_absorption_layer_thickness                = 0,
-        const double& domain_boundary_absorption_rate                  = 0,
-        const std::vector<double>& immersed_boundary_layer_thicknesses = {},
-        const std::vector<double>& immersed_boundary_absorption_rates  = {}
+        const value_type & domain_absorption_layer_thickness                = 0,
+        const value_type & domain_boundary_absorption_rate                  = 0,
+        const std::vector<value_type >& immersed_boundary_layer_thicknesses = {},
+        const std::vector<value_type >& immersed_boundary_absorption_rates  = {}
     ) {
         auto conforming_point_cloud
-            = detail::conforming_point_cloud_t<3>::create(
+            = detail::conforming_point_cloud_t<T, 3>::create(
                 approximate_spacing,
                 domain,
                 immersed_boundaries
@@ -355,7 +355,7 @@ class conforming_point_cloud_provider<
         nodes_.boundary_normals
             = sclx::array<value_type, 2>{dimensions, num_boundary_points};
 
-        std::vector<double> absorption_coefficients;
+        std::vector<value_type > absorption_coefficients;
         absorption_coefficients.reserve(num_bulk_and_layer_points);
 
         const auto& closest_boundary_indices
@@ -363,8 +363,8 @@ class conforming_point_cloud_provider<
         const auto& distance_to_outer_boundary
             = conforming_point_cloud.bulk_to_boundary_distances();
         for (uint i = 0; i < num_bulk_and_layer_points; ++i) {
-            double peak_absorption_coefficient = 0.0;
-            double layer_thickness             = 0.0;
+            value_type peak_absorption_coefficient = 0.0;
+            value_type layer_thickness             = 0.0;
             if (closest_boundary_indices[i] == 0) {
                 peak_absorption_coefficient = domain_boundary_absorption_rate;
                 layer_thickness             = domain_absorption_layer_thickness;
@@ -386,7 +386,7 @@ class conforming_point_cloud_provider<
                 continue;
             }
 
-            double absorption_coefficient
+            value_type absorption_coefficient
                 = peak_absorption_coefficient
                 * naga::math::loopless::pow<2>(
                       1.0 - distance_to_boundary / layer_thickness
@@ -399,7 +399,7 @@ class conforming_point_cloud_provider<
         std::stable_partition(
             bulk_points.begin(),
             bulk_points.end(),
-            [&](const naga::point_t<double, 3>& x) {
+            [&](const naga::point_t<value_type , 3>& x) {
                 size_t i = &x - &bulk_points[0];
                 return absorption_coefficients[i] == 0.0;
             }
@@ -407,7 +407,7 @@ class conforming_point_cloud_provider<
         std::stable_partition(
             absorption_coefficients.begin(),
             absorption_coefficients.end(),
-            [&](const double& x) {
+            [&](const value_type & x) {
                 size_t i = &x - &absorption_coefficients[0];
                 return absorption_coefficients[i] == 0.0;
             }
