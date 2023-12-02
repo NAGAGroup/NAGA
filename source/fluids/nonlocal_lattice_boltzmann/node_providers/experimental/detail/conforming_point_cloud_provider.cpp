@@ -65,7 +65,7 @@ struct hash<naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge> {
 
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
-constexpr float min_bound_dist_scale_2d = .6f;
+constexpr float min_bound_dist_scale_2d = 1.f;
 constexpr float min_bound_dist_scale_3d = .6f;
 
 struct edge_info_t {

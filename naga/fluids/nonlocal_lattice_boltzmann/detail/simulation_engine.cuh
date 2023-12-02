@@ -154,7 +154,7 @@ class simulation_engine {
         advection_operator_ptr_ = std::make_shared<advection_operator_t>(
             advection_operator_t::create(domain.points)
         );
-        advection_operator_ptr_->set_max_concurrent_threads(lattice_size);
+        advection_operator_ptr_->set_max_concurrent_threads(8);
 
         {
             // We use the nearest neighbors algorithm to provide the
@@ -472,7 +472,7 @@ class simulation_engine {
                             )
                             < 0) {
                             continue;
-                        } else if (math::abs(math::loopless::dot<dimensions>(normal, &lattice_velocities(0, alpha))) < 1e-6) {
+                        } else if (math::abs(math::loopless::dot<dimensions>(normal, &lattice_velocities(0, alpha))) < 1e-2) {
                             result_arrays[alpha][idx[0]]
                                 = lattice_weights(alpha);
                             continue;
@@ -542,31 +542,28 @@ class simulation_engine {
             = parameters_.time_step / time_scale * length_scale / 2.f;
 
         if (implicit_operators_.empty()) {
-            for (uint alpha = 0; alpha < lattice_size; ++alpha) {
-                implicit_operators_.push_back(*advection_operator_ptr_);
-                implicit_operators_.back().enable_implicit(
-                    lattice_velocities.vals[alpha],
-                    time_step,
-                    domain_.num_bulk_points + domain_.num_layer_points,
-                    domain_.boundary_normals
-                );
-            }
+            implicit_operators_.push_back(*advection_operator_ptr_);
+            implicit_operators_.back().enable_implicit(
+                lattice_velocities.vals[0],
+                time_step,
+                domain_.num_bulk_points + domain_.num_layer_points,
+                domain_.boundary_normals
+            );
         }
 
         std::vector<std::future<void>> streaming_futures;
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
 
-            //            auto velocity_map
-            //                =
-            //                velocity_map::create(&(lattice_velocities.vals[alpha][0]));
+            auto velocity_map
+                = velocity_map::create(&(lattice_velocities.vals[alpha][0]));
 
             auto& f_alpha0 = solution_.lattice_distributions[alpha];
             auto& f_alpha  = temporary_distributions_[alpha];
 
             value_type centering_offset = lattice_weights.vals[alpha];
 
-            auto fut = implicit_operators_[alpha]
-                           .apply_implicit(f_alpha0, f_alpha, centering_offset);
+            auto fut = implicit_operators_[0]
+                           .apply_implicit(velocity_map, f_alpha0, f_alpha, centering_offset);
 
             streaming_futures.push_back(std::move(fut));
         }
