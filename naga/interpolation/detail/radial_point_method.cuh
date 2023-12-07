@@ -185,7 +185,7 @@ static sclx::array<T, 2> compute_weights(
         dimensions,
         group_size
     );
-    size_t minimum_required_mem = 1 * mem_per_group;
+    size_t minimum_required_mem = 4 * static_cast<size_t>(1 << 30) / mem_per_group * mem_per_group;
 
     // algorithm outline
     // for each device split
@@ -286,7 +286,7 @@ static sclx::array<T, 2> compute_weights(
             size_t allocated_mem
                 = device_memory_status.total - device_memory_status.free;
             size_t device_modified_total
-                = 95 * device_memory_status.total / 100;  // reduced to be safe
+                = 75 * device_memory_status.total / 100;  // reduced to be safe
             size_t device_modified_free
                 = (device_modified_total <= allocated_mem)
                     ? 0
@@ -294,7 +294,7 @@ static sclx::array<T, 2> compute_weights(
 
             size_t batch_size;
             if (device_modified_free > minimum_required_mem) {
-                batch_size = device_modified_free / mem_per_group * group_size;
+                batch_size = minimum_required_mem / mem_per_group * group_size;
             } else {
                 sclx::throw_exception<std::runtime_error>(
                     "Not enough memory to compute interpolation weights",

@@ -98,15 +98,25 @@ class divergence_operator {
 
         size_t total_scratchpad_size
             = builder_scratchpad_size + self_scratchpad_size;
+        size_t batch_scratch_pad_size = total_scratchpad_size / domain.shape()[1];
+        auto minimum_required_mem = 4 * static_cast<size_t>(1 << 30) / batch_scratch_pad_size * batch_scratch_pad_size;
+        size_t batch_size;
+        if (total_available_mem > minimum_required_mem) {
+            batch_size = std::min(
+                domain.shape()[1],
+                minimum_required_mem / batch_scratch_pad_size
+            );
+        } else {
+            sclx::throw_exception<std::runtime_error>(
+                "Not enough memory to compute divergence operator.",
+                "naga::nonlocal_calculus::divergence_operator::"
+            );
+        }
 
-        size_t batch_scratch_pad_size
-            = std::min(total_available_mem, total_scratchpad_size);
-        size_t batch_size = domain.shape()[1] * batch_scratch_pad_size
-                          / total_scratchpad_size;
-
+        sclx::array<T, 2> batch_domain_total{domain.shape()[0], batch_size};
         for (size_t i = 0; i < domain.shape()[1]; i += batch_size) {
             size_t batch_end = std::min(i + batch_size, domain.shape()[1]);
-            sclx::array<T, 2> batch_domain{domain.shape()[0], batch_end - i};
+            auto batch_domain = batch_domain_total.get_range({0}, {batch_end - i});
             auto domain_slice = domain.get_range({i}, {batch_end});
             sclx::assign_array(domain_slice, batch_domain);
 

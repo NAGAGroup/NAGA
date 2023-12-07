@@ -189,13 +189,19 @@ class simulation_engine {
         advection_operator_ptr_ = std::make_shared<advection_operator_t>(
             advection_operator_t::create(domain.points)
         );
-        advection_operator_ptr_->set_max_concurrent_threads(8);
+        advection_operator_ptr_->set_max_concurrent_threads(max_concurrency_);
 
         for (auto& f_alpha : solution_.lattice_distributions) {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
-        for (auto& tmp : temporary_distributions_) {
-            tmp = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+        for (int t = 0; t < lattice_size; ++t) {
+            if (t < max_concurrency_) {
+                temporary_distributions_[t]
+                    = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+            } else {
+                temporary_distributions_[t]
+                    = temporary_distributions_[t % max_concurrency_];
+            }
         }
 
         solution_.macroscopic_values.fluid_velocity
@@ -544,7 +550,9 @@ class simulation_engine {
         size_t boundary_start
             = domain_.num_bulk_points + domain_.num_layer_points;
 
-        std::vector<std::future<void>> streaming_futures;
+        std::vector<std::pair<int, std::future<void>>> streaming_futures(
+            max_concurrency_
+        );
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
 
             auto velocity_map
@@ -555,6 +563,14 @@ class simulation_engine {
 
             value_type centering_offset = lattice_weights.vals[alpha];
 
+            if (streaming_futures[alpha % max_concurrency_].second.valid()) {
+                streaming_futures[alpha % max_concurrency_].second.get();
+                sclx::assign_array(
+                    temporary_distributions_[streaming_futures[alpha % max_concurrency_].first],
+                    solution_.lattice_distributions
+                        [streaming_futures[alpha % max_concurrency_].first]
+                );
+            }
             auto fut = advection_operator_ptr_->step_forward(
                 velocity_map,
                 f_alpha0,
@@ -563,21 +579,18 @@ class simulation_engine {
                 centering_offset,
                 boundary_start
             );
-
-            streaming_futures.push_back(std::move(fut));
+            streaming_futures[alpha % max_concurrency_] = {alpha, std::move(fut)};
         }
 
-        std::vector<std::future<void>> assign_futures;
-        for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            streaming_futures[alpha].get();
-            auto& f_alpha0  = solution_.lattice_distributions[alpha];
-            auto& f_alpha   = temporary_distributions_[alpha];
-            auto assign_fut = sclx::assign_array(f_alpha, f_alpha0);
-            assign_futures.push_back(std::move(assign_fut));
-        }
-
-        for (auto& fut : assign_futures) {
+        for (auto& [alpha, fut] : streaming_futures) {
+            if (!fut.valid()) {
+                continue;
+            }
             fut.get();
+            sclx::assign_array(
+                temporary_distributions_[alpha],
+                solution_.lattice_distributions[alpha]
+            );
         }
     }
 
@@ -766,6 +779,8 @@ class simulation_engine {
     std::vector<density_source<Lattice>*> density_sources_{};
 
     std::vector<simulation_observer<Lattice>*> observers_{};
+
+    static constexpr int max_concurrency_ = lattice_size;
 };
 
 template<class Lattice>

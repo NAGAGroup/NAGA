@@ -66,7 +66,7 @@ struct hash<naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge> {
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
 constexpr float min_bound_dist_scale_2d = 1.f;
-constexpr float min_bound_dist_scale_3d = .6f;
+constexpr float min_bound_dist_scale_3d = .71f;
 
 template <class T>
 struct edge_info_t {
@@ -304,11 +304,12 @@ std::pair<size_t, double> distance_to_boundary(
 
 template <class T>
 std::vector<point_t<T, 2>> generate_2d_hexagonal_grid(
-    const double& approx_point_spacing,
+    double approx_point_spacing,
     const point_t<T, 2>& lower_bound,
     const point_t<T, 2>& upper_bound
 ) {
     std::vector<naga::point_t<T, 2>> potential_bulk_points;
+    approx_point_spacing *= 2.;
 
     double acceptable_epsilon = 0.1;
     if ((upper_bound[0] - lower_bound[0]) / approx_point_spacing
@@ -328,11 +329,11 @@ std::vector<point_t<T, 2>> generate_2d_hexagonal_grid(
     potential_bulk_points.reserve(approx_grid_size[0] * approx_grid_size[1]);
 
     const T l = 0.5
-                       * ((upper_bound[0] - lower_bound[0])
-                          / (static_cast<T>(approx_grid_size[0]) - 1))
-                   + 0.5
-                         * ((upper_bound[1] - lower_bound[1])
-                            / (static_cast<T>(approx_grid_size[1]) - 1));
+                  * ((upper_bound[0] - lower_bound[0])
+                     / (static_cast<T>(approx_grid_size[0]) - 1))
+              + 0.5
+                    * ((upper_bound[1] - lower_bound[1])
+                       / (static_cast<T>(approx_grid_size[1]) - 1));
     const T w = l * naga::math::sin(naga::math::pi<T> / 6.);
     const T h = l * naga::math::cos(naga::math::pi<T> / 6.);
     // first hexagonal grid
@@ -965,20 +966,20 @@ fill_face_with_nodes(
         upper_bound2d
     );
 
-//    // we also add jitter in hopes it prevents artifacting
-//    static std::default_random_engine offset_rng(2);
-//    // use same seed for reproducibility
-//    std::normal_distribution<T> offset_dist(0.0, 0.05 * nodal_spacing);
-//    static std::default_random_engine angle_rng(456);
-//    // use same seed for reproducibility
-//    std::uniform_real_distribution<double>
-//        angle_dist(0., naga::math::pi<double>);
-//    for (auto& p : potential_face_points2d) {
-//        auto offset = offset_dist(offset_rng);
-//        auto angle  = angle_dist(angle_rng);
-//        p[0] += offset * naga::math::cos(angle);
-//        p[1] += offset * naga::math::sin(angle);
-//    }
+    //    // we also add jitter in hopes it prevents artifacting
+    //    static std::default_random_engine offset_rng(2);
+    //    // use same seed for reproducibility
+    //    std::normal_distribution<T> offset_dist(0.0, 0.05 * nodal_spacing);
+    //    static std::default_random_engine angle_rng(456);
+    //    // use same seed for reproducibility
+    //    std::uniform_real_distribution<double>
+    //        angle_dist(0., naga::math::pi<double>);
+    //    for (auto& p : potential_face_points2d) {
+    //        auto offset = offset_dist(offset_rng);
+    //        auto angle  = angle_dist(angle_rng);
+    //        p[0] += offset * naga::math::cos(angle);
+    //        p[1] += offset * naga::math::sin(angle);
+    //    }
 
     auto distance_to_edges = remove_points_outside_2d_contours(
         potential_face_points2d,
@@ -1017,13 +1018,13 @@ fill_face_with_nodes(
         [&](const auto& p) {
             // barycentric coordinates
             T s = 1. / (2. * area)
-                     * ((v1_2d.y() * v3_2d.x() - v1_2d.x() * v3_2d.y())
-                        + (v3_2d.y() - v1_2d.y()) * p.x()
-                        + (v1_2d.x() - v3_2d.x()) * p.y());
+                * ((v1_2d.y() * v3_2d.x() - v1_2d.x() * v3_2d.y())
+                   + (v3_2d.y() - v1_2d.y()) * p.x()
+                   + (v1_2d.x() - v3_2d.x()) * p.y());
             T t = 1. / (2. * area)
-                     * ((v1_2d.x() * v2_2d.y() - v1_2d.y() * v2_2d.x())
-                        + (v1_2d.y() - v2_2d.y()) * p.x()
-                        + (v2_2d.x() - v1_2d.x()) * p.y());
+                * ((v1_2d.x() * v2_2d.y() - v1_2d.y() * v2_2d.x())
+                   + (v1_2d.y() - v2_2d.y()) * p.x()
+                   + (v2_2d.x() - v1_2d.x()) * p.y());
             T u = 1. - s - t;
             return point3_t{{s, t, u}};
         }
@@ -1044,155 +1045,156 @@ fill_face_with_nodes(
     );
     std::vector<normal3_t> normals3d(points3d.size(), normal);
 
-    std::vector<point3_t> edge_points3d;
-    edge_points3d.reserve(edge_verts2d.size() / 2);
-    for (size_t i = 6; i < edge1_verts2d.size(); i += 2) {
-        if (std::find(excluded_edges.begin(), excluded_edges.end(), 0)
-            != excluded_edges.end()) {
-            break;
-        }
-        point2_t p{{edge1_verts2d[i + 0], edge1_verts2d[i + 1]}};
-        {
-            auto [distance_p_to_edge2, unused1]
-                = distance_to_edge(p, edge_metadata[1]);
-            if (std::abs(distance_p_to_edge2)
-                < min_edge_dist_scale * nodal_spacing) {
-                continue;
-            }
-        }
-        {
-            auto [distance_p_to_edge3, unused1]
-                = distance_to_edge(p, edge_metadata[2]);
-            if (std::abs(distance_p_to_edge3)
-                < min_edge_dist_scale * nodal_spacing) {
-                continue;
-            }
-        }
-        edge_points3d.push_back(point3_t{{p[0], p[1], 0.}});
-    }
-    for (size_t i = 6; i < edge2_verts2d.size(); i += 2) {
-        if (std::find(excluded_edges.begin(), excluded_edges.end(), 1)
-            != excluded_edges.end()) {
-            break;
-        }
-        point2_t p{{edge2_verts2d[i + 0], edge2_verts2d[i + 1]}};
-        {
-            auto [distance_p_to_edge1, unused2]
-                = distance_to_edge(p, edge_metadata[0]);
-            if (std::abs(distance_p_to_edge1)
-                < min_edge_dist_scale * nodal_spacing) {
-                continue;
-            }
-        }
-        {
-            auto [distance_p_to_edge3, unused2]
-                = distance_to_edge(p, edge_metadata[2]);
-            if (std::abs(distance_p_to_edge3)
-                < min_edge_dist_scale * nodal_spacing) {
-                continue;
-            }
-        }
-        edge_points3d.push_back(point3_t{{p[0], p[1], 0.}});
-    }
-    for (size_t i = 6; i < edge3_verts2d.size(); i += 2) {
-        if (std::find(excluded_edges.begin(), excluded_edges.end(), 2)
-            != excluded_edges.end()) {
-            break;
-        }
-        point2_t p{{edge3_verts2d[i + 0], edge3_verts2d[i + 1]}};
-        {
-            auto [distance_p_to_edge1, unused3]
-                = distance_to_edge(p, edge_metadata[0]);
-            if (std::abs(distance_p_to_edge1)
-                < min_edge_dist_scale * nodal_spacing) {
-                continue;
-            }
-        }
-        {
-            auto [distance_p_to_edge2, unused3]
-                = distance_to_edge(p, edge_metadata[1]);
-            if (std::abs(distance_p_to_edge2)
-                < min_edge_dist_scale * nodal_spacing) {
-                continue;
-            }
-        }
-    }
-
-    barycentric_coordinates.clear();
-    barycentric_coordinates.reserve(edge_points3d.size());
-    std::transform(
-        edge_points3d.begin(),
-        edge_points3d.end(),
-        std::back_inserter(barycentric_coordinates),
-        [&](const auto& p) {
-            // barycentric coordinates
-            T s = 1. / (2. * area)
-                     * ((v1_2d.y() * v3_2d.x() - v1_2d.x() * v3_2d.y())
-                        + (v3_2d.y() - v1_2d.y()) * p.x()
-                        + (v1_2d.x() - v3_2d.x()) * p.y());
-            T t = 1. / (2. * area)
-                     * ((v1_2d.x() * v2_2d.y() - v1_2d.y() * v2_2d.x())
-                        + (v1_2d.y() - v2_2d.y()) * p.x()
-                        + (v2_2d.x() - v1_2d.x()) * p.y());
-            T u = 1. - s - t;
-            return point3_t{{s, t, u}};
-        }
-    );
-
-    std::transform(
-        edge_points3d.begin(),
-        edge_points3d.end(),
-        edge_points3d.begin(),
-        [&](const auto& p) {
-            return point3_t{
-                {p[0] * x[0] + p[1] * y[0] + v1[0],
-                 p[0] * x[1] + p[1] * y[1] + v1[1],
-                 p[0] * x[2] + p[1] * y[2] + v1[2]}};
-        }
-    );
-
-    std::vector<point3_t> edge_normals3d;
-    std::transform(
-        barycentric_coordinates.begin(),
-        barycentric_coordinates.end(),
-        std::back_inserter(edge_normals3d),
-        [&](const auto& b) {
-            int closest_verts[2]{0, 1};
-            if (b[1] < b[0]) {
-                std::swap(closest_verts[0], closest_verts[1]);
-            }
-            if (b[2] < b[closest_verts[1]]) {
-                if (b[2] < b[closest_verts[0]]) {
-                    closest_verts[1] = closest_verts[0];
-                    closest_verts[0] = 2;
-                } else {
-                    closest_verts[1] = 2;
-                }
-            }
-            normal3_t average_normal{};
-            for (int closest_vert : closest_verts) {
-                if (closest_vert == 0) {
-                    average_normal[0] += v1_normal[0];
-                    average_normal[1] += v1_normal[1];
-                    average_normal[2] += v1_normal[2];
-                } else if (closest_vert == 1) {
-                    average_normal[0] += v2_normal[0];
-                    average_normal[1] += v2_normal[1];
-                    average_normal[2] += v2_normal[2];
-                } else if (closest_vert == 2) {
-                    average_normal[0] += v3_normal[0];
-                    average_normal[1] += v3_normal[1];
-                    average_normal[2] += v3_normal[2];
-                }
-            }
-            naga::math::loopless::normalize<3>(average_normal);
-            return average_normal;
-        }
-    );
-
-    points3d.insert(points3d.end(), edge_points3d.begin(), edge_points3d.end());
-    normals3d
-        .insert(normals3d.end(), edge_normals3d.begin(), edge_normals3d.end());
+    //    std::vector<point3_t> edge_points3d;
+    //    edge_points3d.reserve(edge_verts2d.size() / 2);
+    //    for (size_t i = 6; i < edge1_verts2d.size(); i += 2) {
+    //        if (std::find(excluded_edges.begin(), excluded_edges.end(), 0)
+    //            != excluded_edges.end()) {
+    //            break;
+    //        }
+    //        point2_t p{{edge1_verts2d[i + 0], edge1_verts2d[i + 1]}};
+    //        {
+    //            auto [distance_p_to_edge2, unused1]
+    //                = distance_to_edge(p, edge_metadata[1]);
+    //            if (std::abs(distance_p_to_edge2)
+    //                < min_edge_dist_scale * nodal_spacing) {
+    //                continue;
+    //            }
+    //        }
+    //        {
+    //            auto [distance_p_to_edge3, unused1]
+    //                = distance_to_edge(p, edge_metadata[2]);
+    //            if (std::abs(distance_p_to_edge3)
+    //                < min_edge_dist_scale * nodal_spacing) {
+    //                continue;
+    //            }
+    //        }
+    //        edge_points3d.push_back(point3_t{{p[0], p[1], 0.}});
+    //    }
+    //    for (size_t i = 6; i < edge2_verts2d.size(); i += 2) {
+    //        if (std::find(excluded_edges.begin(), excluded_edges.end(), 1)
+    //            != excluded_edges.end()) {
+    //            break;
+    //        }
+    //        point2_t p{{edge2_verts2d[i + 0], edge2_verts2d[i + 1]}};
+    //        {
+    //            auto [distance_p_to_edge1, unused2]
+    //                = distance_to_edge(p, edge_metadata[0]);
+    //            if (std::abs(distance_p_to_edge1)
+    //                < min_edge_dist_scale * nodal_spacing) {
+    //                continue;
+    //            }
+    //        }
+    //        {
+    //            auto [distance_p_to_edge3, unused2]
+    //                = distance_to_edge(p, edge_metadata[2]);
+    //            if (std::abs(distance_p_to_edge3)
+    //                < min_edge_dist_scale * nodal_spacing) {
+    //                continue;
+    //            }
+    //        }
+    //        edge_points3d.push_back(point3_t{{p[0], p[1], 0.}});
+    //    }
+    //    for (size_t i = 6; i < edge3_verts2d.size(); i += 2) {
+    //        if (std::find(excluded_edges.begin(), excluded_edges.end(), 2)
+    //            != excluded_edges.end()) {
+    //            break;
+    //        }
+    //        point2_t p{{edge3_verts2d[i + 0], edge3_verts2d[i + 1]}};
+    //        {
+    //            auto [distance_p_to_edge1, unused3]
+    //                = distance_to_edge(p, edge_metadata[0]);
+    //            if (std::abs(distance_p_to_edge1)
+    //                < min_edge_dist_scale * nodal_spacing) {
+    //                continue;
+    //            }
+    //        }
+    //        {
+    //            auto [distance_p_to_edge2, unused3]
+    //                = distance_to_edge(p, edge_metadata[1]);
+    //            if (std::abs(distance_p_to_edge2)
+    //                < min_edge_dist_scale * nodal_spacing) {
+    //                continue;
+    //            }
+    //        }
+    //        edge_points3d.push_back(point3_t{{p[0], p[1], 0.}});
+    //    }
+    //
+    //    barycentric_coordinates.clear();
+    //    barycentric_coordinates.reserve(edge_points3d.size());
+    //    std::transform(
+    //        edge_points3d.begin(),
+    //        edge_points3d.end(),
+    //        std::back_inserter(barycentric_coordinates),
+    //        [&](const auto& p) {
+    //            // barycentric coordinates
+    //            T s = 1. / (2. * area)
+    //                     * ((v1_2d.y() * v3_2d.x() - v1_2d.x() * v3_2d.y())
+    //                        + (v3_2d.y() - v1_2d.y()) * p.x()
+    //                        + (v1_2d.x() - v3_2d.x()) * p.y());
+    //            T t = 1. / (2. * area)
+    //                     * ((v1_2d.x() * v2_2d.y() - v1_2d.y() * v2_2d.x())
+    //                        + (v1_2d.y() - v2_2d.y()) * p.x()
+    //                        + (v2_2d.x() - v1_2d.x()) * p.y());
+    //            T u = 1. - s - t;
+    //            return point3_t{{s, t, u}};
+    //        }
+    //    );
+    //
+    //    std::transform(
+    //        edge_points3d.begin(),
+    //        edge_points3d.end(),
+    //        edge_points3d.begin(),
+    //        [&](const auto& p) {
+    //            return point3_t{
+    //                {p[0] * x[0] + p[1] * y[0] + v1[0],
+    //                 p[0] * x[1] + p[1] * y[1] + v1[1],
+    //                 p[0] * x[2] + p[1] * y[2] + v1[2]}};
+    //        }
+    //    );
+    //
+    //    std::vector<point3_t> edge_normals3d;
+    //    std::transform(
+    //        barycentric_coordinates.begin(),
+    //        barycentric_coordinates.end(),
+    //        std::back_inserter(edge_normals3d),
+    //        [&](const auto& b) {
+    //            int closest_verts[2]{0, 1};
+    //            if (b[1] < b[0]) {
+    //                std::swap(closest_verts[0], closest_verts[1]);
+    //            }
+    //            if (b[2] < b[closest_verts[1]]) {
+    //                if (b[2] < b[closest_verts[0]]) {
+    //                    closest_verts[1] = closest_verts[0];
+    //                    closest_verts[0] = 2;
+    //                } else {
+    //                    closest_verts[1] = 2;
+    //                }
+    //            }
+    //            normal3_t average_normal{};
+    //            for (int closest_vert : closest_verts) {
+    //                if (closest_vert == 0) {
+    //                    average_normal[0] += v1_normal[0];
+    //                    average_normal[1] += v1_normal[1];
+    //                    average_normal[2] += v1_normal[2];
+    //                } else if (closest_vert == 1) {
+    //                    average_normal[0] += v2_normal[0];
+    //                    average_normal[1] += v2_normal[1];
+    //                    average_normal[2] += v2_normal[2];
+    //                } else if (closest_vert == 2) {
+    //                    average_normal[0] += v3_normal[0];
+    //                    average_normal[1] += v3_normal[1];
+    //                    average_normal[2] += v3_normal[2];
+    //                }
+    //            }
+    //            naga::math::loopless::normalize<3>(average_normal);
+    //            return average_normal;
+    //        }
+    //    );
+    //
+    //    points3d.insert(points3d.end(), edge_points3d.begin(), edge_points3d.end());
+    //    normals3d
+    //        .insert(normals3d.end(), edge_normals3d.begin(), edge_normals3d.end());
 
     return {points3d, normals3d};
 }
@@ -1287,8 +1289,8 @@ void fill_surface_with_nodes(
                 f,
                 boundary_mesh,
                 excluded_edges,
-                .3f,
-                .1f
+                .4f,
+                .05f
             );
 
             points_to_insert[f % max_threads]  = std::move(face_points);
@@ -1454,12 +1456,12 @@ class conforming_point_cloud_impl_t<T, 3> {
             );
         }
 
-        auto potential_grid_size = approx_grid_size[0] * approx_grid_size[1]
+        auto potential_grid_size = 2 * approx_grid_size[0] * approx_grid_size[1]
                                  * approx_grid_size[2];
         size_t batch_bytes        = naga::math::loopless::pow<30>(size_t{2});
         size_t elements_per_batch = batch_bytes / sizeof(point_t);
         size_t num_batches = (potential_grid_size + elements_per_batch - 1)
-                          / elements_per_batch;
+                           / elements_per_batch;
         std::vector<point_t> bulk_points;
         std::vector<T> bulk_to_boundary_distances;
         std::vector<index_t> closest_boundary_to_bulk;
@@ -1472,7 +1474,7 @@ class conforming_point_cloud_impl_t<T, 3> {
             potential_bulk_points = sdf::Points(fill_points.size(), 3);
 #pragma omp parallel for
             for (size_t p = 0; p < fill_points.size(); ++p) {
-                auto linear_id = p + b * elements_per_batch;
+                auto linear_id = (p / 2) + b * elements_per_batch;
                 auto i         = linear_id % approx_grid_size[0];
                 auto j
                     = (linear_id / approx_grid_size[0]) % approx_grid_size[1];
@@ -1480,13 +1482,13 @@ class conforming_point_cloud_impl_t<T, 3> {
                     = (linear_id / (approx_grid_size[0] * approx_grid_size[1]))
                     % (approx_grid_size[2]);
                 point_t new_point{
-                    {lower_bound[0] + static_cast<T>(i) * nodal_spacing,
-                     lower_bound[1] + static_cast<T>(j) * nodal_spacing,
-                     lower_bound[2] + static_cast<T>(k) * nodal_spacing}};
+                    {lower_bound[0] + static_cast<T>(i) * nodal_spacing * 2.f,
+                     lower_bound[1] + static_cast<T>(j) * nodal_spacing * 2.f,
+                     lower_bound[2] + static_cast<T>(k) * nodal_spacing * 2.f}};
                 if (p % 2 == 1) {
-                    new_point[0] += nodal_spacing / 2.0;
-                    new_point[1] += nodal_spacing / 2.0;
-                    new_point[2] += naga::math::sqrt(2) * nodal_spacing / 2.0;
+                    new_point[0] += nodal_spacing;
+                    new_point[1] += nodal_spacing;
+                    new_point[2] += naga::math::sqrt(2) * nodal_spacing;
                 }
                 fill_points[p] = new_point;
 
