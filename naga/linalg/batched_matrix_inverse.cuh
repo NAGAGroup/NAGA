@@ -139,6 +139,7 @@ class batched_matrix_inverse_executor{
                     A_inv_ptr = sclx::array<T*, 1>();
                     info = sclx::array<int, 1>();
                     pivot = sclx::array<int, 1>();
+                    raw_problem_ptr->clear_workspace = false;
                     raw_problem_ptr->promise.set_value();
                     raw_problem_ptr->is_task_submitted.store(false);
                     continue;

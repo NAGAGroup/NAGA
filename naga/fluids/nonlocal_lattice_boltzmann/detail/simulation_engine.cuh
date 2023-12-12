@@ -192,6 +192,7 @@ class simulation_engine {
         );
         linalg::detail::batched_matrix_inverse_executor<
             value_type>::clear_problem_definitions();
+        max_concurrency_ = std::min(std::thread::hardware_concurrency() / 2, max_concurrency_);
         advection_operator_ptr_->set_max_concurrent_threads(max_concurrency_);
 
         for (auto& f_alpha : solution_.lattice_distributions) {
@@ -396,7 +397,7 @@ class simulation_engine {
         pml_absorption_operator_.apply();
     }
 
-    void bounce_back_step() {
+    void interpolate_boundaries() {
         std::vector<std::future<void>> interpolation_futures;
         interpolation_futures.reserve(lattice_size);
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
@@ -421,6 +422,10 @@ class simulation_engine {
         for (auto& fut : interpolation_futures) {
             fut.get();
         }
+    }
+
+    void bounce_back_step() {
+        interpolate_boundaries();
 
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             sclx::local_array<value_type, 2> lattice_velocities(
@@ -475,8 +480,11 @@ class simulation_engine {
                         normal[d] = boundary_normals(d, idx[0]);
                     }
 
-                    auto max_angle = naga::math::pi<value_type> * 2.f / 180.f;
-                    for (int alpha = 0; alpha < lattice_size; ++alpha) {
+                    auto max_angle = 1e-4;
+                    auto normal_norm = math::loopless::norm<dimensions>(
+                        normal
+                    );
+                    for (int alpha = 1; alpha < lattice_size; ++alpha) {
                         auto normal_dot_calpha = math::loopless::dot<dimensions>(
                             normal,
                             &lattice_velocities(0, alpha)
@@ -485,21 +493,15 @@ class simulation_engine {
                             < 0) {
                             continue;
                         }
-                        auto normal_norm = math::loopless::norm<dimensions>(
-                            normal
-                        );
                         auto calpha_norm = math::loopless::norm<dimensions>(
                             &lattice_velocities(0, alpha)
                         );
                         calpha_norm = isnan(calpha_norm) ? 0 : calpha_norm;
-                        if (calpha_norm == 0) {
-                            continue;
-                        }
                         auto angle_normal_calpha = math::acos(
                             normal_dot_calpha / (normal_norm * calpha_norm)
                         );
                         if (angle_normal_calpha < max_angle) {
-                            result_arrays[alpha][idx[0]] = lattice_weights[alpha];
+                            continue;
                         }
                         result_arrays[alpha][idx[0]]
                             = result_arrays[lattice_interface<
@@ -628,6 +630,8 @@ class simulation_engine {
         bounce_back_step();
 
         streaming_step();
+
+        interpolate_boundaries();
 
         ++frame_number_;
     }
@@ -800,7 +804,7 @@ class simulation_engine {
 
     std::vector<simulation_observer<Lattice>*> observers_{};
 
-    static constexpr int max_concurrency_ = lattice_size;
+    uint max_concurrency_ = lattice_size;
 };
 
 template<class Lattice>

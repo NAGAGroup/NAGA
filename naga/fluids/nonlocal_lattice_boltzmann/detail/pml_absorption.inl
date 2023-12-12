@@ -360,9 +360,9 @@ class pml_absorption_operator<d2q9_lattice<T>> {
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
                 nonlocal_calculus::forward_euler<T>(lattice_dt),
-                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
-                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
-                engine_->temporary_distributions_[alpha].get_range({layer_begin}, {layer_end})
+                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
+                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
+                engine_->temporary_distributions_[alpha] // .get_range({layer_begin}, {layer_end})
             );
         }
 
@@ -802,9 +802,9 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
                 nonlocal_calculus::forward_euler<T>(lattice_dt),
-                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
-                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
-                engine_->temporary_distributions_[alpha].get_range({layer_begin}, {layer_end})
+                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
+                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
+                engine_->temporary_distributions_[alpha] // .get_range({layer_begin}, {layer_end})
             );
 
             const auto& Q2 = lattice_Q2_values_[alpha];
@@ -824,9 +824,9 @@ class pml_absorption_operator<d3q27_lattice<T>> {
 
             sclx::algorithm::elementwise_reduce(
                 nonlocal_calculus::forward_euler<T>(lattice_dt),
-                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
-                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
-                engine_->temporary_distributions_[alpha].get_range({layer_begin}, {layer_end})
+                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
+                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
+                engine_->temporary_distributions_[alpha] // .get_range({layer_begin}, {layer_end})
             );
         }
 
