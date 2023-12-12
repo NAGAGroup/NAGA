@@ -76,6 +76,35 @@ struct problem_traits {
         point_type current_point_;
     };
 
+    class linear_path : public path_t {
+      public:
+        using base       = path_t;
+        using point_type = typename base::point_type;
+
+        static std::shared_ptr<path_t>
+        create(const point_type& start_pos, const point_type& velocity) {
+            return std::shared_ptr<path_t>(
+                new linear_path(start_pos, velocity));
+        }
+
+        const point_type& operator()(const value_type& t) final {
+            for (int i = 0; i < dimensions; ++i) {
+                current_point_[i] = start_pos_[i] + velocity_[i] * t;
+            }
+
+            return current_point_;
+        }
+
+      private:
+        linear_path(point_type start_pos, point_type velocity)
+            : start_pos_(std::move(start_pos)),
+              velocity_(std::move(velocity)) {}
+
+        point_type start_pos_;
+        point_type velocity_;
+        point_type current_point_;
+    };
+
     class spherical_audio_source : public density_source_t {
       public:
         spherical_audio_source(
@@ -254,6 +283,103 @@ struct problem_traits {
         size_t sample_rate_;
         size_t frame_offset_;
         bool has_finished_ = false;
+        std::shared_ptr<path_t> path_;
+    };
+
+    class spherical_sine_wave_source : public density_source_t {
+      public:
+        spherical_sine_wave_source(
+            value_type radius,
+            value_type frequency,
+            value_type amplitude,
+            value_type time_multiplier = 1.0,
+            std::shared_ptr<path_t> path = zero_path_t::create(
+                naga::point_t<value_type, dimensions>{})
+        )
+            : radius_(radius),
+              frequency_(frequency),
+              amplitude_(amplitude),
+              time_multiplier_(time_multiplier),
+              path_(std::move(path)) {}
+
+        std::future<void> add_density_source(
+            const simulation_domain_t& domain,
+            const problem_parameters_t& params,
+            const solution_t& solution,
+            const value_type& time,
+            sclx::array<value_type, 1>& source_terms
+        ) final {
+            region_t source_region{
+                radius_,
+                (*path_)(time * time_multiplier_)};
+
+            auto scaled_time = time * time_multiplier_;
+            const auto& density = solution.macroscopic_values.fluid_density;
+            const auto& nominal_density = params.nondim_factors.density_scale;
+            const auto& points          = domain.points;
+            auto frame_amplitude
+                = amplitude_ * naga::math::sin(
+                    2 * naga::math::pi<value_type> * frequency_ * scaled_time
+                );
+
+            return sclx::execute_kernel([=](sclx::kernel_handler& handler
+                                        ) mutable {
+                sclx::local_array<value_type, 2> local_points(
+                    handler,
+                    {dimensions,
+                     sclx::cuda::traits::kernel::default_block_shape[0]}
+                );
+
+                handler.launch(
+                    sclx::md_range_t<1>{source_terms.shape()},
+                    source_terms,
+                    [=] __device__(
+                        const sclx::md_index_t<1>& idx,
+                        const sclx::kernel_info<>& info
+                    ) mutable {
+                        for (int i = 0; i < dimensions; ++i) {
+                            local_points(i, info.local_thread_linear_id())
+                                = points(i, idx[0]);
+                        }
+                        if (source_region.contains(
+                                &local_points(0, info.local_thread_linear_id())
+                            )) {
+                            auto distance
+                                = naga::distance_functions::loopless::euclidean<
+                                    3>{}(
+                                    &local_points(
+                                        0,
+                                        info.local_thread_linear_id()
+                                    ),
+                                    source_region.center()
+                                );
+
+                            auto perturbation = frame_amplitude;
+                            //                            * (1
+                            //                               -
+                            //                               naga::math::loopless::pow<1>(
+                            //                                     distance /
+                            //                                     source_region.radius()
+                            //                                 ))
+                            //                            * naga::math::exp(-naga::math::loopless::pow<2>(
+                            //                                2 * distance /
+                            //                                source_region.radius()
+                            //                            ));
+
+                            auto current_density = density(idx[0]);
+                            perturbation += nominal_density - current_density;
+                            source_terms(idx[0]) += perturbation;
+                        }
+                    }
+                );
+            });
+        }
+
+      private:
+        value_type radius_;
+        value_type frequency_;
+        value_type amplitude_;
+        value_type time_multiplier_;
         std::shared_ptr<path_t> path_;
     };
 
