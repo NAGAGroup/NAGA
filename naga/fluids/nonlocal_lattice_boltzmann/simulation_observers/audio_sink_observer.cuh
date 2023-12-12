@@ -156,7 +156,8 @@ class audio_sink_observer : public simulation_observer<Lattice> {
         }
         interpolator_->interpolate(
             solution.macroscopic_values.fluid_density,
-            sink_signal_
+            sink_signal_,
+            params.nondim_factors.density_scale
         );
         if constexpr (ChannelConfig == channel_configuration::mono) {
             sink_signal_[0] -= params.nondim_factors.density_scale;

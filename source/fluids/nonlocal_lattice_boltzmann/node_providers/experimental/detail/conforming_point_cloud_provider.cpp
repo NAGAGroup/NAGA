@@ -66,7 +66,7 @@ struct hash<naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge> {
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
 constexpr float min_bound_dist_scale_2d = 1.f;
-constexpr float min_bound_dist_scale_3d = .71f;
+constexpr float min_bound_dist_scale_3d = 2.f;
 
 template <class T>
 struct edge_info_t {
@@ -309,7 +309,6 @@ std::vector<point_t<T, 2>> generate_2d_hexagonal_grid(
     const point_t<T, 2>& upper_bound
 ) {
     std::vector<naga::point_t<T, 2>> potential_bulk_points;
-    approx_point_spacing *= 2.;
 
     double acceptable_epsilon = 0.1;
     if ((upper_bound[0] - lower_bound[0]) / approx_point_spacing
@@ -1289,7 +1288,7 @@ void fill_surface_with_nodes(
                 f,
                 boundary_mesh,
                 excluded_edges,
-                .4f,
+                .375f,
                 .05f
             );
 
@@ -1321,10 +1320,10 @@ void fill_surface_with_nodes(
     }
     futures.clear();
 
+    if (points.size() > boundary_mesh.vertices().size() / 2) {
+        return;
+    }
     for (size_t i = 0; i < boundary_mesh.vertices().size(); i += 3) {
-        if (points.size() > boundary_mesh.vertices().size() / 2) {
-            break;
-        }
         std::vector<point_t> shared_normals;
         auto start_search = boundary_mesh.faces().begin();
         while (start_search != boundary_mesh.faces().end()) {
@@ -1482,13 +1481,13 @@ class conforming_point_cloud_impl_t<T, 3> {
                     = (linear_id / (approx_grid_size[0] * approx_grid_size[1]))
                     % (approx_grid_size[2]);
                 point_t new_point{
-                    {lower_bound[0] + static_cast<T>(i) * nodal_spacing * 2.f,
-                     lower_bound[1] + static_cast<T>(j) * nodal_spacing * 2.f,
-                     lower_bound[2] + static_cast<T>(k) * nodal_spacing * 2.f}};
+                    {lower_bound[0] + static_cast<T>(i) * nodal_spacing,
+                     lower_bound[1] + static_cast<T>(j) * nodal_spacing,
+                     lower_bound[2] + static_cast<T>(k) * nodal_spacing}};
                 if (p % 2 == 1) {
-                    new_point[0] += nodal_spacing;
-                    new_point[1] += nodal_spacing;
-                    new_point[2] += naga::math::sqrt(2) * nodal_spacing;
+                    new_point[0] += nodal_spacing / 2.f;
+                    new_point[1] += nodal_spacing / 2.f;
+                    new_point[2] += naga::math::sqrt(2) * nodal_spacing / 2.f;
                 }
                 fill_points[p] = new_point;
 

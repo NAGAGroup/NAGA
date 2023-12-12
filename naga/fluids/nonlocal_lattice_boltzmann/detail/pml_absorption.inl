@@ -198,7 +198,7 @@ class partial_pml_subtask<d2q9_lattice<T>> {
                       [idx[0] - params.absorption_layer_start];
 
             params.lattice_distributions[alpha][idx[0]]
-                -= sigma * (2.f * f_tilde_eq + sigma * Q_value);
+                -= params.lattice_dt * sigma * (2.f * f_tilde_eq + sigma * Q_value);
         }
     }
 
@@ -352,11 +352,17 @@ class pml_absorption_operator<d2q9_lattice<T>> {
                 engine_->temporary_distributions_[alpha]
             );
 
+            const auto& time_scale = engine_->parameters_.nondim_factors.time_scale;
+            const auto& length_scale = engine_->parameters_.nondim_factors.length_scale;
+            auto lattice_dt = engine_->parameters_.time_step / time_scale * length_scale;
+            auto layer_begin = engine_->domain_.num_bulk_points;
+            auto layer_end = engine_->domain_.num_bulk_points
+                           + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
-                sclx::algorithm::plus<>{},
-                engine_->solution_.lattice_distributions[alpha],
-                engine_->solution_.lattice_distributions[alpha],
-                engine_->temporary_distributions_[alpha]
+                nonlocal_calculus::forward_euler<T>(lattice_dt),
+                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
+                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
+                engine_->temporary_distributions_[alpha].get_range({layer_begin}, {layer_end})
             );
         }
 
@@ -614,7 +620,7 @@ class partial_pml_subtask<d3q27_lattice<T>> {
             using namespace math::loopless;
 
             params.lattice_distributions[alpha][idx[0]]
-                -= sigma
+                -= sigma * params.lattice_dt
                  * (3.f * f_tilde_eq + 3.f * sigma * Q1_value
                     + pow<2>(sigma) * Q2_value);
         }
@@ -788,11 +794,17 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                 engine_->temporary_distributions_[alpha]
             );
 
+            const auto& time_scale = engine_->parameters_.nondim_factors.time_scale;
+            const auto& length_scale = engine_->parameters_.nondim_factors.length_scale;
+            auto lattice_dt = engine_->parameters_.time_step / time_scale * length_scale;
+            auto layer_begin = engine_->domain_.num_bulk_points;
+            auto layer_end = engine_->domain_.num_bulk_points
+                           + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
-                sclx::algorithm::plus<>{},
-                engine_->solution_.lattice_distributions[alpha],
-                engine_->solution_.lattice_distributions[alpha],
-                engine_->temporary_distributions_[alpha]
+                nonlocal_calculus::forward_euler<T>(lattice_dt),
+                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
+                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
+                engine_->temporary_distributions_[alpha].get_range({layer_begin}, {layer_end})
             );
 
             const auto& Q2 = lattice_Q2_values_[alpha];
@@ -811,10 +823,10 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             );
 
             sclx::algorithm::elementwise_reduce(
-                sclx::algorithm::plus<>{},
-                engine_->solution_.lattice_distributions[alpha],
-                engine_->solution_.lattice_distributions[alpha],
-                engine_->temporary_distributions_[alpha]
+                nonlocal_calculus::forward_euler<T>(lattice_dt),
+                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
+                engine_->solution_.lattice_distributions[alpha].get_range({layer_begin}, {layer_end}),
+                engine_->temporary_distributions_[alpha].get_range({layer_begin}, {layer_end})
             );
         }
 

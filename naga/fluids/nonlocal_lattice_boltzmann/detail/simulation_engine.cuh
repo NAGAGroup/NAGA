@@ -168,7 +168,8 @@ class simulation_engine {
             segmentation::nd_cubic_segmentation<value_type, dimensions>
                 source_segmentation(bulk_points, num_interp_points);
             naga::default_point_map<value_type, dimensions> boundary_point_map{
-                boundary_points};
+                boundary_points
+            };
             auto [distances_squared, indices]
                 = naga::segmentation::batched_nearest_neighbors(
                     num_interp_points,
@@ -189,6 +190,8 @@ class simulation_engine {
         advection_operator_ptr_ = std::make_shared<advection_operator_t>(
             advection_operator_t::create(domain.points)
         );
+        linalg::detail::batched_matrix_inverse_executor<
+            value_type>::clear_problem_definitions();
         advection_operator_ptr_->set_max_concurrent_threads(max_concurrency_);
 
         for (auto& f_alpha : solution_.lattice_distributions) {
@@ -271,7 +274,8 @@ class simulation_engine {
                 sclx::array<value_type, 2>>
                 result_arrays{
                     solution_.macroscopic_values.fluid_density,
-                    solution_.macroscopic_values.fluid_velocity};
+                    solution_.macroscopic_values.fluid_velocity
+                };
             sclx::array<value_type, 1> lattice_distributions[lattice_size];
             for (int alpha = 0; alpha < lattice_size; ++alpha) {
                 lattice_distributions[alpha]
@@ -471,17 +475,31 @@ class simulation_engine {
                         normal[d] = boundary_normals(d, idx[0]);
                     }
 
+                    auto max_angle = naga::math::pi<value_type> * 2.f / 180.f;
                     for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                        if (math::loopless::dot<dimensions>(
-                                normal,
-                                &lattice_velocities(0, alpha)
-                            )
+                        auto normal_dot_calpha = math::loopless::dot<dimensions>(
+                            normal,
+                            &lattice_velocities(0, alpha)
+                        );
+                        if (normal_dot_calpha
                             < 0) {
                             continue;
-                        } else if (math::abs(math::loopless::dot<dimensions>(normal, &lattice_velocities(0, alpha))) < 1e-2) {
-                            result_arrays[alpha][idx[0]]
-                                = lattice_weights(alpha);
+                        }
+                        auto normal_norm = math::loopless::norm<dimensions>(
+                            normal
+                        );
+                        auto calpha_norm = math::loopless::norm<dimensions>(
+                            &lattice_velocities(0, alpha)
+                        );
+                        calpha_norm = isnan(calpha_norm) ? 0 : calpha_norm;
+                        if (calpha_norm == 0) {
                             continue;
+                        }
+                        auto angle_normal_calpha = math::acos(
+                            normal_dot_calpha / (normal_norm * calpha_norm)
+                        );
+                        if (angle_normal_calpha < max_angle) {
+                            result_arrays[alpha][idx[0]] = lattice_weights[alpha];
                         }
                         result_arrays[alpha][idx[0]]
                             = result_arrays[lattice_interface<
@@ -566,7 +584,8 @@ class simulation_engine {
             if (streaming_futures[alpha % max_concurrency_].second.valid()) {
                 streaming_futures[alpha % max_concurrency_].second.get();
                 sclx::assign_array(
-                    temporary_distributions_[streaming_futures[alpha % max_concurrency_].first],
+                    temporary_distributions_
+                        [streaming_futures[alpha % max_concurrency_].first],
                     solution_.lattice_distributions
                         [streaming_futures[alpha % max_concurrency_].first]
                 );
@@ -579,7 +598,8 @@ class simulation_engine {
                 centering_offset,
                 boundary_start
             );
-            streaming_futures[alpha % max_concurrency_] = {alpha, std::move(fut)};
+            streaming_futures[alpha % max_concurrency_]
+                = {alpha, std::move(fut)};
         }
 
         for (auto& [alpha, fut] : streaming_futures) {

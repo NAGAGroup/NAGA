@@ -67,6 +67,26 @@ class batched_matrix_inverse_executor{
         device_executor.problem_definition_->is_preparing.store(false);
         return fut;
     }
+    std::future<void> static clear_workspace_for_device(
+        int device_id,
+        std::experimental::source_location current) {
+        auto& device_executor = get_executor_for_device(device_id);
+        auto expected = false;
+        while (!device_executor.problem_definition_->is_preparing.compare_exchange_weak(expected, true)) {
+            expected = false;
+            std::this_thread::yield();
+        }
+        while (device_executor.problem_definition_->is_task_submitted.load()) {
+            std::this_thread::yield();
+        }
+        device_executor.problem_definition_->clear_workspace = true;
+        device_executor.problem_definition_->current = current;
+        device_executor.problem_definition_->promise = std::promise<void>();
+        auto fut = device_executor.problem_definition_->promise.get_future();
+        device_executor.problem_definition_->is_task_submitted.store(true);
+        device_executor.problem_definition_->is_preparing.store(false);
+        return fut;
+    }
 
     ~batched_matrix_inverse_executor() {
         if (problem_definition_ == nullptr) {
@@ -95,6 +115,7 @@ class batched_matrix_inverse_executor{
         std::experimental::source_location current;
         bool copy_A;
         std::promise<void> promise;
+        bool clear_workspace{false};
     };
 
     static void thread_function(problem_definition* raw_problem_ptr, int device_id) {
@@ -109,6 +130,19 @@ class batched_matrix_inverse_executor{
         raw_problem_ptr->is_running.store(true);
         while (!raw_problem_ptr->stop_thread.load()) {
             if (raw_problem_ptr->is_task_submitted.load()) {
+                if (raw_problem_ptr->clear_workspace) {
+                    raw_problem_ptr->A = sclx::array<T, 3>();
+                    raw_problem_ptr->A_inv = sclx::array<T, 3>();
+                    A_copy = sclx::array<T, 3>();
+                    A_copy_flat = sclx::array<T, 1>();
+                    A_ptr = sclx::array<T*, 1>();
+                    A_inv_ptr = sclx::array<T*, 1>();
+                    info = sclx::array<int, 1>();
+                    pivot = sclx::array<int, 1>();
+                    raw_problem_ptr->promise.set_value();
+                    raw_problem_ptr->is_task_submitted.store(false);
+                    continue;
+                }
                 auto A = raw_problem_ptr->A;
                 auto A_inv = raw_problem_ptr->A_inv;
                 auto current = raw_problem_ptr->current;
@@ -244,6 +278,12 @@ class batched_matrix_inverse_executor{
             }
         }
         raw_problem_ptr->is_running.store(false);
+    }
+
+    static void clear_problem_definitions() {
+        for (int device_id = 0; device_id < sclx::cuda::traits::device_count(); ++device_id) {
+            clear_workspace_for_device(device_id, std::experimental::source_location::current()).get();
+        }
     }
 
     batched_matrix_inverse_executor() = default;
