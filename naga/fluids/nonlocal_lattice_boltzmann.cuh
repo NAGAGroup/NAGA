@@ -37,3 +37,4 @@
 #include "nonlocal_lattice_boltzmann/simulation_engine.cuh"
 #include "nonlocal_lattice_boltzmann/simulation_observers/audio_sink_observer.cuh"
 #include "nonlocal_lattice_boltzmann/simulation_observers/vtk_observer.cuh"
+#include "nonlocal_lattice_boltzmann/simulation_observers/density_observer.cuh"
