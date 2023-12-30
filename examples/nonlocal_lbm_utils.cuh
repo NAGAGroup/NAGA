@@ -302,6 +302,12 @@ struct problem_traits {
               time_multiplier_(time_multiplier),
               path_(std::move(path)) {}
 
+        auto get_amplitude_at_time(const value_type& time) const {
+            return amplitude_ * naga::math::sin(
+                2 * naga::math::pi<value_type> * frequency_ * time
+            );
+        }
+
         std::future<void> add_density_source(
             const simulation_domain_t& domain,
             const problem_parameters_t& params,
@@ -317,10 +323,7 @@ struct problem_traits {
             const auto& density = solution.macroscopic_values.fluid_density;
             const auto& nominal_density = params.nondim_factors.density_scale;
             const auto& points          = domain.points;
-            auto frame_amplitude
-                = amplitude_ * naga::math::sin(
-                    2 * naga::math::pi<value_type> * frequency_ * scaled_time
-                );
+            auto frame_amplitude = get_amplitude_at_time(scaled_time);
 
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
