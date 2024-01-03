@@ -28,20 +28,24 @@ find_package(OpenMP REQUIRED)
 
 find_package(VTK REQUIRED COMPONENTS IOXML)
 
+add_subdirectory(${PROJECT_SOURCE_DIR}/extern/openvdb)
+
 add_library(
   naga-lib STATIC
   source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.cpp
+        source/fluids/nonlocal_lattice_boltzmann/simulation_observers/vdb_grid_observer.cpp
 )
 target_include_directories(
   naga-lib PRIVATE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}
-                   ${NANOFLANN_INCLUDE_DIR})
+                   ${NANOFLANN_INCLUDE_DIR} ${PROJECT_SOURCE_DIR}/extern/tinyobjloader)
 target_link_libraries(naga-lib PRIVATE scalix sdf)
+target_link_libraries(naga-lib PUBLIC openvdb)
 
 # naga is a mostly header only library
 add_library(naga INTERFACE)
 target_include_directories(
   naga INTERFACE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}
-                 ${NANOFLANN_INCLUDE_DIR} ${AUDIOFILE_INCLUDE_DIR})
+                 ${NANOFLANN_INCLUDE_DIR} ${AUDIOFILE_INCLUDE_DIR} ${PROJECT_SOURCE_DIR}/extern/tinyobjloader)
 target_link_libraries(naga INTERFACE naga-lib scalix cublas cusparse sdf
                                      OpenMP::OpenMP_CXX ${VTK_LIBRARIES})
 vtk_module_autoinit(TARGETS naga MODULES ${VTK_LIBRARIES})
@@ -109,3 +113,6 @@ target_link_libraries(sparse_matrix_vector_mult PRIVATE naga)
 
 add_executable(sparse_gemm examples/sparse_gemm.cu)
 target_link_libraries(sparse_gemm PRIVATE naga)
+
+add_executable(pimesh examples/pimesh.cu)
+target_link_libraries(pimesh PRIVATE naga)

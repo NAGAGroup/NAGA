@@ -44,8 +44,8 @@ namespace naga::segmentation::detail {
 
 template<class T, uint Dimensions>
 __host__ void compute_bounds(
-    point_view_t<T, Dimensions>& lower_bounds,
-    point_view_t<T, Dimensions>& upper_bounds,
+    point_view_t<T, Dimensions> lower_bounds,
+    point_view_t<T, Dimensions> upper_bounds,
     const sclx::array<const T, 2>& points
 );
 
