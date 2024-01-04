@@ -613,7 +613,7 @@ get_sdf2d(const PointType& point, const closed_contour_t<T>& contour)
             edge_normal
         );
 
-        if (point2intersection_dot_edge_normal < 1e-6) {
+        if (point2intersection_dot_edge_normal < 0) {
             signed_distance *= -1;
         }
 
@@ -786,12 +786,13 @@ sclx::array<T, 2> create_pimesh2d_injection_sites(
     const closed_contour_t<T>& domain_contour,
     const std::vector<closed_contour_t<T>>& immersed_contours
 ) {
-    auto injection_spacing = nodal_spacing * 4.f;
+    auto injection_spacing = nodal_spacing;
 
     return fill_2d_domain_with_grid(
         injection_spacing,
         domain_contour,
-        immersed_contours
+        immersed_contours,
+        -.1f * nodal_spacing
     );
 }
 
@@ -857,8 +858,8 @@ void pimesh2d_inject_points(
                           dist_angle(0, 2 * naga::math::pi<T>);
                       rng.discard(idx[0]);
                       auto angle            = dist_angle(rng);
-                      velocities(0, idx[0]) = 1.f * naga::math::cos(angle);
-                      velocities(1, idx[0]) = 1.f * naga::math::sin(angle);
+                      velocities(0, idx[0]) = 0.f * naga::math::cos(angle);
+                      velocities(1, idx[0]) = 0.f * naga::math::sin(angle);
                   }
               );
           });
@@ -896,44 +897,8 @@ domain2d<T> pimesh2d_generate_domain(
         domain_contour,
         immersed_contours
     );
-    sclx::array<T, 2> points;
-    {
-        auto expected_total_points = fill_2d_domain_with_grid<T>(
-            nodal_spacing,
-            domain_contour,
-            immersed_contours,
-            0
-        );
-        auto points_per_injection = (expected_total_points.shape()[1]
-                                     + injection_sites.shape()[1] - 1)
-                                  / injection_sites.shape()[1];
-        points = sclx::array<T, 2>{
-            2,
-            points_per_injection * injection_sites.shape()[1]
-        };
-    }
-    naga::point_t<T, 2> domain_center{
-        {(domain_contour.input_mesh.lower_bound[0]
-          + domain_contour.input_mesh.upper_bound[0])
-             / 2,
-         (domain_contour.input_mesh.lower_bound[1]
-          + domain_contour.input_mesh.upper_bound[1])
-             / 2}
-    };
-    sclx::execute_kernel([&](sclx::kernel_handler& handle) {
-        handle.launch(
-            sclx::md_range_t<1>{points.shape()[1]},
-            points,
-            [points,
-             domain_center] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                points(0, idx[0]) = domain_center[0];
-                points(1, idx[0]) = domain_center[1];
-            }
-        );
-    }).get();
+    auto points = injection_sites;
 
-    sclx::array<char, 1> static_points{points.shape()[1]};
-    sclx::fill(static_points, char{0});
     sclx::array<T, 2> node_velocities{points.shape()};
     sclx::fill(node_velocities, T{0});
     sclx::array<T, 2> node_forces{points.shape()};
@@ -946,14 +911,7 @@ domain2d<T> pimesh2d_generate_domain(
         immersed_contours.end()
     );
 
-    const auto& num_injection_sites = injection_sites.shape()[1];
-    const auto& total_injections_per_site
-        = points.shape()[1] / num_injection_sites;
-
-    std::cout << "total injections per site: " << total_injections_per_site
-              << "\n";
-
-    const auto delta_t = nodal_spacing;
+    const auto delta_t = 1.f;
     T drag_coefficient = .05f;
     // Define the following:
     // q_nom = 1.f;
@@ -968,21 +926,21 @@ domain2d<T> pimesh2d_generate_domain(
     auto force_mag_nom
         = pimesh_kernel_function(pimesh_kernel_alpha<T, 2>::value(), q_nom);
     auto displacement_mag_nom = 0.5f * force_mag_nom * delta_t * delta_t;
-    auto kf                   = .05f * nodal_spacing / displacement_mag_nom;
+    auto kf                   = .0005f * nodal_spacing / displacement_mag_nom;
 
     size_t num_injected_per_site = 0;
     T current_time               = 0.f;
 
     while (true) {
-        if (num_injected_per_site < total_injections_per_site) {
-            pimesh2d_inject_points(
-                injection_sites,
-                num_injected_per_site,
-                points,
-                node_velocities
-            );
-            ++num_injected_per_site;
-        }
+//        if (num_injected_per_site < total_injections_per_site) {
+//            pimesh2d_inject_points(
+//                injection_sites,
+//                num_injected_per_site,
+//                points,
+//                node_velocities
+//            );
+//            ++num_injected_per_site;
+//        }
 
         sclx::fill(node_forces, T{0});
 
@@ -1019,11 +977,11 @@ domain2d<T> pimesh2d_generate_domain(
                         sclx::md_range_t<1>{points.shape()[1]},
                         positions_velocities_and_distances,
                         [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                            auto injection_idx
-                                = idx[0] % total_injections_per_site;
-                            if (injection_idx >= num_injected_per_site) {
-                                return;
-                            }
+//                            auto injection_idx
+//                                = idx[0] % total_injections_per_site;
+//                            if (injection_idx >= num_injected_per_site) {
+//                                return;
+//                            }
                             auto closest_contour_idx = closest_contours[idx[0]];
                             if (closest_contour_idx != i) {
                                 return;
@@ -1032,86 +990,83 @@ domain2d<T> pimesh2d_generate_domain(
                             auto closest_edge_idx = sdf2d_result.closest_edge;
                             auto closest_edge_normal
                                 = &edge_normals(0, closest_edge_idx);
-                            if (sdf2d_result.signed_distance < -nodal_spacing) {
-                                auto edge_x1 = &mesh_vertices(
-                                    0,
-                                    mesh_edges(
-                                        0,
-                                        edge_indices(closest_edge_idx)
-                                    )
-                                );
-
-                                naga::point_t<T, 2> x1_to_point{
-                                    {points(0, idx[0]) - edge_x1[0],
-                                     points(1, idx[0]) - edge_x1[1]}
-                                };
-
-                                const auto rotated_y_axis = closest_edge_normal;
-                                const naga::point_t<T, 2> rotated_x_axis{
-                                    {-rotated_y_axis[1], rotated_y_axis[0]}
-                                };
-
-                                auto point_rotated_y = nodal_spacing;
-                                auto edge_length = naga::distance_functions::
-                                    loopless::euclidean<2>{}(
-                                        &mesh_vertices(
-                                            0,
-                                            mesh_edges(
-                                                0,
-                                                edge_indices(closest_edge_idx)
-                                            )
-                                        ),
-                                        &mesh_vertices(
-                                            0,
-                                            mesh_edges(
-                                                1,
-                                                edge_indices(closest_edge_idx)
-                                            )
-                                        )
-                                    );
-                                auto point_rotated_x = edge_length / 2.f;
-                                points(0, idx[0])
-                                    = edge_x1[0]
-                                    + point_rotated_x * rotated_x_axis[0]
-                                    + point_rotated_y * rotated_y_axis[0];
-                                points(1, idx[0])
-                                    = edge_x1[1]
-                                    + point_rotated_x * rotated_x_axis[1]
-                                    + point_rotated_y * rotated_y_axis[1];
-                                sdf2d_result.signed_distance = point_rotated_y;
-
-                                auto velocity_x = naga::math::loopless::dot<2>(
-                                    &node_velocities(0, idx[0]),
-                                    rotated_x_axis
-                                );
-                                auto velocity_y = naga::math::loopless::dot<2>(
-                                    &node_velocities(0, idx[0]),
-                                    closest_edge_normal
-                                );
-                                velocity_y = naga::math::abs(velocity_y);
-                                node_velocities(0, idx[0])
-                                    = velocity_x * rotated_x_axis[0]
-                                    + velocity_y * rotated_y_axis[0];
-                                node_velocities(1, idx[0])
-                                    = velocity_x * rotated_x_axis[1]
-                                    + velocity_y * rotated_y_axis[1];
-                                auto velocity = &node_velocities(0, idx[0]);
-                                auto velocity_mag
-                                    = naga::math::loopless::norm<2>(velocity);
-                                if (velocity_mag < 1.f) {
-                                    return;
-                                }
-                                naga::math::loopless::normalize<2>(velocity);
-                            }
+//                            if (sdf2d_result.signed_distance < -nodal_spacing) {
+//                                auto edge_x1 = &mesh_vertices(
+//                                    0,
+//                                    mesh_edges(
+//                                        0,
+//                                        edge_indices(closest_edge_idx)
+//                                    )
+//                                );
+//
+//                                naga::point_t<T, 2> x1_to_point{
+//                                    {points(0, idx[0]) - edge_x1[0],
+//                                     points(1, idx[0]) - edge_x1[1]}
+//                                };
+//
+//                                const auto rotated_y_axis = closest_edge_normal;
+//                                const naga::point_t<T, 2> rotated_x_axis{
+//                                    {-rotated_y_axis[1], rotated_y_axis[0]}
+//                                };
+//
+//                                auto point_rotated_y = nodal_spacing;
+//                                auto edge_length = naga::distance_functions::
+//                                    loopless::euclidean<2>{}(
+//                                        &mesh_vertices(
+//                                            0,
+//                                            mesh_edges(
+//                                                0,
+//                                                edge_indices(closest_edge_idx)
+//                                            )
+//                                        ),
+//                                        &mesh_vertices(
+//                                            0,
+//                                            mesh_edges(
+//                                                1,
+//                                                edge_indices(closest_edge_idx)
+//                                            )
+//                                        )
+//                                    );
+//                                auto point_rotated_x = edge_length / 2.f;
+//                                points(0, idx[0])
+//                                    = edge_x1[0]
+//                                    + point_rotated_x * rotated_x_axis[0]
+//                                    + point_rotated_y * rotated_y_axis[0];
+//                                points(1, idx[0])
+//                                    = edge_x1[1]
+//                                    + point_rotated_x * rotated_x_axis[1]
+//                                    + point_rotated_y * rotated_y_axis[1];
+//                                sdf2d_result.signed_distance = point_rotated_y;
+//
+//                                auto velocity_x = naga::math::loopless::dot<2>(
+//                                    &node_velocities(0, idx[0]),
+//                                    rotated_x_axis
+//                                );
+//                                auto velocity_y = naga::math::loopless::dot<2>(
+//                                    &node_velocities(0, idx[0]),
+//                                    closest_edge_normal
+//                                );
+//                                velocity_y = naga::math::abs(velocity_y);
+//                                node_velocities(0, idx[0])
+//                                    = velocity_x * rotated_x_axis[0]
+//                                    + velocity_y * rotated_y_axis[0];
+//                                node_velocities(1, idx[0])
+//                                    = velocity_x * rotated_x_axis[1]
+//                                    + velocity_y * rotated_y_axis[1];
+//                                auto velocity = &node_velocities(0, idx[0]);
+//                                auto velocity_mag
+//                                    = naga::math::loopless::norm<2>(velocity);
+//                                if (velocity_mag < 1.f) {
+//                                    return;
+//                                }
+//                                naga::math::loopless::normalize<2>(velocity);
+//                            }
                             if (sdf2d_result.signed_distance > nodal_spacing) {
                                 return;
                             }
                             auto q
                                 = (sdf2d_result.signed_distance + nodal_spacing)
                                 / nodal_spacing;
-                            if (q < 0) {
-                                printf("q < 0\n");
-                            }
                             auto kernel_value
                                 = kf
                                 * pimesh_kernel_function<T>(
@@ -1137,10 +1092,10 @@ domain2d<T> pimesh2d_generate_domain(
                 sclx::md_range_t<1>{{node_forces.shape()[1]}},
                 node_forces,
                 [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                    auto injection_idx = idx[0] % total_injections_per_site;
-                    if (injection_idx >= num_injected_per_site) {
-                        return;
-                    }
+//                    auto injection_idx = idx[0] % total_injections_per_site;
+//                    if (injection_idx >= num_injected_per_site) {
+//                        return;
+//                    }
                     const auto& point_of_interest = &points(0, idx[0]);
                     const auto& partition_idx
                         = points_segmentation.get_partition_index(
@@ -1173,9 +1128,12 @@ domain2d<T> pimesh2d_generate_domain(
                             for (size_t n = 0; n < partition.size(); ++n) {
                                 const auto& neighbor_idx
                                     = partition.indices()[n];
-                                if (neighbor_idx == idx[0]
-                                    || neighbor_idx % total_injections_per_site
-                                           >= num_injected_per_site) {
+//                                if (neighbor_idx == idx[0]
+//                                    || neighbor_idx % total_injections_per_site
+//                                           >= num_injected_per_site) {
+//                                    continue;
+//                                }
+                                if (neighbor_idx == idx[0]) {
                                     continue;
                                 }
                                 const auto& neighbor_point
@@ -1222,14 +1180,10 @@ domain2d<T> pimesh2d_generate_domain(
                 sclx::md_range_t<1>{{points.shape()[1]}},
                 positions_velocities_and_distances,
                 [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
-                    auto injection_idx = idx[0] % total_injections_per_site;
-                    if (injection_idx >= num_injected_per_site) {
-                        return;
-                    }
                     const auto& force    = &node_forces(0, idx[0]);
                     const auto& velocity = &node_velocities(0, idx[0]);
-                    force[0] -= drag_coefficient * velocity[0] / delta_t;
-                    force[1] -= drag_coefficient * velocity[1] / delta_t;
+//                    force[0] -= drag_coefficient * velocity[0] / delta_t;
+//                    force[1] -= drag_coefficient * velocity[1] / delta_t;
                     naga::point_t<T, 2> delta_x{
                         {delta_t * velocity[0]
                              + 0.5f * delta_t * delta_t * force[0],
@@ -1252,13 +1206,10 @@ domain2d<T> pimesh2d_generate_domain(
             );
         }).get();
 
-        auto total_added_points_so_far
-            = num_injected_per_site * num_injection_sites;
         auto average_distance_travelled
-            = sclx::algorithm::reduce(distance_travelled, T{0}, std::plus<>{})
-            / static_cast<T>(total_added_points_so_far);
+            = sclx::algorithm::reduce(distance_travelled, T{0}, std::plus<>{}) / static_cast<T>(distance_travelled.elements());
 
-        if (num_injected_per_site == total_injections_per_site) {
+        if (true) {
             auto average_forces = sclx::algorithm::reduce_last_dim(
                 node_forces,
                 0.f,
@@ -1269,7 +1220,7 @@ domain2d<T> pimesh2d_generate_domain(
                                      0.f,
                                      sclx::algorithm::plus<>()
                                  )
-                               / average_forces.elements();
+                               / static_cast<T>(average_forces.shape()[0]);
             T expected_error = 5.f;
             auto error = naga::math::abs(average_force - 0.) / nodal_spacing;
 
@@ -1299,7 +1250,7 @@ domain2d<T> pimesh2d_generate_domain(
 
         current_time += delta_t;
 
-        if (current_time / delta_t > 10000) {
+        if (current_time / delta_t > 1000) {
             break;
         }
     }
