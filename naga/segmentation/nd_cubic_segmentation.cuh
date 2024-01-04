@@ -307,6 +307,7 @@ class nd_cubic_segmentation {
         T partition_width
     )
         : points_(points), partition_width_(partition_width) {
+        static_assert(!std::is_integral_v<T>);
         if (points_.shape()[0] != Dimensions) {
             sclx::throw_exception<std::invalid_argument>(
                 "The number of dimensions in the points array does not match "

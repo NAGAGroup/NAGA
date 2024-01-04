@@ -28,11 +28,9 @@ find_package(OpenMP REQUIRED)
 
 find_package(VTK REQUIRED COMPONENTS IOXML)
 
-add_subdirectory(${PROJECT_SOURCE_DIR}/extern/openvdb)
-
 add_library(
   naga-lib STATIC
-  source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.cpp
+        source/fluids/nonlocal_lattice_boltzmann/node_providers/experimental/detail/conforming_point_cloud_provider.cu
         source/fluids/nonlocal_lattice_boltzmann/simulation_observers/vdb_grid_observer.cpp
 )
 target_include_directories(
