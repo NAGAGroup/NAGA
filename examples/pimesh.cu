@@ -28,10 +28,17 @@
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
+#include <naga/distance_functions.hpp>
+#include <naga/point.hpp>
+#include <naga/segmentation/nd_cubic_segmentation.cuh>
+#include <scalix/algorithm/reduce.cuh>
+#include <scalix/algorithm/reduce_last_dim.cuh>
+#include <scalix/algorithm/transform.cuh>
 #include <scalix/array.cuh>
 #include <scalix/filesystem.hpp>
+#include <scalix/fill.cuh>
+#include <thrust/random.h>
 #include <unordered_map>
-#include <naga/point.hpp>
 
 #define TINYOBJLOADER_IMPLEMENTATION  // define this in only *one* .cc
 // Optional. define TINYOBJLOADER_USE_MAPBOX_EARCUT gives robust trinagulation.
@@ -39,8 +46,7 @@
 // #define TINYOBJLOADER_USE_MAPBOX_EARCUT
 #include "tiny_obj_loader.h"
 
-#include <naga/distance_functions.hpp>
-#include <scalix/fill.cuh>
+#include <naga/segmentation/nearest_neighbors.cuh>
 
 namespace detail {
 
@@ -77,6 +83,25 @@ struct std::hash<detail::edge_t> {
     }
 };
 
+class spinlock {
+  public:
+    void lock() {
+        for (;;) {
+            if (!lock_.exchange(true, std::memory_order_acquire)) {
+                break;
+            }
+            while (lock_.load(std::memory_order_relaxed)) {
+                std::this_thread::yield();
+            }
+        }
+    }
+
+    void unlock() { lock_.store(false, std::memory_order_release); }
+
+  private:
+    std::atomic<bool> lock_{false};
+};
+
 template<class T>
 struct manifold_mesh_t {
     using value_type = T;
@@ -88,8 +113,10 @@ struct manifold_mesh_t {
     using edge_t       = detail::edge_t;
     using edge_count_t = int;
 
-    static auto import_from_obj(const sclx::filesystem::path& obj_path)
-        -> manifold_mesh_t {
+    static auto import_from_obj(
+        const sclx::filesystem::path& obj_path,
+        const bool flip_normals = false
+    ) -> manifold_mesh_t {
 
         using namespace detail;
         manifold_mesh_t mesh;
@@ -117,6 +144,7 @@ struct manifold_mesh_t {
             }
         }
 
+        spinlock lock;
         std::vector<size_t> face_vertex_indices;
         std::vector<size_t> face_normal_indices;
         std::unordered_map<edge_t, std::vector<size_t>> edge_opposite_vertices;
@@ -125,13 +153,22 @@ struct manifold_mesh_t {
         std::unordered_map<size_t, std::vector<size_t>> vertex_opposite_edges;
         std::unordered_map<size_t, std::vector<size_t>> vertex_edge_neighbors;
         std::unordered_map<edge_t, edge_count_t> edge_counts;
-        size_t total_face_count   = 0;
+        size_t total_face_count = 0;
         size_t total_vertex_count;
         size_t total_normal_count;
 
         {
             auto attrib = reader.GetAttrib();
             auto shapes = reader.GetShapes();
+
+            face_vertex_indices.reserve(3 * (attrib.vertices.size() - 2));
+            face_normal_indices.reserve(attrib.vertices.size() - 2);
+            edge_opposite_vertices.reserve(3 * (attrib.vertices.size() - 2));
+            edge_face_neighbors.reserve(3 * (attrib.vertices.size() - 2));
+            vertex_face_neighbors.reserve(attrib.vertices.size());
+            vertex_opposite_edges.reserve(attrib.vertices.size());
+            vertex_edge_neighbors.reserve(attrib.vertices.size());
+            edge_counts.reserve(3 * (attrib.vertices.size() - 2));
 
             total_vertex_count = attrib.vertices.size() / 3;
             mesh.vertices = sclx::array<value_type, 2>{3, total_vertex_count};
@@ -152,57 +189,70 @@ struct manifold_mesh_t {
 
             // get metadata for constructing mesh
             for (const auto& shape : shapes) {
+#pragma omp parallel for
                 for (size_t f = 0; f < shape.mesh.num_face_vertices.size();
                      ++f) {
                     for (size_t i = 0; i < 3; ++i) {
                         // face data
-                        face_vertex_indices.push_back(
-                            shape.mesh.indices[f * 3 + i].vertex_index
-                        );
-                        face_normal_indices.push_back(
-                            shape.mesh.indices[f * 3 + i].normal_index
-                        );
-
-                        // edge data
-                        edge_t edge{
-                            static_cast<size_t>(
+                        {
+                            std::lock_guard<spinlock> guard(lock);
+                            face_vertex_indices.push_back(
                                 shape.mesh.indices[f * 3 + i].vertex_index
-                            ),
-                            static_cast<size_t>(
-                                shape.mesh.indices[f * 3 + (i + 1) % 3]
-                                    .vertex_index
-                            )
-                        };
-                        auto& edge_count = edge_counts[edge];
-                        ++edge_count;
-                        if (edge_count > 2) {
-                            throw std::runtime_error(
-                                "manifold_mesh_t: edge is "
-                                "shared by more than two triangles"
+                            );
+                            face_normal_indices.push_back(
+                                shape.mesh.indices[f * 3 + i].normal_index
                             );
                         }
-                        edge_opposite_vertices[edge].push_back(
-                            shape.mesh.indices[f * 3 + (i + 2) % 3].vertex_index
-                        );
-                        const auto& edge_opposite_vertex
-                            = edge_opposite_vertices[edge].back();
-                        edge_face_neighbors[edge].push_back(total_face_count);
 
-                        auto edge_it  = edge_counts.find({edge.i, edge.j});
-                        auto edge_idx = static_cast<size_t>(
-                            std::distance(edge_counts.begin(), edge_it)
-                        );
+                        // edge data
+                        size_t edge_idx;
+                        size_t edge_opposite_vertex;
+                        {
+                            std::lock_guard<spinlock> guard(lock);
+                            edge_t edge{
+                                static_cast<size_t>(
+                                    shape.mesh.indices[f * 3 + i].vertex_index
+                                ),
+                                static_cast<size_t>(
+                                    shape.mesh.indices[f * 3 + (i + 1) % 3]
+                                        .vertex_index
+                                )
+                            };
+                            auto& edge_count = edge_counts[edge];
+                            ++edge_count;
+                            if (edge_count > 2) {
+                                throw std::runtime_error(
+                                    "manifold_mesh_t: edge is "
+                                    "shared by more than two triangles"
+                                );
+                            }
+                            edge_opposite_vertices[edge].push_back(
+                                shape.mesh.indices[f * 3 + (i + 2) % 3]
+                                    .vertex_index
+                            );
+                            edge_opposite_vertex
+                                = edge_opposite_vertices[edge].back();
+                            edge_face_neighbors[edge].push_back(total_face_count
+                            );
+
+                            auto edge_it = edge_counts.find({edge.i, edge.j});
+                            edge_idx     = static_cast<size_t>(
+                                std::distance(edge_counts.begin(), edge_it)
+                            );
+                        }
 
                         // vertex data
-                        vertex_face_neighbors[shape.mesh.indices[f * 3 + i]
-                                                  .vertex_index]
-                            .push_back(total_face_count);
-                        vertex_edge_neighbors[shape.mesh.indices[f * 3 + i]
-                                                  .vertex_index]
-                            .push_back(edge_idx);
-                        vertex_opposite_edges[edge_opposite_vertex].push_back(
-                            edge_idx
-                        );
+                        {
+                            std::lock_guard<spinlock> guard(lock);
+                            vertex_face_neighbors[shape.mesh.indices[f * 3 + i]
+                                                      .vertex_index]
+                                .push_back(total_face_count);
+                            vertex_edge_neighbors[shape.mesh.indices[f * 3 + i]
+                                                      .vertex_index]
+                                .push_back(edge_idx);
+                            vertex_opposite_edges[edge_opposite_vertex]
+                                .push_back(edge_idx);
+                        }
                     }
                     total_face_count += 1;
                 }
@@ -306,6 +356,32 @@ struct manifold_mesh_t {
             }
         }
 
+        auto lower_bounds_reduce = sclx::algorithm::reduce_last_dim(
+            mesh.vertices,
+            std::numeric_limits<T>::max(),
+            sclx::algorithm::min<>()
+        );
+        auto upper_bounds_reduce = sclx::algorithm::reduce_last_dim(
+            mesh.vertices,
+            std::numeric_limits<T>::lowest(),
+            sclx::algorithm::max<>()
+        );
+
+        for (uint i = 0; i < 3; ++i) {
+            mesh.lower_bound[i] = lower_bounds_reduce[i];
+            mesh.upper_bound[i] = upper_bounds_reduce[i];
+        }
+
+        if (flip_normals) {
+            sclx::algorithm::transform(
+                mesh.normals,
+                mesh.normals,
+                -1,
+                sclx::algorithm::multiplies<>{}
+            )
+                .get();
+        }
+
         return mesh;
     }
 
@@ -320,15 +396,27 @@ struct manifold_mesh_t {
     sclx::array<size_t, 2> vertex_edge_neighbors;
     sclx::array<size_t, 2> edge_opposite_vertices;
     sclx::array<size_t, 2> edge_face_neighbors;
+
+    naga::point_t<value_type, 3> lower_bound;
+    naga::point_t<value_type, 3> upper_bound;
 };
+
+template<class T>
+struct closed_contour_t;
+
+template<class T>
+auto compute_contour_normals(const closed_contour_t<T>& contour)
+    -> sclx::array<T, 2>;
 
 template<class T>
 struct closed_contour_t {
 
     using manifold_mesh_t = manifold_mesh_t<T>;
 
-    static auto import_from_obj(sclx::filesystem::path obj_path)
-        -> closed_contour_t {
+    static auto import_from_obj(
+        sclx::filesystem::path obj_path,
+        const bool flip_normals = false
+    ) -> closed_contour_t {
         closed_contour_t contour;
 
         contour.input_mesh = manifold_mesh_t::import_from_obj(obj_path);
@@ -378,12 +466,25 @@ struct closed_contour_t {
             [](const auto& pair) { return pair.first; }
         );
 
+        contour.edge_normals = compute_contour_normals(contour);
+
+        if (flip_normals) {
+            sclx::algorithm::transform(
+                contour.edge_normals,
+                contour.edge_normals,
+                -1,
+                sclx::algorithm::multiplies<>{}
+            )
+                .get();
+        }
+
         return contour;
     }
 
     manifold_mesh_t input_mesh;
     sclx::array<size_t, 1> contour_vertices_in_input_mesh;
     sclx::array<size_t, 1> contour_edges_in_input_mesh;
+    sclx::array<T, 2> edge_normals;
 };
 
 template<class T>
@@ -395,14 +496,17 @@ struct sdf2d_result {
     signed_distance_t signed_distance;
 };
 
-template <class T>
-auto compute_contour_normals(const closed_contour_t<T>& contour) -> sclx::array<T, 2> {
-    sclx::array<T, 2> edge_normals{2, contour.contour_edges_in_input_mesh.elements()};
-    for (size_t e = 0;
-         e < contour.contour_edges_in_input_mesh.elements();
+template<class T>
+auto compute_contour_normals(const closed_contour_t<T>& contour)
+    -> sclx::array<T, 2> {
+    sclx::array<T, 2> edge_normals{
+        2,
+        contour.contour_edges_in_input_mesh.elements()
+    };
+    for (size_t e = 0; e < contour.contour_edges_in_input_mesh.elements();
          ++e) {
         auto edge_idx = contour.contour_edges_in_input_mesh(e);
-        const T* x1 = &contour.input_mesh.vertices(
+        const T* x1   = &contour.input_mesh.vertices(
             0,
             contour.input_mesh.unique_edges(0, edge_idx)
         );
@@ -419,12 +523,13 @@ auto compute_contour_normals(const closed_contour_t<T>& contour) -> sclx::array<
             0,
             contour.input_mesh.edge_opposite_vertices(0, edge_idx)
         );
-        const T opp2x1[2]{x1[0] - opposite_vertex[0], x1[1] - opposite_vertex[1]};
-        auto opp2x1_dot_edge_normal = naga::math::loopless::dot<2>(
-            opp2x1,
-            edge_normal
-        );
-        if (opp2x1_dot_edge_normal < 0) {
+        const T opp2x1[2]{
+            x1[0] - opposite_vertex[0],
+            x1[1] - opposite_vertex[1]
+        };
+        auto opp2x1_dot_edge_normal
+            = naga::math::loopless::dot<2>(opp2x1, edge_normal);
+        if (opp2x1_dot_edge_normal > 0) {
             edge_normal[0] *= -1;
             edge_normal[1] *= -1;
         }
@@ -435,53 +540,19 @@ auto compute_contour_normals(const closed_contour_t<T>& contour) -> sclx::array<
 
     return edge_normals;
 }
-template <class T>
-struct contour_bounds {
-    naga::point_t<T, 2> min;
-    naga::point_t<T, 2> max;
-};
-
-template <class T>
-auto compute_contour_bounds(const closed_contour_t<T> contour) -> contour_bounds<T> {
-    contour_bounds<T> bounds;
-    bounds.min[0] = std::numeric_limits<T>::max();
-    bounds.min[1] = std::numeric_limits<T>::max();
-    bounds.max[0] = std::numeric_limits<T>::lowest();
-    bounds.max[1] = std::numeric_limits<T>::lowest();
-    for (const auto& vidx: contour.contour_vertices_in_input_mesh) {
-        if (contour.input_mesh.vertices(0, vidx) < bounds.min[0]) {
-            bounds.min[0] = contour.input_mesh.vertices(0, vidx);
-        }
-        if (contour.input_mesh.vertices(1, vidx) < bounds.min[1]) {
-            bounds.min[1] = contour.input_mesh.vertices(1, vidx);
-        }
-        if (contour.input_mesh.vertices(0, vidx) > bounds.max[0]) {
-            bounds.max[0] = contour.input_mesh.vertices(0, vidx);
-        }
-        if (contour.input_mesh.vertices(1, vidx) > bounds.max[1]) {
-            bounds.max[1] = contour.input_mesh.vertices(1, vidx);
-        }
-    }
-
-    return bounds;
-}
 
 template<class PointType, class T>
-__host__ __device__ auto get_sdf2d(
-    const PointType& point,
-    const closed_contour_t<T>& contour,
-    const sclx::array<T, 2>& edge_normals
-)
+__host__ __device__ auto
+get_sdf2d(const PointType& point, const closed_contour_t<T>& contour)
 
     -> sdf2d_result<T> {
     sdf2d_result<T> result{};
 
     result.signed_distance = std::numeric_limits<T>::max();
-    for (size_t e = 0;
-         e < contour.contour_edges_in_input_mesh.elements();
+    for (size_t e = 0; e < contour.contour_edges_in_input_mesh.elements();
          ++e) {
         auto edge_idx = contour.contour_edges_in_input_mesh(e);
-        const T* x1 = &contour.input_mesh.vertices(
+        const T* x1   = &contour.input_mesh.vertices(
             0,
             contour.input_mesh.unique_edges(0, edge_idx)
         );
@@ -489,206 +560,970 @@ __host__ __device__ auto get_sdf2d(
             0,
             contour.input_mesh.unique_edges(1, edge_idx)
         );
-        const T* edge_normal = &edge_normals(0, e);
-        T perpendicular2edge_intersection[2];
+        const T* edge_normal = &contour.edge_normals(0, e);
+        T point2edge_intersection[2];
         if (naga::math::abs(edge_normal[0]) < 1e-6) {
-            perpendicular2edge_intersection[0] = point[0];
-            perpendicular2edge_intersection[1] = x1[1];
+            point2edge_intersection[0] = point[0];
+            point2edge_intersection[1] = x1[1];
         } else if (naga::math::abs(edge_normal[1]) < 1e-6) {
-            perpendicular2edge_intersection[0] = x1[0];
-            perpendicular2edge_intersection[1] = point[1];
+            point2edge_intersection[0] = x1[0];
+            point2edge_intersection[1] = point[1];
         } else {
-            const T edge_slope = -edge_normal[0] / edge_normal[1];
-            const T edge_b     = x1[1] - edge_slope * x1[0];
-
-            const T perpendicular_slope = -1.0 / edge_slope;
-            const T perpendicular_b     = point[1] - perpendicular_slope * point[0];
-
-            perpendicular2edge_intersection[0] = (edge_b - perpendicular_b) / (perpendicular_slope - edge_slope);
-            perpendicular2edge_intersection[1] = perpendicular_slope * (edge_b - perpendicular_b) / (perpendicular_slope - edge_slope) + perpendicular_b;
+            point2edge_intersection[0]
+                = (edge_normal[1] * (point[0] - x1[0]) + edge_normal[0] * x1[1]
+                   - edge_normal[0] * point[1])
+                / edge_normal[1];
+            point2edge_intersection[1]
+                = (edge_normal[0] * (point[1] - x1[1]) + edge_normal[1] * x1[0]
+                   - edge_normal[1] * point[0])
+                / edge_normal[0];
         }
         const T x12[2]{x2[0] - x1[0], x2[1] - x1[1]};
 
-        auto edge_length = naga::distance_functions::loopless::euclidean<2>{
-            }(x1, x2);
-        const T x1_to_intersection_vector[2] {  perpendicular2edge_intersection[0] - x1[0],
-                                                perpendicular2edge_intersection[1] - x1[1]};
-        const T point_to_intersection_vector[2] {  perpendicular2edge_intersection[0] - point[0],
-                                                   perpendicular2edge_intersection[1] - point[1]};
+        auto edge_length
+            = naga::distance_functions::loopless::euclidean<2>{}(x1, x2);
+        const T x1_to_intersection_vector[2]{
+            point2edge_intersection[0] - x1[0],
+            point2edge_intersection[1] - x1[1]
+        };
+        const T point_to_intersection_vector[2]{
+            point2edge_intersection[0] - point[0],
+            point2edge_intersection[1] - point[1]
+        };
 
         T normalized_x12[2]{x12[0] / edge_length, x12[1] / edge_length};
-        auto x1_to_intersection_dot_normalized_x12 = naga::math::loopless::dot<2>(
-            x1_to_intersection_vector,
-            normalized_x12
-        );
+        auto x1_to_intersection_dot_normalized_x12
+            = naga::math::loopless::dot<2>(
+                x1_to_intersection_vector,
+                normalized_x12
+            );
         T signed_distance;
         if (x1_to_intersection_dot_normalized_x12 < 1e-6) {
-            signed_distance = naga::distance_functions::loopless::euclidean<2>{}(x1, point);
+            signed_distance
+                = naga::distance_functions::loopless::euclidean<2>{}(x1, point);
         } else if (x1_to_intersection_dot_normalized_x12 < edge_length) {
-            signed_distance = naga::distance_functions::loopless::euclidean<2>{
-            }(point, perpendicular2edge_intersection);
+            signed_distance
+                = naga::math::loopless::norm<2>(point_to_intersection_vector);
         } else {
-            signed_distance = naga::distance_functions::loopless::euclidean<2>{}(x2, point);
+            signed_distance
+                = naga::distance_functions::loopless::euclidean<2>{}(x2, point);
         }
         auto point2intersection_dot_edge_normal = naga::math::loopless::dot<2>(
             point_to_intersection_vector,
             edge_normal
         );
 
-#ifndef __CUDA_ARCH__
-
-        std::cout << "point: " << point[0] << ", " << point[1] << "\n";
-        std::cout << "x1: " << x1[0] << ", " << x1[1] << "\n";
-        std::cout << "x2: " << x2[0] << ", " << x2[1] << "\n";
-        std::cout << "edge_normal: " << edge_normal[0] << ", " << edge_normal[1] << "\n";
-        std::cout << "perpendicular2edge_intersection: " << perpendicular2edge_intersection[0] << ", " << perpendicular2edge_intersection[1] << "\n";
-        std::cout << "edge_length: " << edge_length << "\n";
-        std::cout << "x1_to_intersection_dot_normalized_x12: " << x1_to_intersection_dot_normalized_x12 << "\n";
-        std::cout << "signed_distance: " << signed_distance << "\n\n";
-#endif
-
-        if (naga::math::abs(signed_distance) >= naga::math::abs(result.signed_distance)) {
-            continue;
-        }
-
-        if (point2intersection_dot_edge_normal < 0) {
+        if (point2intersection_dot_edge_normal < 1e-6) {
             signed_distance *= -1;
         }
 
+        if (naga::math::abs(signed_distance)
+            > naga::math::abs(result.signed_distance)) {
+            continue;
+        }
         result.signed_distance = signed_distance;
-        result.closest_edge     = contour.contour_edges_in_input_mesh(e);
+        result.closest_edge    = contour.contour_edges_in_input_mesh(e);
     }
 
     return result;
 }
 
-auto main() -> int {
-    auto mesh = manifold_mesh_t<float>::import_from_obj(sclx::filesystem::path(
-        "naga/resources/lbm_example_domains/rectangle/domain.obj"
-    ));
+template<class T>
+sclx::array<sdf2d_result<T>, 1> batched_sdf2d(
+    const sclx::array<T, 2>& points,
+    const closed_contour_t<T>& contour
+)
 
-    // resave faces to domain_imported.obj
-    std::ofstream obj_file(
-        "naga/resources/lbm_example_domains/rectangle/domain_imported.obj"
-    );
-    for (size_t i = 0; i < mesh.vertices.shape()[1]; ++i) {
-        obj_file << "v " << mesh.vertices(0, i) << " " << mesh.vertices(1, i)
-                 << " " << mesh.vertices(2, i) << "\n";
-    }
-    for (size_t i = 0; i < mesh.triangle_vert_indices.shape()[1]; ++i) {
-        obj_file << "f " << mesh.triangle_vert_indices(0, i) + 1 << " "
-                 << mesh.triangle_vert_indices(1, i) + 1 << " " << mesh.triangle_vert_indices(2, i) + 1
-                 << "\n";
-    }
-    obj_file.close();
-
-    // resave edges to domain_imported_edges.obj
-    std::ofstream obj_file_edges(
-        "naga/resources/lbm_example_domains/rectangle/domain_imported_edges.obj"
-    );
-    for (size_t i = 0; i < mesh.vertices.shape()[1]; ++i) {
-        obj_file_edges << "v " << mesh.vertices(0, i) << " "
-                       << mesh.vertices(1, i) << " " << mesh.vertices(2, i)
-                       << "\n";
-    }
-    for (size_t i = 0; i < mesh.unique_edges.shape()[1]; ++i) {
-        obj_file_edges << "l " << mesh.unique_edges(0, i) + 1 << " "
-                       << mesh.unique_edges(1, i) + 1 << "\n";
-    }
-    obj_file_edges.close();
-
-    auto contour
-        = closed_contour_t<float>::import_from_obj(sclx::filesystem::path(
-            "naga/resources/lbm_example_domains/rectangle/domain.obj"
-        ));
-
-    // resave edges to domain_imported_contour.obj
-    std::ofstream obj_file_contour("naga/resources/lbm_example_domains/"
-                                   "rectangle/domain_imported_contour.obj");
-    for (size_t i = 0; i < contour.input_mesh.vertices.shape()[1]; ++i) {
-        obj_file_contour << "v " << mesh.vertices(0, i) << " "
-                         << mesh.vertices(1, i) << " " << mesh.vertices(2, i)
-                         << "\n";
-    }
-    for (size_t i = 0; i < contour.contour_edges_in_input_mesh.shape()[0];
-         ++i) {
-        obj_file_contour
-            << "l "
-            << mesh.unique_edges(0, contour.contour_edges_in_input_mesh(i)) + 1
-            << " "
-            << mesh.unique_edges(1, contour.contour_edges_in_input_mesh(i)) + 1
-            << "\n";
-    }
-    obj_file_contour.close();
-
-    auto contour_edge_normals = compute_contour_normals(contour);
-    // save contour vertices w/ normasl to domain_imported_contour_normals.csv
-    std::ofstream contour_normals_file("naga/resources/lbm_example_domains/"
-                                       "rectangle/domain_imported_contour_normals.csv");
-    contour_normals_file << "x,y,nx,ny\n";
-    for (size_t e = 0; e < contour.contour_edges_in_input_mesh.elements(); ++e) {
-        auto edge_idx = contour.contour_edges_in_input_mesh(e);
-        float center_point[2] {
-            (contour.input_mesh.vertices(0, contour.input_mesh.unique_edges(0, edge_idx))
-             + contour.input_mesh.vertices(0, contour.input_mesh.unique_edges(1, edge_idx)))
-                / 2,
-            (contour.input_mesh.vertices(1, contour.input_mesh.unique_edges(0, edge_idx))
-             + contour.input_mesh.vertices(1, contour.input_mesh.unique_edges(1, edge_idx)))
-                / 2
-        };
-        contour_normals_file << center_point[0] << ","
-                             << center_point[1] << ","
-                             << contour_edge_normals(0, e) << ","
-                             << contour_edge_normals(1, e) << "\n";
-    }
-    contour_normals_file.close();
-
-    auto contour_bounds = compute_contour_bounds(contour);
-    float node_separation = 0.2;
-    size_t num_nodes_x = static_cast<size_t>(
-        (contour_bounds.max[0] - contour_bounds.min[0]) / node_separation
-    );
-    size_t num_nodes_y = static_cast<size_t>(
-        (contour_bounds.max[1] - contour_bounds.min[1]) / node_separation
-    );
-    sclx::array<float, 2> node_positions{2, num_nodes_x * num_nodes_y};
-    for (size_t i = 0; i < num_nodes_x; ++i) {
-        for (size_t j = 0; j < num_nodes_y; ++j) {
-            node_positions(0, i * num_nodes_y + j) = contour_bounds.min[0] + i * node_separation;
-            node_positions(1, i * num_nodes_y + j) = contour_bounds.min[1] + j * node_separation;
-        }
-    }
-    sclx::array<sdf2d_result<float>, 1> sdf_results{node_positions.shape()[1]};
+{
+    sclx::array<sdf2d_result<T>, 1> results{points.shape()[1]};
 
     sclx::execute_kernel([&](sclx::kernel_handler& ctx) {
-        ctx.launch(sclx::md_range_t<1>{sdf_results.shape()},
-            sdf_results,
-            [=] __device__ (const sclx::md_index_t<1>& idx, const auto&) {
-            sdf_results[idx] = get_sdf2d(
-                &node_positions(0, idx[0]),
-                contour,
-                contour_edge_normals
-            );
-        });
+        ctx.launch(
+            sclx::md_range_t<1>{results.shape()},
+            results,
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                results[idx] = get_sdf2d(&points(0, idx[0]), contour);
+            }
+        );
     });
-//    for (size_t i = 0; i < sdf_results.shape()[0]; ++i) {
-//        sdf_results(i) = get_sdf2d(
-//            &node_positions(0, i),
-//            contour,
-//            contour_edge_normals
-//        );
-//    }
 
-    // save node positions and sdf results to sdf2d_results.csv
-    std::ofstream sdf2d_results_file("naga/resources/lbm_example_domains/"
-                                     "rectangle/sdf2d_results.csv");
-    sdf2d_results_file << "x,y,sdf\n";
-    for (size_t i = 0; i < node_positions.shape()[1]; ++i) {
-        sdf2d_results_file << node_positions(0, i) << ","
-                           << node_positions(1, i) << ","
-                           << sdf_results(i).signed_distance << "\n";
+    return results;
+}
+
+template<class T>
+struct batched_sdf2d_result {
+    sclx::array<sdf2d_result<T>, 1> results;
+    sclx::array<size_t, 1> input_contour_idx;
+};
+
+template<class T>
+batched_sdf2d_result<T> compute_combined_sdf2d(
+    const sclx::array<T, 2>& query_points,
+    const std::vector<closed_contour_t<T>>& all_contours
+) {
+    sdf2d_result<T> max_possible_sdf2d_result{};
+    max_possible_sdf2d_result.signed_distance = std::numeric_limits<T>::max();
+    sclx::array<sdf2d_result<T>, 1> min_sdf2d_results{query_points.shape()[1]};
+    sclx::fill(min_sdf2d_results, max_possible_sdf2d_result);
+
+    std::vector<sclx::array<sdf2d_result<T>, 1>> injection_sdf2d_all_contours;
+    for (const auto& contour : all_contours) {
+        injection_sdf2d_all_contours.push_back(
+            batched_sdf2d(query_points, contour)
+        );
     }
-    sdf2d_results_file.close();
+
+    sclx::array<size_t, 1> closest_contour_indices{query_points.shape()[1]};
+    for (size_t ctr_idx = 0; ctr_idx < all_contours.size(); ++ctr_idx) {
+        auto ctr_sdf2d_results = injection_sdf2d_all_contours[ctr_idx];
+        sclx::
+            array_tuple<sclx::array<sdf2d_result<T>, 1>, sclx::array<size_t, 1>>
+                result_tuple{min_sdf2d_results, closest_contour_indices};
+        sclx::execute_kernel([&](sclx::kernel_handler& ctx) {
+            ctx.launch(
+                sclx::md_range_t<1>{query_points.shape()[1]},
+                result_tuple,
+                [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                    if (naga::math::abs(ctr_sdf2d_results[idx].signed_distance)
+                        < naga::math::abs(min_sdf2d_results[idx].signed_distance
+                        )) {
+                        min_sdf2d_results[idx]       = ctr_sdf2d_results[idx];
+                        closest_contour_indices[idx] = ctr_idx;
+                    }
+                }
+            );
+        }).get();
+    }
+    return {min_sdf2d_results, closest_contour_indices};
+}
+
+template<class T>
+sclx::array<T, 2> fill_2d_domain_with_grid(
+    const T& nodal_spacing,
+    const closed_contour_t<T>& domain_contour,
+    const std::vector<closed_contour_t<T>>& immersed_contours,
+    T max_sdf2d_distance = std::numeric_limits<T>::infinity()
+) {
+    max_sdf2d_distance
+        = max_sdf2d_distance == std::numeric_limits<T>::infinity()
+            ? nodal_spacing
+            : max_sdf2d_distance;
+    auto num_nodes_x = static_cast<size_t>(
+                           (domain_contour.input_mesh.upper_bound[0]
+                            - domain_contour.input_mesh.lower_bound[0])
+                           / nodal_spacing
+                       )
+                     + 1;
+    auto num_nodes_y = static_cast<size_t>(
+                           (domain_contour.input_mesh.upper_bound[1]
+                            - domain_contour.input_mesh.lower_bound[1])
+                           / nodal_spacing
+                       )
+                     + 1;
+    sclx::array<T, 2> potential_points{2, num_nodes_x * num_nodes_y};
+    for (size_t i = 0; i < num_nodes_x; ++i) {
+        for (size_t j = 0; j < num_nodes_y; ++j) {
+            potential_points(0, i * num_nodes_y + j)
+                = domain_contour.input_mesh.lower_bound[0] + i * nodal_spacing;
+            potential_points(1, i * num_nodes_y + j)
+                = domain_contour.input_mesh.lower_bound[1] + j * nodal_spacing;
+        }
+    }
+
+    std::vector<closed_contour_t<T>> all_contours{domain_contour};
+    all_contours.insert(
+        all_contours.end(),
+        immersed_contours.begin(),
+        immersed_contours.end()
+    );
+    auto combined_sdf2d_results
+        = compute_combined_sdf2d(potential_points, all_contours);
+
+    const auto& min_sdf2d_results = combined_sdf2d_results.results;
+
+    sclx::array<bool, 1> out_of_bounds_points{potential_points.shape()[1]};
+    sclx::execute_kernel([&](sclx::kernel_handler& ctx) {
+        ctx.launch(
+            sclx::md_range_t<1>{out_of_bounds_points.shape()},
+            out_of_bounds_points,
+            [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                out_of_bounds_points[idx]
+                    = min_sdf2d_results[idx].signed_distance <= nodal_spacing;
+            }
+        );
+    }).get();
+
+    std::vector<T> in_bounds_points;
+    in_bounds_points.reserve(2 * out_of_bounds_points.elements());
+
+    out_of_bounds_points
+        .prefetch_async(std::vector<int>{sclx::cuda::traits::cpu_device_id})
+        .get();
+    potential_points
+        .prefetch_async(std::vector<int>{sclx::cuda::traits::cpu_device_id})
+        .get();
+    for (size_t i = 0; i < out_of_bounds_points.elements(); ++i) {
+        if (!out_of_bounds_points(i)) {
+            in_bounds_points.push_back(potential_points(0, i));
+            in_bounds_points.push_back(potential_points(1, i));
+        }
+    }
+    if (in_bounds_points.size() == 0) {
+        throw std::runtime_error(
+            "fill_2d_domain_with_grid: no injection points found"
+        );
+    }
+
+    sclx::array<T, 2> points{2, in_bounds_points.size() / 2};
+    std::copy(in_bounds_points.begin(), in_bounds_points.end(), points.begin());
+
+    return points;
+}
+
+template<class T>
+sclx::array<T, 2> create_pimesh2d_injection_sites(
+    const T& nodal_spacing,
+    const closed_contour_t<T>& domain_contour,
+    const std::vector<closed_contour_t<T>>& immersed_contours
+) {
+    auto injection_spacing = nodal_spacing * 4.f;
+
+    return fill_2d_domain_with_grid(
+        injection_spacing,
+        domain_contour,
+        immersed_contours
+    );
+}
+
+template<class T>
+struct domain2d {
+    sclx::array<T, 2> points;
+    size_t num_bulk_points;
+    size_t num_layer_points;
+    size_t num_boundary_points;
+};
+
+template<class T>
+__host__ __device__ T pimesh_kernel_function(const T& alpha, const T& q) {
+    if (q >= 2.f) {
+        return 0.f;
+    } else if (q >= 1.f) {
+        return alpha * naga::math::loopless::pow<3>(2 - q);
+    } else {
+        return alpha
+             * (naga::math::loopless::pow<3>(2 - q)
+                - 4 * naga::math::loopless::pow<3>(1 - q));
+    }
+}
+
+template<class T, uint Dimensions>
+struct pimesh_kernel_alpha;
+
+template<class T>
+struct pimesh_kernel_alpha<T, 2> {
+    __host__ __device__ static constexpr auto value() -> T { return 1.f / 6.f; }
+};
+
+template<class T>
+struct pimesh_kernel_alpha<T, 3> {
+    __host__ __device__ static constexpr auto value() -> T { return 1. / 18.f; }
+};
+
+template<class T>
+void pimesh2d_inject_points(
+    sclx::array<T, 2> injection_sites,
+    size_t num_injected_per_site,
+    sclx::array<T, 2> points,
+    sclx::array<T, 2> velocities
+) {
+    const auto& num_injection_sites = injection_sites.shape()[1];
+    const auto& total_injections_per_site
+        = points.shape()[1] / num_injection_sites;
+
+    auto seed = std::chrono::system_clock::now().time_since_epoch().count();
+
+    auto velocities_fut
+        = sclx::execute_kernel([&](sclx::kernel_handler& handle) {
+              handle.launch(
+                  sclx::md_range_t<1>{points.shape()[1]},
+                  velocities,
+                  [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                      auto injection_idx = idx[0] % total_injections_per_site;
+                      if (injection_idx != num_injected_per_site) {
+                          return;
+                      }
+                      thrust::default_random_engine rng(seed);
+                      thrust::uniform_real_distribution<T>
+                          dist_angle(0, 2 * naga::math::pi<T>);
+                      rng.discard(idx[0]);
+                      auto angle            = dist_angle(rng);
+                      velocities(0, idx[0]) = 1.f * naga::math::cos(angle);
+                      velocities(1, idx[0]) = 1.f * naga::math::sin(angle);
+                  }
+              );
+          });
+    auto points_fut = sclx::execute_kernel([&](sclx::kernel_handler& handle) {
+        handle.launch(
+            sclx::md_range_t<1>{points.shape()[1]},
+            points,
+            [total_injections_per_site,
+             num_injected_per_site,
+             points,
+             injection_sites] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                auto injection_site_idx = idx[0] / total_injections_per_site;
+                auto injection_idx      = idx[0] % total_injections_per_site;
+                if (injection_idx != num_injected_per_site) {
+                    return;
+                }
+                points(0, idx[0]) = injection_sites(0, injection_site_idx);
+                points(1, idx[0]) = injection_sites(1, injection_site_idx);
+            }
+        );
+    });
+
+    points_fut.get();
+    velocities_fut.get();
+}
+
+template<class T>
+domain2d<T> pimesh2d_generate_domain(
+    const T& nodal_spacing,
+    const closed_contour_t<T>& domain_contour,
+    const std::vector<closed_contour_t<T>>& immersed_contours
+) {
+    auto injection_sites = create_pimesh2d_injection_sites(
+        nodal_spacing,
+        domain_contour,
+        immersed_contours
+    );
+    sclx::array<T, 2> points;
+    {
+        auto expected_total_points = fill_2d_domain_with_grid<T>(
+            nodal_spacing,
+            domain_contour,
+            immersed_contours,
+            0
+        );
+        auto points_per_injection = (expected_total_points.shape()[1]
+                                     + injection_sites.shape()[1] - 1)
+                                  / injection_sites.shape()[1];
+        points = sclx::array<T, 2>{
+            2,
+            points_per_injection * injection_sites.shape()[1]
+        };
+    }
+    naga::point_t<T, 2> domain_center{
+        {(domain_contour.input_mesh.lower_bound[0]
+          + domain_contour.input_mesh.upper_bound[0])
+             / 2,
+         (domain_contour.input_mesh.lower_bound[1]
+          + domain_contour.input_mesh.upper_bound[1])
+             / 2}
+    };
+    sclx::execute_kernel([&](sclx::kernel_handler& handle) {
+        handle.launch(
+            sclx::md_range_t<1>{points.shape()[1]},
+            points,
+            [points,
+             domain_center] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                points(0, idx[0]) = domain_center[0];
+                points(1, idx[0]) = domain_center[1];
+            }
+        );
+    }).get();
+
+    sclx::array<char, 1> static_points{points.shape()[1]};
+    sclx::fill(static_points, char{0});
+    sclx::array<T, 2> node_velocities{points.shape()};
+    sclx::fill(node_velocities, T{0});
+    sclx::array<T, 2> node_forces{points.shape()};
+    sclx::array<T, 1> distance_travelled{points.shape()[1]};
+
+    std::vector<closed_contour_t<T>> all_contours{domain_contour};
+    all_contours.insert(
+        all_contours.end(),
+        immersed_contours.begin(),
+        immersed_contours.end()
+    );
+
+    const auto& num_injection_sites = injection_sites.shape()[1];
+    const auto& total_injections_per_site
+        = points.shape()[1] / num_injection_sites;
+
+    std::cout << "total injections per site: " << total_injections_per_site
+              << "\n";
+
+    const auto delta_t = nodal_spacing;
+    T drag_coefficient = .05f;
+    // Define the following:
+    // q_nom = 1.f;
+    // force_mag_nom = pimesh_kernel_function(pimesh_kernel_alpha<T,
+    // 2>::value(), q_nom); displacement_mag_nom = 0.5f * force_mag_nom *
+    // delta_t * delta_t;
+    //
+    // Then:
+    // We want a value for kf such that displacement_mag_nom * kf = .01f *
+    // nodal_spacing
+    auto q_nom = 1.f;
+    auto force_mag_nom
+        = pimesh_kernel_function(pimesh_kernel_alpha<T, 2>::value(), q_nom);
+    auto displacement_mag_nom = 0.5f * force_mag_nom * delta_t * delta_t;
+    auto kf                   = .05f * nodal_spacing / displacement_mag_nom;
+
+    size_t num_injected_per_site = 0;
+    T current_time               = 0.f;
+
+    while (true) {
+        if (num_injected_per_site < total_injections_per_site) {
+            pimesh2d_inject_points(
+                injection_sites,
+                num_injected_per_site,
+                points,
+                node_velocities
+            );
+            ++num_injected_per_site;
+        }
+
+        sclx::fill(node_forces, T{0});
+
+        sclx::
+            array_tuple<sclx::array<T, 2>, sclx::array<T, 2>, sclx::array<T, 1>>
+                positions_velocities_and_distances{
+                    points,
+                    node_velocities,
+                    distance_travelled
+                };
+
+        {
+            naga::segmentation::nd_cubic_segmentation<T, 2> points_segmentation(
+                points,
+                nodal_spacing * 8.f
+            );
+
+            auto combined_sdf2d_results
+                = compute_combined_sdf2d(points, all_contours);
+
+            for (size_t i = 0; i < all_contours.size(); ++i) {
+                sclx::execute_kernel([&](sclx::kernel_handler& ctx) {
+                    const auto& edge_normals  = all_contours[i].edge_normals;
+                    const auto& sdf2d_results = combined_sdf2d_results.results;
+                    const auto& closest_contours
+                        = combined_sdf2d_results.input_contour_idx;
+                    const auto& edge_indices
+                        = all_contours[i].contour_edges_in_input_mesh;
+                    const auto& mesh_vertices
+                        = all_contours[i].input_mesh.vertices;
+                    const auto& mesh_edges
+                        = all_contours[i].input_mesh.unique_edges;
+                    ctx.launch(
+                        sclx::md_range_t<1>{points.shape()[1]},
+                        positions_velocities_and_distances,
+                        [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                            auto injection_idx
+                                = idx[0] % total_injections_per_site;
+                            if (injection_idx >= num_injected_per_site) {
+                                return;
+                            }
+                            auto closest_contour_idx = closest_contours[idx[0]];
+                            if (closest_contour_idx != i) {
+                                return;
+                            }
+                            auto sdf2d_result     = sdf2d_results[idx[0]];
+                            auto closest_edge_idx = sdf2d_result.closest_edge;
+                            auto closest_edge_normal
+                                = &edge_normals(0, closest_edge_idx);
+                            if (sdf2d_result.signed_distance < -nodal_spacing) {
+                                auto edge_x1 = &mesh_vertices(
+                                    0,
+                                    mesh_edges(
+                                        0,
+                                        edge_indices(closest_edge_idx)
+                                    )
+                                );
+
+                                naga::point_t<T, 2> x1_to_point{
+                                    {points(0, idx[0]) - edge_x1[0],
+                                     points(1, idx[0]) - edge_x1[1]}
+                                };
+
+                                const auto rotated_y_axis = closest_edge_normal;
+                                const naga::point_t<T, 2> rotated_x_axis{
+                                    {-rotated_y_axis[1], rotated_y_axis[0]}
+                                };
+
+                                auto point_rotated_y = nodal_spacing;
+                                auto edge_length = naga::distance_functions::
+                                    loopless::euclidean<2>{}(
+                                        &mesh_vertices(
+                                            0,
+                                            mesh_edges(
+                                                0,
+                                                edge_indices(closest_edge_idx)
+                                            )
+                                        ),
+                                        &mesh_vertices(
+                                            0,
+                                            mesh_edges(
+                                                1,
+                                                edge_indices(closest_edge_idx)
+                                            )
+                                        )
+                                    );
+                                auto point_rotated_x = edge_length / 2.f;
+                                points(0, idx[0])
+                                    = edge_x1[0]
+                                    + point_rotated_x * rotated_x_axis[0]
+                                    + point_rotated_y * rotated_y_axis[0];
+                                points(1, idx[0])
+                                    = edge_x1[1]
+                                    + point_rotated_x * rotated_x_axis[1]
+                                    + point_rotated_y * rotated_y_axis[1];
+                                sdf2d_result.signed_distance = point_rotated_y;
+
+                                auto velocity_x = naga::math::loopless::dot<2>(
+                                    &node_velocities(0, idx[0]),
+                                    rotated_x_axis
+                                );
+                                auto velocity_y = naga::math::loopless::dot<2>(
+                                    &node_velocities(0, idx[0]),
+                                    closest_edge_normal
+                                );
+                                velocity_y = naga::math::abs(velocity_y);
+                                node_velocities(0, idx[0])
+                                    = velocity_x * rotated_x_axis[0]
+                                    + velocity_y * rotated_y_axis[0];
+                                node_velocities(1, idx[0])
+                                    = velocity_x * rotated_x_axis[1]
+                                    + velocity_y * rotated_y_axis[1];
+                                auto velocity = &node_velocities(0, idx[0]);
+                                auto velocity_mag
+                                    = naga::math::loopless::norm<2>(velocity);
+                                if (velocity_mag < 1.f) {
+                                    return;
+                                }
+                                naga::math::loopless::normalize<2>(velocity);
+                            }
+                            if (sdf2d_result.signed_distance > nodal_spacing) {
+                                return;
+                            }
+                            auto q
+                                = (sdf2d_result.signed_distance + nodal_spacing)
+                                / nodal_spacing;
+                            if (q < 0) {
+                                printf("q < 0\n");
+                            }
+                            auto kernel_value
+                                = kf
+                                * pimesh_kernel_function<T>(
+                                      pimesh_kernel_alpha<T, 2>::value(),
+                                      q
+                                );
+                            auto force = &node_forces(0, idx[0]);
+                            force[0] += kernel_value * closest_edge_normal[0];
+                            force[1] += kernel_value * closest_edge_normal[1];
+                        }
+                    );
+                }).get();
+            }
+        }
+
+        naga::segmentation::nd_cubic_segmentation<T, 2> points_segmentation(
+            points,
+            nodal_spacing * 8.f
+        );
+
+        sclx::execute_kernel([&](sclx::kernel_handler& ctx) {
+            ctx.launch(
+                sclx::md_range_t<1>{{node_forces.shape()[1]}},
+                node_forces,
+                [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                    auto injection_idx = idx[0] % total_injections_per_site;
+                    if (injection_idx >= num_injected_per_site) {
+                        return;
+                    }
+                    const auto& point_of_interest = &points(0, idx[0]);
+                    const auto& partition_idx
+                        = points_segmentation.get_partition_index(
+                            point_of_interest
+                        );
+                    for (int i = -1; i < 2; ++i) {
+                        for (int j = -1; j < 2; ++j) {
+                            auto partition_idx_i
+                                = static_cast<int>(partition_idx[0]) + i;
+                            if (partition_idx_i < 0
+                                || partition_idx_i
+                                       >= points_segmentation.shape()[0]) {
+                                continue;
+                            }
+                            auto partition_idx_j
+                                = static_cast<int>(partition_idx[1]) + j;
+                            if (partition_idx_j < 0
+                                || partition_idx_j
+                                       >= points_segmentation.shape()[1]) {
+                                continue;
+                            }
+                            sclx::md_index_t<2> partition_idx_ij{
+                                {static_cast<size_t>(partition_idx_i),
+                                 static_cast<size_t>(partition_idx_j)}
+                            };
+                            const auto& partition
+                                = points_segmentation.get_partition(
+                                    partition_idx_ij
+                                );
+                            for (size_t n = 0; n < partition.size(); ++n) {
+                                const auto& neighbor_idx
+                                    = partition.indices()[n];
+                                if (neighbor_idx == idx[0]
+                                    || neighbor_idx % total_injections_per_site
+                                           >= num_injected_per_site) {
+                                    continue;
+                                }
+                                const auto& neighbor_point
+                                    = &points(0, neighbor_idx);
+                                auto distance = naga::distance_functions::
+                                    loopless::euclidean<2>{
+                                    }(point_of_interest, neighbor_point);
+                                constexpr T colliding_nodes_tolerance = 1e-12;
+                                if (distance < colliding_nodes_tolerance) {
+                                    node_velocities(0, idx[0])
+                                        = -node_velocities(0, neighbor_idx);
+                                    node_velocities(1, idx[0])
+                                        = -node_velocities(1, neighbor_idx);
+                                    continue;
+                                }
+                                if (distance > nodal_spacing * 2.f) {
+                                    continue;
+                                }
+                                auto q = distance / nodal_spacing;
+                                auto kernel_value
+                                    = kf
+                                    * pimesh_kernel_function<T>(
+                                          pimesh_kernel_alpha<T, 2>::value(),
+                                          q
+                                    );
+                                naga::point_t<T, 2> xij{
+                                    {neighbor_point[0] - point_of_interest[0],
+                                     neighbor_point[1] - point_of_interest[1]}
+                                };
+                                naga::math::loopless::normalize<2>(xij);
+                                node_forces(0, idx[0])
+                                    += -kernel_value * xij[0];
+                                node_forces(1, idx[0])
+                                    += -kernel_value * xij[1];
+                            }
+                        }
+                    }
+                }
+            );
+        }).get();
+
+        sclx::execute_kernel([&](sclx::kernel_handler& ctx) {
+            ctx.launch(
+                sclx::md_range_t<1>{{points.shape()[1]}},
+                positions_velocities_and_distances,
+                [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                    auto injection_idx = idx[0] % total_injections_per_site;
+                    if (injection_idx >= num_injected_per_site) {
+                        return;
+                    }
+                    const auto& force    = &node_forces(0, idx[0]);
+                    const auto& velocity = &node_velocities(0, idx[0]);
+                    force[0] -= drag_coefficient * velocity[0] / delta_t;
+                    force[1] -= drag_coefficient * velocity[1] / delta_t;
+                    naga::point_t<T, 2> delta_x{
+                        {delta_t * velocity[0]
+                             + 0.5f * delta_t * delta_t * force[0],
+                         delta_t * velocity[1]
+                             + 0.5f * delta_t * delta_t * force[1]}
+                    };
+                    points(0, idx[0]) += delta_x[0];
+                    points(1, idx[0]) += delta_x[1];
+                    node_velocities(0, idx[0]) += delta_t * force[0];
+                    node_velocities(1, idx[0]) += delta_t * force[1];
+                    distance_travelled(idx[0])
+                        = naga::math::loopless::norm<2>(delta_x);
+
+                    auto velocity_mag = naga::math::loopless::norm<2>(velocity);
+                    if (velocity_mag < 1.f) {
+                        return;
+                    }
+                    naga::math::loopless::normalize<2>(velocity);
+                }
+            );
+        }).get();
+
+        auto total_added_points_so_far
+            = num_injected_per_site * num_injection_sites;
+        auto average_distance_travelled
+            = sclx::algorithm::reduce(distance_travelled, T{0}, std::plus<>{})
+            / static_cast<T>(total_added_points_so_far);
+
+        if (num_injected_per_site == total_injections_per_site) {
+            auto average_forces = sclx::algorithm::reduce_last_dim(
+                node_forces,
+                0.f,
+                sclx::algorithm::plus<>()
+            );
+            auto average_force = sclx::algorithm::reduce(
+                                     average_forces,
+                                     0.f,
+                                     sclx::algorithm::plus<>()
+                                 )
+                               / average_forces.elements();
+            T expected_error = 5.f;
+            auto error = naga::math::abs(average_force - 0.) / nodal_spacing;
+
+            std::cout << "\raverage force == 0 error (desired <= "
+                      << expected_error
+                      << "), average "
+                         "node movement (desired <=: "
+                      << .0002f * nodal_spacing << "): " << error << ", "
+                      << average_distance_travelled << std::flush;
+
+            if (error < expected_error
+                && average_distance_travelled < .0002f * nodal_spacing) {
+                break;
+            }
+        }
+
+        if (average_distance_travelled > 0.1 * nodal_spacing) {
+            drag_coefficient = 0.5f;
+        } else if (average_distance_travelled > .02 * nodal_spacing) {
+            drag_coefficient = 0.05f;
+        } else {
+            drag_coefficient
+                = 0.05f
+                * (current_time - naga::math::pow(current_time, .02) * .001f);
+            drag_coefficient = std::min(drag_coefficient, 0.5f);
+        }
+
+        current_time += delta_t;
+
+        if (current_time / delta_t > 10000) {
+            break;
+        }
+    }
+
+    return {points, points.shape()[1], 0, 0};
+}
+
+auto main() -> int {
+    //    auto mesh =
+    //    manifold_mesh_t<float>::import_from_obj(sclx::filesystem::path(
+    //        "naga/resources/lbm_example_domains/rectangle/domain.obj"
+    //    ));
+    //
+    //    // resave faces to domain_imported.obj
+    //    std::ofstream obj_file(
+    //        "naga/resources/lbm_example_domains/rectangle/domain_imported.obj"
+    //    );
+    //    for (size_t i = 0; i < mesh.vertices.shape()[1]; ++i) {
+    //        obj_file << "v " << mesh.vertices(0, i) << " " <<
+    //        mesh.vertices(1, i)
+    //                 << " " << mesh.vertices(2, i) << "\n";
+    //    }
+    //    for (size_t i = 0; i < mesh.triangle_vert_indices.shape()[1]; ++i)
+    //    {
+    //        obj_file << "f " << mesh.triangle_vert_indices(0, i) + 1 << "
+    //        "
+    //                 << mesh.triangle_vert_indices(1, i) + 1 << " "
+    //                 << mesh.triangle_vert_indices(2, i) + 1 << "\n";
+    //    }
+    //    obj_file.close();
+    //
+    //    // resave edges to domain_imported_edges.obj
+    //    std::ofstream obj_file_edges(
+    //        "naga/resources/lbm_example_domains/rectangle/domain_imported_edges.obj"
+    //    );
+    //    for (size_t i = 0; i < mesh.vertices.shape()[1]; ++i) {
+    //        obj_file_edges << "v " << mesh.vertices(0, i) << " "
+    //                       << mesh.vertices(1, i) << " " <<
+    //                       mesh.vertices(2, i)
+    //                       << "\n";
+    //    }
+    //    for (size_t i = 0; i < mesh.unique_edges.shape()[1]; ++i) {
+    //        obj_file_edges << "l " << mesh.unique_edges(0, i) + 1 << " "
+    //                       << mesh.unique_edges(1, i) + 1 << "\n";
+    //    }
+    //    obj_file_edges.close();
+    //
+    //    auto contour
+    //        =
+    //        closed_contour_t<float>::import_from_obj(sclx::filesystem::path(
+    //            "naga/resources/lbm_example_domains/rectangle/domain.obj"
+    //        ));
+    //
+    //    // resave edges to domain_imported_contour.obj
+    //    std::ofstream
+    //    obj_file_contour("naga/resources/lbm_example_domains/"
+    //                                   "rectangle/domain_imported_contour.obj");
+    //    for (size_t i = 0; i < contour.input_mesh.vertices.shape()[1];
+    //    ++i) {
+    //        obj_file_contour << "v " << mesh.vertices(0, i) << " "
+    //                         << mesh.vertices(1, i) << " " <<
+    //                         mesh.vertices(2, i)
+    //                         << "\n";
+    //    }
+    //    for (size_t i = 0; i <
+    //    contour.contour_edges_in_input_mesh.shape()[0];
+    //         ++i) {
+    //        obj_file_contour
+    //            << "l "
+    //            << mesh.unique_edges(0,
+    //            contour.contour_edges_in_input_mesh(i)) + 1
+    //            << " "
+    //            << mesh.unique_edges(1,
+    //            contour.contour_edges_in_input_mesh(i)) + 1
+    //            << "\n";
+    //    }
+    //    obj_file_contour.close();
+    //
+    //    auto contour_edge_normals = contour.edge_normals;
+    //    // save contour vertices w/ normasl to
+    //    domain_imported_contour_normals.csv std::ofstream
+    //    contour_normals_file(
+    //        "naga/resources/lbm_example_domains/"
+    //        "rectangle/domain_imported_contour_normals.csv"
+    //    );
+    //    contour_normals_file << "x,y,nx,ny\n";
+    //    for (size_t e = 0; e <
+    //    contour.contour_edges_in_input_mesh.elements();
+    //         ++e) {
+    //        auto edge_idx = contour.contour_edges_in_input_mesh(e);
+    //        float center_point[2]{
+    //            (contour.input_mesh
+    //                 .vertices(0, contour.input_mesh.unique_edges(0,
+    //                 edge_idx))
+    //             + contour.input_mesh.vertices(
+    //                 0,
+    //                 contour.input_mesh.unique_edges(1, edge_idx)
+    //             )) / 2,
+    //            (contour.input_mesh
+    //                 .vertices(1, contour.input_mesh.unique_edges(0,
+    //                 edge_idx))
+    //             + contour.input_mesh.vertices(
+    //                 1,
+    //                 contour.input_mesh.unique_edges(1, edge_idx)
+    //             )) / 2
+    //        };
+    //        contour_normals_file << center_point[0] << "," <<
+    //        center_point[1]
+    //        << ","
+    //                             << contour_edge_normals(0, e) << ","
+    //                             << contour_edge_normals(1, e) << "\n";
+    //    }
+    //    contour_normals_file.close();
+    //
+    //    const auto& contour_lb = contour.input_mesh.lower_bound;
+    //    const auto& contour_ub = contour.input_mesh.upper_bound;
+    //    float node_separation = 0.2;
+    //    auto num_nodes_x    = static_cast<size_t>(
+    //        (contour_ub[0] - contour_lb[0]) / node_separation
+    //    );
+    //    auto num_nodes_y    = static_cast<size_t>(
+    //        (contour_ub[1] - contour_lb[1]) / node_separation
+    //    );
+    //    sclx::array<float, 2> node_positions{2, num_nodes_x *
+    //    num_nodes_y}; for (size_t i = 0; i < num_nodes_x; ++i) {
+    //        for (size_t j = 0; j < num_nodes_y; ++j) {
+    //            node_positions(0, i * num_nodes_y + j)
+    //                = contour_lb[0] + i * node_separation;
+    //            node_positions(1, i * num_nodes_y + j)
+    //                = contour_lb[1] + j * node_separation;
+    //        }
+    //    }
+    //    auto sdf_results = batched_sdf2d(node_positions, contour);
+    //
+    //    // save node positions and sdf results to sdf2d_results.csv
+    //    std::ofstream
+    //    sdf2d_results_file("naga/resources/lbm_example_domains/"
+    //                                     "rectangle/sdf2d_results.csv");
+    //    sdf2d_results_file << "x,y,sdf\n";
+    //    for (size_t i = 0; i < node_positions.shape()[1]; ++i) {
+    //        sdf2d_results_file << node_positions(0, i) << ","
+    //                           << node_positions(1, i) << ","
+    //                           << sdf_results(i).signed_distance << "\n";
+    //    }
+    //    sdf2d_results_file.close();
+    //
+    //    // load complex 3D mesh to test speed of mesh import
+    //    auto complex_mesh =
+    //    manifold_mesh_t<float>::import_from_obj(sclx::filesystem::path(
+    //        "resources/simulation_domains/3d_cathedral/cathedral_simplified.obj"
+    //    ));
+    //    // rewrite it to cathedral_simplified_imported.obj to test for
+    //    correctness std::ofstream complex_mesh_file(
+    //        "resources/simulation_domains/3d_cathedral/cathedral_simplified_imported.obj"
+    //    );
+    //    for (size_t i = 0; i < complex_mesh.vertices.shape()[1]; ++i) {
+    //        complex_mesh_file << "v " << complex_mesh.vertices(0, i) << "
+    //        "
+    //                          << complex_mesh.vertices(1, i) << " "
+    //                          << complex_mesh.vertices(2, i) << "\n";
+    //    }
+    //    for (size_t i = 0; i <
+    //    complex_mesh.triangle_vert_indices.shape()[1];
+    //         ++i) {
+    //        complex_mesh_file << "f "
+    //                          << complex_mesh.triangle_vert_indices(0, i)
+    //                          + 1
+    //                          << " "
+    //                          << complex_mesh.triangle_vert_indices(1, i)
+    //                          + 1
+    //                          << " "
+    //                          << complex_mesh.triangle_vert_indices(2, i)
+    //                          + 1
+    //                          << "\n";
+    //    }
+
+    // test injection points generation
+    auto domain_mesh_path = sclx::filesystem::path(
+        "resources/simulation_domains/2d_head_in_square_room/room.obj"
+    );
+    auto domain_contour = closed_contour_t<float>::import_from_obj(
+        domain_mesh_path,
+        /*flip_normals=*/true
+    );
+    auto immersed_mesh_paths = std::vector{sclx::filesystem::path(
+        "resources/simulation_domains/2d_head_in_square_room/head.obj"
+    )};
+    std::vector<closed_contour_t<float>> immersed_contours;
+    for (const auto& immersed_mesh_path : immersed_mesh_paths) {
+        immersed_contours.emplace_back(
+            closed_contour_t<float>::import_from_obj(immersed_mesh_path)
+        );
+    }
+    float nodal_spacing  = 0.1f;
+    auto injection_sites = create_pimesh2d_injection_sites(
+        nodal_spacing,
+        domain_contour,
+        immersed_contours
+    );
+    std::ofstream injection_sites_file(
+        "resources/simulation_domains/2d_head_in_square_room/"
+        "injection_sites.csv"
+    );
+    injection_sites_file << "x,y\n";
+    for (size_t i = 0; i < injection_sites.shape()[1]; ++i) {
+        injection_sites_file << injection_sites(0, i) << ","
+                             << injection_sites(1, i) << "\n";
+    }
+    injection_sites_file.close();
+
+    auto domain = pimesh2d_generate_domain(
+        nodal_spacing,
+        domain_contour,
+        immersed_contours
+    );
+    std::ofstream domain_file(
+        "resources/simulation_domains/2d_head_in_square_room/domain.csv"
+    );
+    domain_file << "x,y\n";
+    for (size_t i = 0; i < domain.points.shape()[1]; ++i) {
+        domain_file << domain.points(0, i) << "," << domain.points(1, i)
+                    << "\n";
+    }
+    domain_file.close();
 
     return 0;
 }
