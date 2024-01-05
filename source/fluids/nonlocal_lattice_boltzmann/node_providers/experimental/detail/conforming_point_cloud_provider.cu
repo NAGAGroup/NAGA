@@ -77,7 +77,8 @@ struct hash<naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge> {
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
 constexpr float min_bound_dist_scale_2d = 0.71f;
-constexpr float min_bound_dist_scale_3d = -0.7f;
+constexpr float min_bound_dist_scale_3d = -.6f;
+constexpr float max_bound_dist_scale_3d = 0.6f;
 
 template<class T>
 struct edge_info_t {
@@ -989,8 +990,7 @@ struct manifold_mesh_t {
         );
         face_vertex_indices.clear();
         face_vertex_indices.shrink_to_fit();
-        mesh.triangle_normal_indices
-            = sclx::array<size_t, 1>{total_face_count};
+        mesh.triangle_normal_indices = sclx::array<size_t, 1>{total_face_count};
         std::copy(
             face_normal_indices.begin(),
             face_normal_indices.end(),
@@ -1821,6 +1821,12 @@ class conforming_point_cloud_impl_t<T, 3> {
             upper_bound[2]
                 = std::max(upper_bound[2], domain_mesh.vertices[i + 2]);
         }
+        lower_bound[0] -= 2.f * nodal_spacing;
+        lower_bound[1] -= 2.f * nodal_spacing;
+        lower_bound[2] -= 2.f * nodal_spacing;
+        upper_bound[0] += 2.f * nodal_spacing;
+        upper_bound[1] += 2.f * nodal_spacing;
+        upper_bound[2] += 2.f * nodal_spacing;
         size_t approx_grid_size[3]{
             static_cast<size_t>(
                 std::ceil((upper_bound[0] - lower_bound[0]) / nodal_spacing)
@@ -1833,11 +1839,10 @@ class conforming_point_cloud_impl_t<T, 3> {
             )
         };
 
-
         std::vector<point_t> bulk_points;
         std::vector<T> bulk_to_boundary_distances;
         std::vector<index_t> closest_boundary_to_bulk;
-        std::vector<int> closest_faces_in_boundary;
+        std::vector<int> closest_vertices_in_boundary;
 
         auto potential_grid_size = 2 * approx_grid_size[0] * approx_grid_size[1]
                                  * approx_grid_size[2];
@@ -1883,10 +1888,11 @@ class conforming_point_cloud_impl_t<T, 3> {
 
             std::vector<T> min_distance_to_boundary
                 = get_sdf_to_points<T>(potential_bulk_points, *domain_sdf.sdf);
-            auto closest_faces_in_boundary_batch = get_nearest_vert_to_points<T>(
-                potential_bulk_points,
-                *domain_sdf.sdf
-            );
+            auto closest_vertices_in_boundary_batch
+                = get_nearest_vert_to_points<T>(
+                    potential_bulk_points,
+                    *domain_sdf.sdf
+                );
             std::vector<uint> closest_boundary_indices(
                 potential_bulk_points.rows(),
                 0
@@ -1896,10 +1902,11 @@ class conforming_point_cloud_impl_t<T, 3> {
             for (const auto& sdf : immersed_boundary_sdfs) {
                 std::vector<T> distance_to_boundary
                     = get_sdf_to_points<T>(potential_bulk_points, *sdf.sdf);
-                std::vector<int> closest_facess = get_nearest_vert_to_points<T>(
-                    potential_bulk_points,
-                    *domain_sdf.sdf
-                );
+                std::vector<int> closest_vertices
+                    = get_nearest_vert_to_points<T>(
+                        potential_bulk_points,
+                        *domain_sdf.sdf
+                    );
 #pragma omp parallel for
                 for (size_t i = 0; i < distance_to_boundary.size(); ++i) {
                     distance_to_boundary[i] *= -1;
@@ -1928,14 +1935,15 @@ class conforming_point_cloud_impl_t<T, 3> {
                     }
                 );
                 std::transform(
-                    closest_facess.begin(),
-                    closest_facess.end(),
-                    closest_faces_in_boundary_batch.begin(),
-                    [&](const int& closest_faces) {
-                        size_t i = &closest_faces - &closest_facess[0];
-                        return closest_faces_in_boundary_batch[i] == boundary_index
-                                 ? closest_faces
-                                 : closest_faces_in_boundary_batch[i];
+                    closest_vertices.begin(),
+                    closest_vertices.end(),
+                    closest_vertices_in_boundary_batch.begin(),
+                    [&](const int& closest_vertex) {
+                        size_t i = &closest_vertex - &closest_vertices[0];
+                        return closest_vertices_in_boundary_batch[i]
+                                    == boundary_index
+                                 ? closest_vertex
+                                 : closest_vertices_in_boundary_batch[i];
                     }
                 );
                 boundary_index++;
@@ -1956,8 +1964,8 @@ class conforming_point_cloud_impl_t<T, 3> {
                     bulk_points.emplace_back();
                     bulk_index = bulk_points.size() - 1;
                     bulk_to_boundary_distances.push_back(distance_to_boundary);
-                    closest_faces_in_boundary.push_back(static_cast<index_t>(
-                        closest_faces_in_boundary_batch[i]
+                    closest_vertices_in_boundary.push_back(static_cast<index_t>(
+                        closest_vertices_in_boundary_batch[i]
                     ));
                     closest_boundary_to_bulk.push_back(
                         closest_boundary_indices[i]
@@ -1973,20 +1981,82 @@ class conforming_point_cloud_impl_t<T, 3> {
         std::vector<point_t> boundary_points;
         std::vector<normal_t> boundary_normals;
         std::vector<size_t> bulk_indices_to_erase;
-        for (size_t i = 0; i < bulk_points.size(); ++ i) {
-            if (std::abs(bulk_to_boundary_distances[i])
-                < std::abs(min_bound_dist_scale_3d) * nodal_spacing) {
+        for (size_t i = 0; i < bulk_points.size(); ++i) {
+            if (bulk_to_boundary_distances[i]
+                    >= min_bound_dist_scale_3d * nodal_spacing
+                && bulk_to_boundary_distances[i]
+                       <= max_bound_dist_scale_3d * nodal_spacing) {
+
                 boundary_points.push_back(bulk_points[i]);
-                auto mesh = &domain_mesh;
+                const auto& boundary_point = boundary_points.back();
+                auto mesh                  = &domain_mesh;
                 if (closest_boundary_to_bulk[i] != 0) {
-                    mesh = &immersed_boundary_meshes[closest_boundary_to_bulk[i] - 1];
+                    mesh = &immersed_boundary_meshes
+                               [closest_boundary_to_bulk[i] - 1];
                 }
-                normal_t normal{{0., 0., 0.}};
-                auto face_normal = &mesh->normals(0, mesh->triangle_normal_indices(closest_faces_in_boundary[i]));
-                normal[0] += face_normal[0];
-                normal[1] += face_normal[1];
-                normal[2] += face_normal[2];
-                boundary_normals.push_back(normal);
+
+                boundary_normals.emplace_back();
+                bulk_indices_to_erase.push_back(i);
+                auto& face_normal = boundary_normals.back();
+
+                auto closest_vertex_index  = closest_vertices_in_boundary[i];
+                auto closest_face_distance = std::numeric_limits<T>::max();
+                size_t closest_face_idx;
+
+                for (size_t n = 0; n < mesh->vertex_face_neighbors.shape()[0];
+                     ++n) {
+                    auto f
+                        = mesh->vertex_face_neighbors(n, closest_vertex_index);
+                    if (f == manifold_mesh_t<T>::no_face) {
+                        continue;
+                    }
+                    naga::point_t<T, 3> centroid{{0, 0, 0}};
+                    for (size_t v = 0; v < 3; ++v) {
+                        centroid[0] += mesh->vertices(
+                            0,
+                            mesh->triangle_vert_indices(v, f)
+                        );
+                        centroid[1] += mesh->vertices(
+                            1,
+                            mesh->triangle_vert_indices(v, f)
+                        );
+                        centroid[2] += mesh->vertices(
+                            2,
+                            mesh->triangle_vert_indices(v, f)
+                        );
+                    }
+                    centroid[0] /= 3;
+                    centroid[1] /= 3;
+                    centroid[2] /= 3;
+
+                    auto distance
+                        = naga::distance_functions::loopless::euclidean<3>{
+                        }(boundary_point, centroid);
+                    if (distance < closest_face_distance) {
+                        closest_face_distance = distance;
+                        closest_face_idx      = f;
+                    }
+                }
+                face_normal = &mesh->normals(
+                    0,
+                    mesh->triangle_normal_indices(closest_face_idx)
+                );
+
+//                if (bulk_to_boundary_distances[i] < 0.f) {
+//                    auto new_position_x = boundary_points.back()[0]
+//                                        - boundary_normals.back()[0]
+//                                              * bulk_to_boundary_distances[i];
+//                    auto new_position_y = boundary_points.back()[1]
+//                                        - boundary_normals.back()[1]
+//                                              * bulk_to_boundary_distances[i];
+//                    auto new_position_z = boundary_points.back()[2]
+//                                        - boundary_normals.back()[2]
+//                                              * bulk_to_boundary_distances[i];
+//                    boundary_points.back()[0]     = new_position_x;
+//                    boundary_points.back()[1]     = new_position_y;
+//                    boundary_points.back()[2]     = new_position_z;
+//                    bulk_to_boundary_distances[i] = 0.f;
+//                }
             }
         }
         std::sort(
@@ -2009,7 +2079,8 @@ class conforming_point_cloud_impl_t<T, 3> {
             std::move(bulk_to_boundary_distances),
             std::move(closest_boundary_to_bulk),
             std::move(boundary_points),
-            std::move(boundary_normals)};
+            std::move(boundary_normals)
+        };
     }
 
     const std::vector<point_t>& bulk_points() const { return bulk_points_; }
