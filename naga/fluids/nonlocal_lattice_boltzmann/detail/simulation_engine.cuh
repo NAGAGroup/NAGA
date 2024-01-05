@@ -480,7 +480,7 @@ class simulation_engine {
                         normal[d] = boundary_normals(d, idx[0]);
                     }
 
-                    auto max_angle = 1e-4;
+                    auto max_angle = 1e-8;
                     auto normal_norm = math::loopless::norm<dimensions>(
                         normal
                     );
@@ -625,13 +625,13 @@ class simulation_engine {
 
         collision_step();
 
+        interpolate_boundaries();
+
         streaming_step();
 
         bounce_back_step();
 
         streaming_step();
-
-        interpolate_boundaries();
 
         ++frame_number_;
     }

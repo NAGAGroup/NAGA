@@ -302,6 +302,78 @@ class nd_cubic_segmentation {
         );
     }
 
+    __host__ nd_cubic_segmentation(
+        const sclx::array<const T, 2>& points,
+        T partition_width
+    )
+        : points_(points), partition_width_(partition_width) {
+        static_assert(!std::is_integral_v<T>);
+        if (points_.shape()[0] != Dimensions) {
+            sclx::throw_exception<std::invalid_argument>(
+                "The number of dimensions in the points array does not match "
+                "the number of dimensions in the segmentation",
+                "naga::"
+            );
+        }
+
+        // compute bounds
+        point_view_t<T, Dimensions> lower_bounds_view(lower_bounds_);
+        point_view_t<T, Dimensions> upper_bounds_view(upper_bounds_);
+        detail::compute_bounds<T, Dimensions>(
+            lower_bounds_view,
+            upper_bounds_view,
+            points_
+        );
+
+        T tol = 1e-3;
+        for (uint i = 0; i < Dimensions; ++i) {
+            if (upper_bounds_[i] - lower_bounds_[i] < tol) {
+                upper_bounds_[i] = lower_bounds_[i] + tol;
+            }
+        }
+
+        // Calculate the partition size
+        T volume = 1.0f;
+        for (uint i = 0; i < Dimensions; ++i) {
+            volume *= upper_bounds_[i] - lower_bounds_[i];
+        }
+
+        sclx::shape_t<Dimensions> segmentation_shape{};
+        for (uint i = 0; i < Dimensions; ++i) {
+            segmentation_shape[i] = static_cast<uint>(std::ceil(
+                (upper_bounds_[i] - lower_bounds_[i]) / partition_width_
+            ));
+        }
+
+        for (uint i = 0; i < Dimensions; ++i) {
+            upper_bounds_[i]
+                = lower_bounds_[i] + segmentation_shape[i] * partition_width_;
+        }
+
+        // Calculate partition sizes
+        detail::compute_partition_sizes<T, Dimensions>(
+            partition_sizes_,
+            segmentation_shape,
+            points_,
+            *this
+        );
+
+        // Calculate the offsets
+        detail::compute_index_offsets<Dimensions>(
+            partition_index_offsets_,
+            partition_sizes_
+        );
+
+        // Calculate the indices
+        detail::assign_indices<T, Dimensions>(
+            indices_,
+            partition_sizes_,
+            partition_index_offsets_,
+            points_,
+            *this
+        );
+    }
+
     template<class PointType>
     __host__ __device__ sclx::md_index_t<Dimensions>
     get_partition_index(const PointType& point) const {

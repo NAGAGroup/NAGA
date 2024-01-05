@@ -80,6 +80,13 @@ class point_t {
 
     point_t() = default;
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "google-explicit-constructor"
+    operator point_view_t<T, Dimensions>() {
+        return point_view_t<T, Dimensions>(data_);
+    }
+#pragma clang diagnostic pop
+
     NAGA_HOST NAGA_DEVICE explicit point_t(const T (&x)[Dimensions]) {
         for (uint i = 0; i < Dimensions; ++i) {
             data_[i] = x[i];
