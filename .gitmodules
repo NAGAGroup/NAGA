@@ -6,13 +6,13 @@
 	url = https://github.com/jlblancoc/nanoflann.git
 [submodule "extern/sdf"]
 	path = extern/sdf
-	url = https://github.com/sxyu/sdf
+	url = https://github.com/sxyu/sdf.git
 [submodule "extern/eigen"]
 	path = extern/eigen
-	url = https://gitlab.com/libeigen/eigen
+	url = https://gitlab.com/libeigen/eigen.git
 [submodule "extern/AudioFile"]
 	path = extern/AudioFile
-	url = https://github.com/adamstark/AudioFile
+	url = https://github.com/adamstark/AudioFile.git
 [submodule "extern/tinyobjloader"]
 	path = extern/tinyobjloader
-	url = https://github.com/tinyobjloader/tinyobjloader
+	url = https://github.com/tinyobjloader/tinyobjloader.git
