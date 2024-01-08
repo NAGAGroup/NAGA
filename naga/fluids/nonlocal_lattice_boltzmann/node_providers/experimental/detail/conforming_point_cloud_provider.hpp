@@ -146,6 +146,8 @@ class conforming_point_cloud_t<T, 3> {
 
     const std::vector<index_t>& closest_boundary_to_bulk() const;
 
+    const std::vector<point_t>& ghost_points() const;
+
   private:
     friend class conforming_point_cloud_impl_t<value_type, dimensions>;
     std::shared_ptr<conforming_point_cloud_impl_t<value_type, dimensions>> impl{};

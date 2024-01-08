@@ -173,8 +173,14 @@ class audio_sink_observer : public simulation_observer<Lattice> {
 
         for (const auto& signal : sink_signal_) {
             if (std::abs(signal) > params.nondim_factors.density_scale * 2) {
+                save();
                 sclx::throw_exception<std::runtime_error>(
                     "Sink signal is too large. Simulation likely unstable."
+                );
+            } else if (std::isnan(signal)) {
+                save();
+                sclx::throw_exception<std::runtime_error>(
+                    "Sink signal is NaN. Simulation likely unstable."
                 );
             }
         }

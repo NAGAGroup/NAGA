@@ -45,6 +45,7 @@ struct simulation_nodes {
                                            // layer, with size num_layer_points
     size_t num_bulk_points{};
     size_t num_layer_points{};
+    size_t num_ghost_nodes{0};
     size_t num_boundary_points{};
 
     T nodal_spacing{};
@@ -58,6 +59,7 @@ struct simulation_nodes {
             layer_absorption,
             num_bulk_points,
             num_layer_points,
+            num_ghost_nodes,
             num_boundary_points,
             nodal_spacing};
     }

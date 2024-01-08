@@ -47,6 +47,8 @@
 
 namespace naga::fluids::nonlocal_lbm::detail {
 
+extern float boundary_absorption_coefficient;
+
 template<class Lattice>
 __device__ void compute_unitless_macroscopic_quants(
     typename lattice_traits<Lattice>::value_type& density_result,
@@ -121,7 +123,7 @@ class simulation_engine {
             );
         }
         size_t total_points = domain.num_bulk_points + domain.num_layer_points
-                            + domain.num_boundary_points;
+                            + domain.num_boundary_points + domain.num_ghost_nodes;
         if (domain.points.shape()[1] != total_points) {
             sclx::throw_exception<std::invalid_argument>(
                 "The number of points in the simulation domain does not match "
@@ -154,10 +156,7 @@ class simulation_engine {
         {
             // We use the nearest neighbors algorithm to provide the
             // interpolation indices to the radial point method.
-            sclx::array<value_type, 2> bulk_points = domain.points.get_range(
-                {0},
-                {domain.num_bulk_points + domain.num_layer_points}
-            );
+            sclx::array<value_type, 2> bulk_points = domain.points;
             sclx::array<value_type, 2> boundary_points
                 = domain.points.get_range(
                     {domain.num_bulk_points + domain.num_layer_points},
@@ -220,7 +219,33 @@ class simulation_engine {
         density_source_term_
             = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
 
+        auto absorption_coeffs = domain_.layer_absorption;
+        auto new_num_layer_points  = domain_.num_layer_points + domain_.num_boundary_points + domain_.num_ghost_nodes;
+        auto boundary_absorption = boundary_absorption_coefficient;
+        sclx::array<value_type, 1> new_layer_absorption{
+            {new_num_layer_points}
+        };
+        std::copy(
+            absorption_coeffs.begin(),
+            absorption_coeffs.end(),
+            new_layer_absorption.begin()
+        );
+        std::fill(
+            new_layer_absorption.begin() + absorption_coeffs.elements(),
+            new_layer_absorption.end(),
+            boundary_absorption
+        );
+        domain_.layer_absorption = new_layer_absorption;
+        domain_.num_layer_points = new_num_layer_points;
+
         pml_absorption_operator_ = pml_absorption_operator<Lattice>{this};
+
+
+        // before the boundary condition change to use acoustic damping instead of bounce back,
+        // the total number of points was num_bulk + num_layer + num_boundary
+        // now, it is num_bulk + num_layer, so we need to subtract num_boundary as observers
+        // still expect the old way, for the absorption step it will be added back temporarily
+        domain_.num_layer_points -= domain_.num_boundary_points;
 
         reset();
     }
@@ -259,6 +284,8 @@ class simulation_engine {
     }
 
     void compute_macroscopic_values() {
+        interpolate_boundaries();
+
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             sclx::local_array<value_type, 2> f_shared(
                 handler,
@@ -327,6 +354,12 @@ class simulation_engine {
     }
 
     void collision_step() {
+        interpolate_boundaries();
+
+        domain_.num_layer_points += domain_.num_boundary_points;
+        pml_absorption_operator_.apply();
+        domain_.num_layer_points -= domain_.num_boundary_points;
+
         sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
             sclx::array_list<value_type, 1, lattice_size> lattice_distributions(
                 solution_.lattice_distributions
@@ -390,11 +423,7 @@ class simulation_engine {
             );
         }).get();
 
-        if (domain_.num_layer_points == 0) {
-            return;
-        }
-
-        pml_absorption_operator_.apply();
+        interpolate_boundaries();
     }
 
     void interpolate_boundaries() {
@@ -403,13 +432,10 @@ class simulation_engine {
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& f_alpha = solution_.lattice_distributions[alpha];
             sclx::array<value_type, 1> boundary_f_alpha = f_alpha.get_range(
-                {domain_.num_bulk_points + domain_.num_layer_points},
+                {domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes},
                 {domain_.points.shape()[1]}
             );
-            const sclx::array<value_type, 1>& bulk_f_alpha = f_alpha.get_range(
-                {0},
-                {domain_.num_bulk_points + domain_.num_layer_points}
-            );
+            const sclx::array<value_type, 1>& bulk_f_alpha = f_alpha;
             interpolation_futures.emplace_back(
                 boundary_interpolator_ptr_->interpolate(
                     bulk_f_alpha,
@@ -441,7 +467,7 @@ class simulation_engine {
             for (int alpha = 0; alpha < lattice_size; ++alpha) {
                 f_boundary[alpha]
                     = solution_.lattice_distributions[alpha].get_range(
-                        {domain_.num_bulk_points + domain_.num_layer_points},
+                        {domain_.points.shape()[1] - domain_.num_boundary_points},
                         {domain_.points.shape()[1]}
                     );
             }
@@ -480,7 +506,7 @@ class simulation_engine {
                         normal[d] = boundary_normals(d, idx[0]);
                     }
 
-                    auto max_angle = 1e-8;
+                    auto max_angle = 1e-3;
                     auto normal_norm = math::loopless::norm<dimensions>(
                         normal
                     );
@@ -501,7 +527,7 @@ class simulation_engine {
                             normal_dot_calpha / (normal_norm * calpha_norm)
                         );
                         if (angle_normal_calpha < max_angle) {
-                            continue;
+                            result_arrays[alpha][idx[0]] = lattice_weights[alpha];
                         }
                         result_arrays[alpha][idx[0]]
                             = result_arrays[lattice_interface<
@@ -555,6 +581,7 @@ class simulation_engine {
     }
 
     void streaming_step() {
+
         using velocity_map = ::naga::nonlocal_calculus::
             constant_velocity_field<value_type, dimensions>;
 
@@ -568,7 +595,7 @@ class simulation_engine {
             = parameters_.time_step / time_scale * length_scale / 2.f;
 
         size_t boundary_start
-            = domain_.num_bulk_points + domain_.num_layer_points;
+            = domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes;
 
         std::vector<std::pair<int, std::future<void>>> streaming_futures(
             max_concurrency_
@@ -624,8 +651,6 @@ class simulation_engine {
         apply_density_source_terms();
 
         collision_step();
-
-        interpolate_boundaries();
 
         streaming_step();
 

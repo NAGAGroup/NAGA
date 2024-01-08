@@ -347,10 +347,12 @@ class conforming_point_cloud_provider<
             = conforming_point_cloud.bulk_points().size();
         size_t num_boundary_points
             = conforming_point_cloud.boundary_points().size();
-        size_t num_points = num_bulk_and_layer_points + num_boundary_points;
+        size_t num_ghost_points = conforming_point_cloud.ghost_points().size();
+        size_t num_points = num_bulk_and_layer_points + num_boundary_points + num_ghost_points;
 
         nodes_.nodal_spacing       = approximate_spacing;
         nodes_.num_boundary_points = num_boundary_points;
+        nodes_.num_ghost_nodes     = num_ghost_points;
         nodes_.points = sclx::array<value_type, 2>{dimensions, num_points};
         nodes_.boundary_normals
             = sclx::array<value_type, 2>{dimensions, num_boundary_points};
@@ -408,8 +410,7 @@ class conforming_point_cloud_provider<
             absorption_coefficients.begin(),
             absorption_coefficients.end(),
             [&](const value_type & x) {
-                size_t i = &x - &absorption_coefficients[0];
-                return absorption_coefficients[i] == 0.0;
+                return x == 0.0;
             }
         );
         size_t num_layer_points = std::count_if(
@@ -442,10 +443,18 @@ class conforming_point_cloud_provider<
             }
         }
 
+        const auto& ghost_points = conforming_point_cloud.ghost_points();
+        for (size_t i = 0; i < num_ghost_points; ++i) {
+            for (size_t j = 0; j < dimensions; ++j) {
+                nodes_.points(j, i + num_bulk_and_layer_points)
+                    = ghost_points[i][j];
+            }
+        }
+
         const auto& boundary_points = conforming_point_cloud.boundary_points();
         for (size_t i = 0; i < num_boundary_points; ++i) {
             for (size_t j = 0; j < dimensions; ++j) {
-                nodes_.points(j, i + num_bulk_and_layer_points)
+                nodes_.points(j, i + num_bulk_and_layer_points + num_ghost_points)
                     = boundary_points[i][j];
                 nodes_.boundary_normals(j, i)
                     = conforming_point_cloud.boundary_normals()[i][j];
