@@ -232,6 +232,11 @@ class simulation_engine {
         );
         std::fill(
             new_layer_absorption.begin() + absorption_coeffs.elements(),
+            new_layer_absorption.begin() + absorption_coeffs.elements() + domain_.num_ghost_nodes,
+            value_type{0}
+        );
+        std::fill(
+            new_layer_absorption.begin() + absorption_coeffs.elements() + domain_.num_ghost_nodes,
             new_layer_absorption.end(),
             boundary_absorption
         );
