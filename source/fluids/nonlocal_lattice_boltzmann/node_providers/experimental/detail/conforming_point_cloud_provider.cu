@@ -1895,9 +1895,9 @@ class conforming_point_cloud_impl_t<T, 3> {
         }
         for (size_t i = 0; i < 3; ++i) {
             lower_bound[i]
-                -= min_bound_dist_scaled_ghost_node_3d * nodal_spacing;
-            upper_bound[i]
                 += min_bound_dist_scaled_ghost_node_3d * nodal_spacing;
+            upper_bound[i]
+                -= min_bound_dist_scaled_ghost_node_3d * nodal_spacing;
         }
         size_t approx_grid_size[3]{
             static_cast<size_t>(

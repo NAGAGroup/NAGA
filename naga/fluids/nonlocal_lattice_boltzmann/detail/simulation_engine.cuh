@@ -156,7 +156,10 @@ class simulation_engine {
         {
             // We use the nearest neighbors algorithm to provide the
             // interpolation indices to the radial point method.
-            sclx::array<value_type, 2> bulk_points = domain.points;
+            sclx::array<value_type, 2> bulk_points = domain.points.get_range(
+                {0},
+                {domain.num_bulk_points + domain.num_layer_points}
+            );
             sclx::array<value_type, 2> boundary_points
                 = domain.points.get_range(
                     {domain.num_bulk_points + domain.num_layer_points},
@@ -198,13 +201,8 @@ class simulation_engine {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
         for (int t = 0; t < lattice_size; ++t) {
-            if (t < max_concurrency_) {
-                temporary_distributions_[t]
-                    = sclx::array<value_type, 1>{domain_.points.shape()[1]};
-            } else {
-                temporary_distributions_[t]
-                    = temporary_distributions_[t % max_concurrency_];
-            }
+            temporary_distributions_[t]
+                = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
 
         solution_.macroscopic_values.fluid_velocity
@@ -428,19 +426,26 @@ class simulation_engine {
             );
         }).get();
 
-        interpolate_boundaries();
+        interpolate_boundaries(true);
     }
 
-    void interpolate_boundaries() {
+    void interpolate_boundaries(bool ghost_nodes_only = false) {
         std::vector<std::future<void>> interpolation_futures;
         interpolation_futures.reserve(lattice_size);
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& f_alpha = solution_.lattice_distributions[alpha];
+            if (ghost_nodes_only) {
+                auto& f_alpha_cache = temporary_distributions_[alpha];
+                sclx::assign_array(f_alpha, f_alpha_cache).get();
+            }
             sclx::array<value_type, 1> boundary_f_alpha = f_alpha.get_range(
                 {domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes},
                 {domain_.points.shape()[1]}
             );
-            const sclx::array<value_type, 1>& bulk_f_alpha = f_alpha;
+            const sclx::array<value_type, 1>& bulk_f_alpha = f_alpha.get_range(
+                {0},
+                {domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes}
+            );
             interpolation_futures.emplace_back(
                 boundary_interpolator_ptr_->interpolate(
                     bulk_f_alpha,
@@ -452,6 +457,24 @@ class simulation_engine {
 
         for (auto& fut : interpolation_futures) {
             fut.get();
+        }
+
+        if (!ghost_nodes_only) {
+            return;
+        }
+
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            auto& f_alpha = solution_.lattice_distributions[alpha];
+            auto& f_alpha_cache = temporary_distributions_[alpha];
+            auto f_alpha_boundary = f_alpha.get_range(
+                {domain_.points.shape()[1] - domain_.num_boundary_points},
+                {domain_.points.shape()[1]}
+            );
+            auto f_alpha_cache_boundary = f_alpha_cache.get_range(
+                {domain_.points.shape()[1] - domain_.num_boundary_points},
+                {domain_.points.shape()[1]}
+            );
+            sclx::assign_array(f_alpha_cache_boundary, f_alpha_boundary).get();
         }
     }
 
