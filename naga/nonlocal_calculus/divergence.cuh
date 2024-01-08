@@ -506,6 +506,16 @@ class divergence_operator {
     template<class TO, uint DimensionsO>
     friend class advection_operator;
 
+    divergence_operator slice(size_t new_size) const {
+        divergence_operator result;
+        result = *this;
+        result.weights_ = weights_.get_range({0}, {new_size});
+        result.support_indices_ = support_indices_.get_range({0}, {new_size});
+        result.cusparse_desc_.reset();
+        result.cusparse_enabled_ = false;
+        return result;
+    }
+
   private:
     static divergence_operator create(
         const sclx::array<T, 2>& domain,

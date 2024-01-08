@@ -113,58 +113,56 @@ class vtk_observer : public simulation_observer<Lattice> {
             previous_frame_future_.get();
         }
 
+        auto number_of_points_no_ghost = domain.points.shape()[1] - domain.num_ghost_nodes;
+
         vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
-        points->SetNumberOfPoints(static_cast<vtkIdType>(domain.points.shape(
-        )[1]));
+        points->SetNumberOfPoints(static_cast<vtkIdType>(number_of_points_no_ghost));
 
         using vtk_array_type = typename get_vtk_array_type<value_type>::type;
 
         vtkSmartPointer<vtk_array_type> f
             = vtkSmartPointer<vtk_array_type>::New();
         f->SetNumberOfComponents(Lattice::size);
-        f->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1]));
+        f->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost));
         f->SetName("f");
 
         vtkSmartPointer<vtk_array_type> density
             = vtkSmartPointer<vtk_array_type>::New();
         density->SetNumberOfComponents(1);
-        density->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape(
-        )[1]));
+        density->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost));
         density->SetName("density");
 
         vtkSmartPointer<vtk_array_type> velocity
             = vtkSmartPointer<vtk_array_type>::New();
         velocity->SetNumberOfComponents(3);
-        velocity->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape(
-        )[1]));
+        velocity->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost));
         velocity->SetName("velocity");
 
         vtkSmartPointer<vtk_array_type> absorption
             = vtkSmartPointer<vtk_array_type>::New();
         absorption->SetNumberOfComponents(1);
         absorption->SetNumberOfTuples(
-            static_cast<vtkIdType>(domain.points.shape()[1])
+            static_cast<vtkIdType>(number_of_points_no_ghost)
         );
         absorption->SetName("absorption");
 
         vtkSmartPointer<vtk_array_type> normals
             = vtkSmartPointer<vtk_array_type>::New();
         normals->SetNumberOfComponents(3);
-        normals->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape(
-        )[1]));
+        normals->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost));
         normals->SetName("normals");
 
         vtkSmartPointer<vtkIntArray> type = vtkSmartPointer<vtkIntArray>::New();
         type->SetNumberOfComponents(1);
-        type->SetNumberOfTuples(static_cast<vtkIdType>(domain.points.shape()[1])
+        type->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost)
         );
         type->SetName("type");
 
         vtkSmartPointer<vtkCellArray> cells
             = vtkSmartPointer<vtkCellArray>::New();
-        cells->Allocate(domain.points.shape()[1]);
+        cells->Allocate(number_of_points_no_ghost);
 
-        for (vtkIdType i = 0; i < domain.points.shape()[1]; ++i) {
+        for (vtkIdType i = 0; i < number_of_points_no_ghost; ++i) {
             value_type point[3]{0, 0, 0};
             for (int d = 0; d < Lattice::dimensions; ++d) {
                 point[d] = domain.points(d, i);
@@ -248,12 +246,14 @@ void update_approx(
     const solution_t& solution
 ) {
         if (save_points_.empty()) {
+            auto number_of_points_no_ghost = domain.points.shape()[1] - domain.num_ghost_nodes;
+
             // randomly choose save points given the approximate number of save
             // points
             save_points_.reserve(approx_save_points_);
             std::uniform_int_distribution<size_t> dist(
                 0,
-                domain.points.shape()[1] - 1
+                number_of_points_no_ghost - 1
             );
             std::mt19937 gen;
             for (size_t i = 0; i < approx_save_points_; ++i) {

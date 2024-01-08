@@ -504,6 +504,14 @@ class advection_operator {
         set_max_concurrent_threads(max_concurrent_threads_);
     }
 
+    advection_operator slice(size_t new_size) const {
+        advection_operator new_op;
+        new_op = *this;
+        *new_op.divergence_op_ = divergence_op_->slice(new_size);
+        new_op.domain_size_   = new_size;
+        return new_op;
+    }
+
     //    void enable_cusparse_algorithm() {
     //        divergence_op_->enable_cusparse_algorithm();
     //

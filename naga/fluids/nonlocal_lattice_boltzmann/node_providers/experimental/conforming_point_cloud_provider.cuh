@@ -443,21 +443,21 @@ class conforming_point_cloud_provider<
             }
         }
 
-        const auto& ghost_points = conforming_point_cloud.ghost_points();
-        for (size_t i = 0; i < num_ghost_points; ++i) {
-            for (size_t j = 0; j < dimensions; ++j) {
-                nodes_.points(j, i + num_bulk_and_layer_points)
-                    = ghost_points[i][j];
-            }
-        }
-
         const auto& boundary_points = conforming_point_cloud.boundary_points();
         for (size_t i = 0; i < num_boundary_points; ++i) {
             for (size_t j = 0; j < dimensions; ++j) {
-                nodes_.points(j, i + num_bulk_and_layer_points + num_ghost_points)
+                nodes_.points(j, i + num_bulk_and_layer_points)
                     = boundary_points[i][j];
                 nodes_.boundary_normals(j, i)
                     = conforming_point_cloud.boundary_normals()[i][j];
+            }
+        }
+
+        const auto& ghost_points = conforming_point_cloud.ghost_points();
+        for (size_t i = 0; i < num_ghost_points; ++i) {
+            for (size_t j = 0; j < dimensions; ++j) {
+                nodes_.points(j, i + num_bulk_and_layer_points + num_boundary_points)
+                    = ghost_points[i][j];
             }
         }
     }

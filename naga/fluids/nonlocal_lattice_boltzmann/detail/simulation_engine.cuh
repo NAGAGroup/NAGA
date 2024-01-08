@@ -189,6 +189,42 @@ class simulation_engine {
             );
         }
 
+        if (domain.num_ghost_nodes > 0) {
+            // We use the nearest neighbors algorithm to provide the
+            // interpolation indices to the radial point method.
+            sclx::array<value_type, 2> bulk_points = domain.points.get_range(
+                {0},
+                {domain.points.shape()[1] - domain.num_ghost_nodes}
+            );
+            sclx::array<value_type, 2> ghost_points
+                = domain.points.get_range(
+                    {domain.points.shape()[1] - domain.num_ghost_nodes},
+                    {domain.points.shape()[1]}
+                );
+
+            uint num_interp_points = 32;
+            segmentation::nd_cubic_segmentation<value_type, dimensions>
+                source_segmentation(bulk_points, num_interp_points);
+            naga::default_point_map<value_type, dimensions> ghost_point_map{
+                ghost_points
+            };
+            auto [distances_squared, indices]
+                = naga::segmentation::batched_nearest_neighbors(
+                    num_interp_points,
+                    ghost_point_map,
+                    source_segmentation
+                );
+
+            ghost_interpolator_ptr_ = std::make_shared<interpolater_t>(
+                interpolater_t::create_interpolator(
+                    bulk_points,
+                    indices,
+                    ghost_point_map,
+                    domain.nodal_spacing
+                )
+            );
+        }
+
         advection_operator_ptr_ = std::make_shared<advection_operator_t>(
             advection_operator_t::create(domain.points)
         );
@@ -230,11 +266,6 @@ class simulation_engine {
         );
         std::fill(
             new_layer_absorption.begin() + absorption_coeffs.elements(),
-            new_layer_absorption.begin() + absorption_coeffs.elements() + domain_.num_ghost_nodes,
-            value_type{0}
-        );
-        std::fill(
-            new_layer_absorption.begin() + absorption_coeffs.elements() + domain_.num_ghost_nodes,
             new_layer_absorption.end(),
             boundary_absorption
         );
@@ -249,6 +280,7 @@ class simulation_engine {
         // now, it is num_bulk + num_layer, so we need to subtract num_boundary as observers
         // still expect the old way, for the absorption step it will be added back temporarily
         domain_.num_layer_points -= domain_.num_boundary_points;
+        domain_.num_layer_points -= domain_.num_ghost_nodes;
 
         reset();
     }
@@ -359,10 +391,6 @@ class simulation_engine {
     void collision_step() {
         interpolate_boundaries();
 
-        domain_.num_layer_points += domain_.num_boundary_points;
-        pml_absorption_operator_.apply();
-        domain_.num_layer_points -= domain_.num_boundary_points;
-
         sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
             sclx::array_list<value_type, 1, lattice_size> lattice_distributions(
                 solution_.lattice_distributions
@@ -426,18 +454,20 @@ class simulation_engine {
             );
         }).get();
 
-        interpolate_boundaries(true);
+        interpolate_ghost_nodes();
+
+        domain_.num_layer_points += domain_.num_boundary_points;
+        domain_.num_layer_points += domain_.num_ghost_nodes;
+        pml_absorption_operator_.apply();
+        domain_.num_layer_points -= domain_.num_boundary_points;
+        domain_.num_layer_points -= domain_.num_ghost_nodes;
     }
 
-    void interpolate_boundaries(bool ghost_nodes_only = false) {
+    void interpolate_boundaries() {
         std::vector<std::future<void>> interpolation_futures;
         interpolation_futures.reserve(lattice_size);
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& f_alpha = solution_.lattice_distributions[alpha];
-            if (ghost_nodes_only) {
-                auto& f_alpha_cache = temporary_distributions_[alpha];
-                sclx::assign_array(f_alpha, f_alpha_cache).get();
-            }
             sclx::array<value_type, 1> boundary_f_alpha = f_alpha.get_range(
                 {domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes},
                 {domain_.points.shape()[1]}
@@ -458,23 +488,35 @@ class simulation_engine {
         for (auto& fut : interpolation_futures) {
             fut.get();
         }
+    }
 
-        if (!ghost_nodes_only) {
+    void interpolate_ghost_nodes() {
+        if (domain_.num_ghost_nodes == 0) {
             return;
         }
-
+        std::vector<std::future<void>> interpolation_futures;
+        interpolation_futures.reserve(lattice_size);
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& f_alpha = solution_.lattice_distributions[alpha];
-            auto& f_alpha_cache = temporary_distributions_[alpha];
-            auto f_alpha_boundary = f_alpha.get_range(
-                {domain_.points.shape()[1] - domain_.num_boundary_points},
+            const sclx::array<value_type, 1>& bulk_f_alpha = f_alpha.get_range(
+                {0},
+                {domain_.points.shape()[1] - domain_.num_ghost_nodes}
+            );
+            const sclx::array<value_type, 1>& ghost_f_alpha = f_alpha.get_range(
+                {domain_.points.shape()[1] - domain_.num_ghost_nodes},
                 {domain_.points.shape()[1]}
             );
-            auto f_alpha_cache_boundary = f_alpha_cache.get_range(
-                {domain_.points.shape()[1] - domain_.num_boundary_points},
-                {domain_.points.shape()[1]}
+            interpolation_futures.emplace_back(
+                ghost_interpolator_ptr_->interpolate(
+                    bulk_f_alpha,
+                    ghost_f_alpha,
+                    lattice_interface<Lattice>::lattice_weights().vals[alpha]
+                )
             );
-            sclx::assign_array(f_alpha_cache_boundary, f_alpha_boundary).get();
+        }
+
+        for (auto& fut : interpolation_futures) {
+            fut.get();
         }
     }
 
@@ -495,7 +537,7 @@ class simulation_engine {
             for (int alpha = 0; alpha < lattice_size; ++alpha) {
                 f_boundary[alpha]
                     = solution_.lattice_distributions[alpha].get_range(
-                        {domain_.points.shape()[1] - domain_.num_boundary_points},
+                        {domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes},
                         {domain_.points.shape()[1]}
                     );
             }
@@ -554,9 +596,9 @@ class simulation_engine {
                         auto angle_normal_calpha = math::acos(
                             normal_dot_calpha / (normal_norm * calpha_norm)
                         );
-                        if (angle_normal_calpha < max_angle) {
-                            result_arrays[alpha][idx[0]] = lattice_weights[alpha];
-                        }
+//                        if (angle_normal_calpha < max_angle) {
+//                            result_arrays[alpha][idx[0]] = lattice_weights[alpha];
+//                        }
                         result_arrays[alpha][idx[0]]
                             = result_arrays[lattice_interface<
                                 Lattice>::get_bounce_back_idx(alpha)][idx[0]];
@@ -564,6 +606,8 @@ class simulation_engine {
                 }
             );
         }).get();
+
+        interpolate_ghost_nodes();
     }
 
     void apply_density_source_terms() {
@@ -784,6 +828,7 @@ class simulation_engine {
 
         ar(*advection_operator_ptr_);
         ar(*boundary_interpolator_ptr_);
+        ar(*ghost_interpolator_ptr_);
 
         sclx::serialize_array(ar, density_source_term_);
         for (auto& tmp : temporary_distributions_) {
@@ -825,6 +870,8 @@ class simulation_engine {
         ar(*advection_operator_ptr_);
         boundary_interpolator_ptr_ = std::make_shared<interpolater_t>();
         ar(*boundary_interpolator_ptr_);
+        ghost_interpolator_ptr_ = std::make_shared<interpolater_t>();
+        ar(*ghost_interpolator_ptr_);
 
         sclx::deserialize_array(ar, density_source_term_);
         for (auto& tmp : temporary_distributions_) {
@@ -846,6 +893,7 @@ class simulation_engine {
 
     using interpolater_t = interpolation::radial_point_method<value_type>;
     std::shared_ptr<interpolater_t> boundary_interpolator_ptr_{};
+    std::shared_ptr<interpolater_t> ghost_interpolator_ptr_{};
 
     sclx::array<value_type, 1> density_source_term_{};
     sclx::array<value_type, 1> temporary_distributions_[lattice_size]{};
