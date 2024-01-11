@@ -304,6 +304,10 @@ class pml_absorption_operator<d2q9_lattice<T>> {
 
     pml_absorption_operator() = default;
 
+    auto get_Q1_values() const {
+        return lattice_Q1_values_;
+    }
+
     explicit pml_absorption_operator(simulation_engine<lattice>* engine)
         : engine_(engine) {
         std::vector<sclx::array<value_type, 1>> lattice_Q1_values_raw;
@@ -882,6 +886,14 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                 subtask
             );
         }).get();
+    }
+
+    auto get_Q1_values() const {
+        return lattice_Q1_values_;
+    }
+
+    auto get_Q2_values() const {
+        return lattice_Q2_values_;
     }
 
     template<class Archive>

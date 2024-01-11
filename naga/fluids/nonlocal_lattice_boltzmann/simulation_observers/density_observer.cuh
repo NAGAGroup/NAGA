@@ -79,7 +79,7 @@ class density_observer : public simulation_observer<Lattice> {
         using namespace naga::segmentation;
         nd_cubic_segmentation<value_type, dimensions> domain_segmentation(
             domain.points,
-            32
+            uint{32}
         );
         naga::default_point_map<value_type, dimensions> location_map{
             observer_location_};

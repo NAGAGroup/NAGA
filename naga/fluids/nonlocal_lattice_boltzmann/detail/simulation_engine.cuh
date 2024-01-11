@@ -150,6 +150,44 @@ class simulation_engine {
             );
         }
 
+        using div_op_t = naga::nonlocal_calculus::
+            divergence_operator<value_type, dimensions>;
+        auto divergence_operator = div_op_t::create(
+            domain.points.get_range(
+                {0},
+                {domain.points.shape()[1] - domain.num_ghost_nodes}
+            ),
+            domain.points.get_range(
+                {0},
+                {domain.points.shape()[1] - domain.num_ghost_nodes
+                 - domain.num_boundary_points}
+            ),
+            /*override_query_size*/ domain.points.shape()[1]
+        );
+        {
+            auto boundary_div_operator = div_op_t::create(
+                domain.points,
+                domain.points.get_range(
+                    {domain.points.shape()[1] - domain.num_ghost_nodes
+                     - domain.num_boundary_points},
+                    {domain.points.shape()[1]}
+                )
+            );
+
+            divergence_operator.set_subspace_to(
+                boundary_div_operator,
+                domain.points.shape()[1] - domain.num_ghost_nodes
+                    - domain.num_boundary_points,
+                domain.points.shape()[1]
+            );
+        }
+
+        advection_operator_ptr_ = std::make_shared<advection_operator_t>(
+            advection_operator_t::create(divergence_operator)
+        );
+
+        pml_advection_operator_ptr_ = advection_operator_ptr_;
+
         {
             // We use the nearest neighbors algorithm to provide the
             // interpolation indices to the radial point method.
@@ -223,12 +261,6 @@ class simulation_engine {
             );
         }
 
-        advection_operator_ptr_ = std::make_shared<advection_operator_t>(
-            advection_operator_t::create(domain.points)
-        );
-
-        pml_advection_operator_ptr_ = advection_operator_ptr_;
-
         linalg::detail::batched_matrix_inverse_executor<
             value_type>::clear_problem_definitions();
         max_concurrency_ = std::min(
@@ -281,13 +313,17 @@ class simulation_engine {
             0.f
         );
 
-        //        std::copy(
-        //            absorption_coeffs.begin(),
-        //            absorption_coeffs.begin() + domain_.num_layer_points,
-        //            new_layer_absorption.begin()
-        //        );
+        //        if (absorption_coeffs.elements() > 0) {
+        //            std::copy(
+        //                absorption_coeffs.begin(),
+        //                absorption_coeffs.begin() +
+        //                domain_.num_layer_points,
+        //                new_layer_absorption.begin()
+        //            );
+        //        }
         //        std::fill(
-        //            new_layer_absorption.begin() + domain_.num_layer_points,
+        //            new_layer_absorption.begin() +
+        //            domain_.num_layer_points,
         //            new_layer_absorption.end(),
         //            boundary_absorption
         //        );
@@ -356,7 +392,10 @@ class simulation_engine {
                         && global_idx < boundary_end) {
                         for (uint d = 0; d < dimensions; ++d) {
                             pml_absorbing_directions(d, idx[0])
-                                = boundary_normals(d, global_idx - boundary_start);
+                                = boundary_normals(
+                                    d,
+                                    global_idx - boundary_start
+                                );
                         }
                         return;
                     }
@@ -417,7 +456,7 @@ class simulation_engine {
     }
 
     void compute_macroscopic_values() {
-        interpolate_ghost_nodes();
+        interpolate_ghost_nodes(/*interpolate_Q=*/true);
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             sclx::local_array<value_type, 2> f_shared(
                 handler,
@@ -549,15 +588,11 @@ class simulation_engine {
             );
         }).get();
 
-        interpolate_ghost_nodes();
         domain_.num_layer_points += domain_.num_boundary_points;
         domain_.num_layer_points += domain_.num_ghost_nodes;
-        parameters_.lattice_time_step /= 2;
         pml_absorption_operator_.apply();
         domain_.num_layer_points -= domain_.num_boundary_points;
         domain_.num_layer_points -= domain_.num_ghost_nodes;
-        parameters_.lattice_time_step *= 2;
-        interpolate_ghost_nodes();
     }
 
     void interpolate_boundaries() {
@@ -589,7 +624,7 @@ class simulation_engine {
         }
     }
 
-    void interpolate_ghost_nodes() {
+    void interpolate_ghost_nodes(bool interpolate_Q) {
         if (domain_.num_ghost_nodes == 0) {
             return;
         }
@@ -609,6 +644,52 @@ class simulation_engine {
                 ghost_interpolator_ptr_->interpolate(
                     bulk_f_alpha,
                     ghost_f_alpha,
+                    lattice_interface<Lattice>::lattice_weights().vals[alpha]
+                )
+            );
+
+            if (!interpolate_Q) {
+                continue;
+            }
+
+            auto Q1_alpha = pml_absorption_operator_.get_Q1_values()[alpha];
+            const sclx::array<value_type, 1>& bulk_Q1_alpha
+                = Q1_alpha.get_range(
+                    {0},
+                    {domain_.points.shape()[1] - domain_.num_ghost_nodes}
+                );
+            const sclx::array<value_type, 1>& ghost_Q1_alpha
+                = Q1_alpha.get_range(
+                    {domain_.points.shape()[1] - domain_.num_ghost_nodes},
+                    {domain_.points.shape()[1]}
+                );
+            interpolation_futures.emplace_back(
+                ghost_interpolator_ptr_->interpolate(
+                    bulk_Q1_alpha,
+                    ghost_Q1_alpha,
+                    lattice_interface<Lattice>::lattice_weights().vals[alpha]
+                )
+            );
+
+            if constexpr (dimensions == 2) {
+                continue;
+            }
+
+            auto Q2_alpha = pml_absorption_operator_.get_Q2_values()[alpha];
+            const sclx::array<value_type, 1>& bulk_Q2_alpha
+                = Q2_alpha.get_range(
+                    {0},
+                    {domain_.points.shape()[1] - domain_.num_ghost_nodes}
+                );
+            const sclx::array<value_type, 1>& ghost_Q2_alpha
+                = Q2_alpha.get_range(
+                    {domain_.points.shape()[1] - domain_.num_ghost_nodes},
+                    {domain_.points.shape()[1]}
+                );
+            interpolation_futures.emplace_back(
+                ghost_interpolator_ptr_->interpolate(
+                    bulk_Q2_alpha,
+                    ghost_Q2_alpha,
                     lattice_interface<Lattice>::lattice_weights().vals[alpha]
                 )
             );
@@ -700,13 +781,14 @@ class simulation_engine {
                             absorbing_dir_dot_calpha
                             / (normal_norm * calpha_norm)
                         ));
-                        if (naga::math::abs(
-                                std::
-                                    fmod(angle_normal_calpha, naga::math::pi<value_type>)
-                            )
-                            < max_angle) {
-                            continue;
-                        }
+                        //                        if (angle_normal_calpha <
+                        //                        max_angle
+                        //                            ||
+                        //                            (naga::math::pi<value_type>
+                        //                            - angle_normal_calpha
+                        //                               ) < max_angle) {
+                        //                            continue;
+                        //                        }
                         result_arrays[alpha][idx[0]]
                             = result_arrays[lattice_interface<
                                 Lattice>::get_bounce_back_idx(alpha)][idx[0]];
@@ -716,107 +798,169 @@ class simulation_engine {
         }).get();
     }
 
-    void bounce_back_step_boundary() {
-        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-            sclx::local_array<value_type, 2> lattice_velocities(
-                handler,
-                {dimensions, lattice_size}
-            );
-            sclx::local_array<value_type, 1> lattice_weights(
-                handler,
-                {lattice_size}
-            );
-
-            sclx::array<value_type, 1> f_boundary[lattice_size];
-            for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                f_boundary[alpha]
-                    = solution_.lattice_distributions[alpha].get_range(
+    void bounce_back_step_boundary(bool bounce_back_Q) {
+        sclx::array<value_type, 1> f_boundary[lattice_size];
+        sclx::array<value_type, 1> pml_Q1_boundary[lattice_size];
+        sclx::array<value_type, 1> pml_Q2_boundary[lattice_size];
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            f_boundary[alpha]
+                = solution_.lattice_distributions[alpha].get_range(
+                    {domain_.points.shape()[1] - domain_.num_boundary_points
+                     - domain_.num_ghost_nodes},
+                    {domain_.points.shape()[1] - domain_.num_ghost_nodes}
+                );
+            pml_Q1_boundary[alpha]
+                = pml_absorption_operator_.get_Q1_values()[alpha].get_range(
+                    {domain_.points.shape()[1] - domain_.num_boundary_points
+                     - domain_.num_ghost_nodes},
+                    {domain_.points.shape()[1] - domain_.num_ghost_nodes}
+                );
+            if constexpr (dimensions == 3) {
+                pml_Q2_boundary[alpha]
+                    = pml_absorption_operator_.get_Q2_values()[alpha].get_range(
                         {domain_.points.shape()[1] - domain_.num_boundary_points
                          - domain_.num_ghost_nodes},
                         {domain_.points.shape()[1] - domain_.num_ghost_nodes}
                     );
             }
+        }
 
-            sclx::array_list<value_type, 1, lattice_size> result_arrays(
-                f_boundary
-            );
-            auto boundary_normals = domain_.boundary_normals;
+        sclx::array_list<value_type, 1, lattice_size> result_f_boundary(
+            f_boundary
+        );
+        sclx::array_list<value_type, 1, lattice_size> result_pml_Q1_boundary(
+            pml_Q1_boundary
+        );
+        sclx::array_list<value_type, 1, lattice_size> result_pml_Q2_boundary(
+            pml_Q2_boundary
+        );
+        auto boundary_normals = domain_.boundary_normals;
 
-            handler.launch(
-                sclx::md_range_t<1>{domain_.num_boundary_points},
-                result_arrays,
-                [=] __device__(
-                    const sclx::md_index_t<1>& idx,
-                    const sclx::kernel_info<>& info
-                ) mutable {
-                    if (info.local_thread_linear_id() == 0) {
-                        for (int i = 0; i < dimensions * lattice_size; ++i) {
-                            lattice_velocities(
-                                i % dimensions,
-                                i / dimensions
-                            ) = lattice_interface<Lattice>::lattice_velocities()
-                                    .vals[i / dimensions][i % dimensions];
-                            if (i % dimensions == 0) {
-                                continue;
+        auto bounce_back_lambda =
+            [&](sclx::array_list<value_type, 1, lattice_size>& result_arrays) {
+                return sclx::execute_kernel([&, result_arrays](
+                                                sclx::kernel_handler& handler
+                                            ) {
+                    sclx::local_array<value_type, 2> lattice_velocities(
+                        handler,
+                        {dimensions, lattice_size}
+                    );
+                    sclx::local_array<value_type, 1> lattice_weights(
+                        handler,
+                        {lattice_size}
+                    );
+
+                    handler.launch(
+                        sclx::md_range_t<1>{domain_.num_ghost_nodes},
+                        result_arrays,
+                        [=] __device__(
+                            const sclx::md_index_t<1>& idx,
+                            const sclx::kernel_info<>& info
+                        ) mutable {
+                            if (info.local_thread_linear_id() == 0) {
+                                for (int i = 0; i < dimensions * lattice_size;
+                                     ++i) {
+                                    lattice_velocities(
+                                        i % dimensions,
+                                        i / dimensions
+                                    )
+                                        = lattice_interface<
+                                              Lattice>::lattice_velocities()
+                                              .vals[i / dimensions]
+                                                   [i % dimensions];
+                                    if (i % dimensions == 0) {
+                                        continue;
+                                    }
+                                    lattice_weights(i / dimensions)
+                                        = lattice_interface<
+                                              Lattice>::lattice_weights()
+                                              .vals[i / dimensions];
+                                }
                             }
-                            lattice_weights(i / dimensions)
-                                = lattice_interface<Lattice>::lattice_weights()
-                                      .vals[i / dimensions];
-                        }
-                    }
-                    handler.syncthreads();
+                            handler.syncthreads();
 
-                    value_type normal[dimensions]{};
-                    for (int d = 0; d < dimensions; ++d) {
-                        normal[d] = boundary_normals(d, idx[0]);
-                    }
+                            value_type normal[dimensions]{};
+                            for (int d = 0; d < dimensions; ++d) {
+                                normal[d] = boundary_normals(d, idx[0]);
+                            }
 
-                    auto max_angle   = 1e-6;
-                    auto normal_norm = math::loopless::norm<dimensions>(normal);
-                    for (int alpha = 1; alpha < lattice_size; ++alpha) {
-                        auto normal_dot_calpha
-                            = math::loopless::dot<dimensions>(
-                                normal,
-                                &lattice_velocities(0, alpha)
-                            );
-                        if (normal_dot_calpha < 0) {
-                            continue;
+                            auto max_angle = 1e-6;
+                            auto normal_norm
+                                = math::loopless::norm<dimensions>(normal);
+                            for (int alpha = 1; alpha < lattice_size; ++alpha) {
+                                auto normal_dot_calpha
+                                    = math::loopless::dot<dimensions>(
+                                        normal,
+                                        &lattice_velocities(0, alpha)
+                                    );
+                                if (normal_dot_calpha < 0) {
+                                    continue;
+                                }
+                                auto calpha_norm
+                                    = math::loopless::norm<dimensions>(
+                                        &lattice_velocities(0, alpha)
+                                    );
+                                calpha_norm
+                                    = isnan(calpha_norm) ? 0 : calpha_norm;
+                                auto angle_normal_calpha
+                                    = naga::math::abs(math::acos(
+                                        normal_dot_calpha
+                                        / (normal_norm * calpha_norm)
+                                    ));
+
+                                //                                if
+                                //                                (angle_normal_calpha
+                                //                                < max_angle
+                                //                                    ||
+                                //                                    (naga::math::pi<value_type>
+                                //                                        -
+                                //                                        angle_normal_calpha)
+                                //                                           <
+                                //                                           max_angle)
+                                //                                           {
+                                //                                    continue;
+                                //                                }
+                                result_arrays[alpha][idx[0]]
+                                    = result_arrays[lattice_interface<
+                                        Lattice>::get_bounce_back_idx(alpha)]
+                                                   [idx[0]];
+                            }
                         }
-                        auto calpha_norm = math::loopless::norm<dimensions>(
-                            &lattice_velocities(0, alpha)
-                        );
-                        calpha_norm = isnan(calpha_norm) ? 0 : calpha_norm;
-                        auto angle_normal_calpha = naga::math::abs(math::acos(
-                            normal_dot_calpha / (normal_norm * calpha_norm)
-                        ));
-                        if (naga::math::abs(
-                                std::
-                                    fmod(angle_normal_calpha, naga::math::pi<value_type>)
-                            )
-                            < max_angle) {
-                            continue;
-                        }
-                        result_arrays[alpha][idx[0]]
-                            = result_arrays[lattice_interface<
-                                Lattice>::get_bounce_back_idx(alpha)][idx[0]];
-                    }
-                }
-            );
-        }).get();
+                    );
+                });
+            };
+
+        auto f_fut = bounce_back_lambda(result_f_boundary);
+
+        if (!bounce_back_Q) {
+            f_fut.get();
+            return;
+        }
+
+        auto Q1_fut = bounce_back_lambda(result_pml_Q1_boundary);
+
+        f_fut.get();
+        Q1_fut.get();
+
+        if constexpr (dimensions == 3) {
+            auto Q2_fut = bounce_back_lambda(result_pml_Q2_boundary);
+            Q2_fut.get();
+        }
     }
 
     void bounce_back_step() {
-        bounce_back_step_ghost();
-        bounce_back_step_boundary();
+//        bounce_back_step_ghost();
+        bounce_back_step_boundary(true);
 
-        domain_.num_layer_points += domain_.num_boundary_points;
-        domain_.num_layer_points += domain_.num_ghost_nodes;
-        parameters_.lattice_time_step /= 2;
-        pml_absorption_operator_.apply();
-        domain_.num_layer_points -= domain_.num_boundary_points;
-        domain_.num_layer_points -= domain_.num_ghost_nodes;
-        parameters_.lattice_time_step *= 2;
-        interpolate_ghost_nodes();
+        //        interpolate_ghost_nodes(/*interpolate_Q=*/true);
+        //        domain_.num_layer_points += domain_.num_boundary_points;
+        //        domain_.num_layer_points += domain_.num_ghost_nodes;
+        //        parameters_.lattice_time_step /= 2;
+        //        pml_absorption_operator_.apply();
+        //        domain_.num_layer_points -= domain_.num_boundary_points;
+        //        domain_.num_layer_points -= domain_.num_ghost_nodes;
+        //        parameters_.lattice_time_step *= 2;
+        //        interpolate_ghost_nodes(/*interpolate_Q=*/false);
     }
 
     void apply_density_source_terms() {
@@ -921,7 +1065,6 @@ class simulation_engine {
         }
 
         interpolate_boundaries();
-        interpolate_ghost_nodes();
     }
 
     void step_forward() {

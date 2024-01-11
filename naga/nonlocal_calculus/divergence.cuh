@@ -34,8 +34,8 @@
 
 #include "detail/divergence.cuh"
 #include <cuda/barrier>
-#include <scalix/assign_array.cuh>
 #include <scalix/algorithm/elementwise_reduce.cuh>
+#include <scalix/assign_array.cuh>
 
 namespace naga::nonlocal_calculus {
 
@@ -50,21 +50,36 @@ class divergence_operator {
 
     using default_field_map = default_point_map<T, Dimensions>;
 
-    static divergence_operator create(const sclx::array<T, 2>& domain) {
+    static divergence_operator create(
+        const sclx::array<T, 2>& domain,
+        const sclx::array<T, 2>& query_points,
+        size_t override_query_size = 0
+    ) {
         // the following code was designed assuming that all
         // devices have the same amount of memory
         //
         // it could work with different amounts of memory, but it's untested
+        override_query_size = override_query_size == 0 ? query_points.shape()[1] : override_query_size;
+        if (override_query_size < query_points.shape()[1]) {
+            sclx::throw_exception<std::invalid_argument>(
+                "override_query_size must be at least as large as the number "
+                "of query points.",
+                "naga::nonlocal_calculus::divergence_operator::"
+            );
+        }
 
         divergence_operator result;
 
-        result.weights_ = sclx::array<T, 3>{
+        auto total_weights = sclx::zeros<T, 3>({
             Dimensions,
             detail::num_interp_support,
-            domain.shape()[1]};
-        result.support_indices_ = sclx::array<size_t, 2>{
+            override_query_size});
+        result.weights_ = total_weights.get_range({0}, {query_points.shape()[1]});
+        auto total_support_indices = sclx::zeros<size_t, 2>({
             detail::num_interp_support,
-            domain.shape()[1]};
+            override_query_size
+        });
+        result.support_indices_ = total_support_indices.get_range({0}, {query_points.shape()[1]});
 
         size_t total_available_mem = 0;
         int device_count           = sclx::cuda::traits::device_count();
@@ -85,25 +100,29 @@ class divergence_operator {
         }
 
         size_t builder_scratchpad_size
-            = operator_builder<T, Dimensions>::get_scratchpad_size(domain.shape(
-            )[1]);
+            = operator_builder<T, Dimensions>::get_scratchpad_size(
+                query_points.shape()[1]
+            );
 
         // indices size excluded from self_scratchpad_size because it's
         // included in the builder_scratchpad_size
-        size_t max_domain_copy_size = domain.elements() * sizeof(T);
+        size_t max_domain_copy_size = query_points.elements() * sizeof(T);
         size_t self_scratchpad_size = sizeof(T) * Dimensions
                                         * detail::num_interp_support
-                                        * domain.shape()[1]
+                                        * query_points.shape()[1]
                                     + max_domain_copy_size;
 
         size_t total_scratchpad_size
             = builder_scratchpad_size + self_scratchpad_size;
-        size_t batch_scratch_pad_size = total_scratchpad_size / domain.shape()[1];
-        auto minimum_required_mem = 4 * static_cast<size_t>(1 << 30) / batch_scratch_pad_size * batch_scratch_pad_size;
+        size_t batch_scratch_pad_size
+            = total_scratchpad_size / query_points.shape()[1];
+        auto minimum_required_mem = 4 * static_cast<size_t>(1 << 30)
+                                  / batch_scratch_pad_size
+                                  * batch_scratch_pad_size;
         size_t batch_size;
         if (total_available_mem > minimum_required_mem) {
             batch_size = std::min(
-                domain.shape()[1],
+                query_points.shape()[1],
                 minimum_required_mem / batch_scratch_pad_size
             );
         } else {
@@ -113,14 +132,19 @@ class divergence_operator {
             );
         }
 
-        sclx::array<T, 2> batch_domain_total{domain.shape()[0], batch_size};
-        for (size_t i = 0; i < domain.shape()[1]; i += batch_size) {
-            size_t batch_end = std::min(i + batch_size, domain.shape()[1]);
-            auto batch_domain = batch_domain_total.get_range({0}, {batch_end - i});
-            auto domain_slice = domain.get_range({i}, {batch_end});
-            sclx::assign_array(domain_slice, batch_domain);
+        sclx::array<T, 2> batch_domain_total{
+            query_points.shape()[0],
+            batch_size
+        };
+        for (size_t i = 0; i < query_points.shape()[1]; i += batch_size) {
+            size_t batch_end
+                = std::min(i + batch_size, query_points.shape()[1]);
+            auto batch_query
+                = batch_domain_total.get_range({0}, {batch_end - i});
+            auto query_slice = query_points.get_range({i}, {batch_end});
+            sclx::assign_array(query_slice, batch_query);
 
-            operator_builder<T, Dimensions> builder(domain, batch_domain);
+            operator_builder<T, Dimensions> builder(domain, batch_query);
             divergence_operator op_batch
                 = builder.template create<detail::divergence_operator_type>();
 
@@ -134,7 +158,26 @@ class divergence_operator {
                 support_indices_slice
             );
         }
+
+        result.weights_ = total_weights;
+        result.support_indices_ = total_support_indices;
+
         return result;
+    }
+
+    static divergence_operator create(const sclx::array<T, 2>& domain) {
+        return create(domain, domain);
+    }
+
+    void set_subspace_to(
+        const divergence_operator& subspace_op,
+        size_t start,
+        size_t end
+    ) {
+        auto dst_weights = weights_.get_range({start}, {end});
+        auto dst_indices = support_indices_.get_range({start}, {end});
+        sclx::assign_array(subspace_op.weights_, dst_weights);
+        sclx::assign_array(subspace_op.support_indices_, dst_indices);
     }
 
     template<class FieldMap = default_field_map>
@@ -253,15 +296,17 @@ class divergence_operator {
                 result,
                 cusparse_desc_->scratchpad[0],
                 cusparse_desc_->scratchpad[1]
-            ).get();
+            )
+                .get();
         } else {
             return sclx::algorithm::elementwise_reduce(
-                sclx::algorithm::plus<>{},
-                result,
-                cusparse_desc_->scratchpad[0],
-                cusparse_desc_->scratchpad[1],
-                cusparse_desc_->scratchpad[2]
-            ).get();
+                       sclx::algorithm::plus<>{},
+                       result,
+                       cusparse_desc_->scratchpad[0],
+                       cusparse_desc_->scratchpad[1],
+                       cusparse_desc_->scratchpad[2]
+            )
+                .get();
         }
     }
 
@@ -290,7 +335,8 @@ class divergence_operator {
                 handler.launch(
                     sclx::md_range_t<1>{cusparse_desc_->scratchpad[0].shape()},
                     sclx::array_list<T, 1, Dimensions>{
-                        cusparse_desc_->scratchpad},
+                        cusparse_desc_->scratchpad
+                    },
                     [=] __device__(const sclx::md_index_t<1>& index, const auto&) {
                         scratchpad[d][index]
                             = field[index[0]][d] - centering_offset;
@@ -358,7 +404,8 @@ class divergence_operator {
 
             sclx::shape_t<2> block_shape{
                 detail::num_interp_support,
-                num_nodes_per_block};
+                num_nodes_per_block
+            };
             size_t problem_size = result.elements() * detail::num_interp_support
                                 / num_grid_strides;
             size_t total_threads
@@ -373,7 +420,8 @@ class divergence_operator {
             handler.launch<apply_divergence>(
                 sclx::md_range_t<2>{
                     support_indices_.shape()[0],
-                    result.elements()},
+                    result.elements()
+                },
                 result,
                 [=] __device__(
                     const sclx::md_index_t<2>& index,
@@ -489,8 +537,9 @@ class divergence_operator {
                     );
             }
             for (auto& sarr : cusparse_desc_->scratchpad) {
-                sarr = sclx::array<T, 1>(sclx::shape_t<1>{
-                    support_indices_.shape()[1]});
+                sarr = sclx::array<T, 1>(
+                    sclx::shape_t<1>{support_indices_.shape()[1]}
+                );
             }
             cusparse_enabled_ = true;
         }
@@ -508,8 +557,8 @@ class divergence_operator {
 
     divergence_operator slice(size_t new_size) const {
         divergence_operator result;
-        result = *this;
-        result.weights_ = weights_.get_range({0}, {new_size});
+        result                  = *this;
+        result.weights_         = weights_.get_range({0}, {new_size});
         result.support_indices_ = support_indices_.get_range({0}, {new_size});
         result.cusparse_desc_.reset();
         result.cusparse_enabled_ = false;
@@ -527,7 +576,8 @@ class divergence_operator {
         op.weights_ = sclx::array<T, 3>{
             Dimensions,
             support_indices.shape()[0],
-            domain.shape()[1]};
+            domain.shape()[1]
+        };
         op.support_indices_ = support_indices;
 
         detail::compute_divergence_weights<T, Dimensions>(

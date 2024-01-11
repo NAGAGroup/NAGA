@@ -441,10 +441,8 @@ class conforming_point_cloud_provider<
         nodes_.num_bulk_points  = num_bulk_points;
         nodes_.num_layer_points = num_layer_points;
 
-        if (num_layer_points > 0) {
-            nodes_.layer_absorption
-                = sclx::array<value_type, 1>{num_layer_points + num_ghost_points};
-        }
+        nodes_.layer_absorption
+            = sclx::array<value_type, 1>{num_layer_points + num_ghost_points};
 
         for (size_t i = 0; i < num_bulk_points; ++i) {
             for (size_t j = 0; j < dimensions; ++j) {

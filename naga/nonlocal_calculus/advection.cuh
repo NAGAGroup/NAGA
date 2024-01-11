@@ -150,6 +150,14 @@ class advection_operator {
         return op;
     }
 
+    static advection_operator create(const divergence_operator<T, Dimensions>& divergence_op) {
+        advection_operator op;
+        op.divergence_op_ = std::make_shared<divergence_operator<T, Dimensions>>();
+        *op.divergence_op_ = divergence_op;
+        op.domain_size_   = divergence_op.weights_.shape()[2];
+        return op;
+    }
+
     class advection_task {
       public:
         template<class FieldMap>
