@@ -41,13 +41,10 @@ struct problem_parameters {
     static_assert(!std::is_const_v<T>, "T must be non-const");
     T fluid_viscosity;
     T time_step;
-    struct {
-        T density_scale;
-        T velocity_scale;
-        T length_scale;
-        T time_scale;
-        T viscosity_scale;
-    } nondim_factors;
+    T speed_of_sound;
+    T nominal_density;
+    T lattice_viscosity;
+    T lattice_time_step;
 };
 
 template<class Lattice>

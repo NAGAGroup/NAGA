@@ -94,23 +94,18 @@ class simulation_engine {
         value_type fluid_viscosity,
         value_type nominal_density,
         value_type time_step,
-        value_type characteristic_length,
-        value_type characteristic_velocity,
-        value_type lattice_characteristic_velocity
+        value_type speed_of_sound
     ) {
-        parameters_.nondim_factors.density_scale = nominal_density;
-        parameters_.nondim_factors.length_scale  = characteristic_length;
-        parameters_.nondim_factors.velocity_scale
-            = characteristic_velocity / lattice_characteristic_velocity;
-        parameters_.nondim_factors.time_scale
-            = parameters_.nondim_factors.length_scale
-            / parameters_.nondim_factors.velocity_scale;
-        parameters_.nondim_factors.viscosity_scale
-            = math::loopless::pow<2>(parameters_.nondim_factors.length_scale)
-            / parameters_.nondim_factors.time_scale;
-
         parameters_.fluid_viscosity = fluid_viscosity;
+        parameters_.nominal_density = nominal_density;
         parameters_.time_step       = time_step;
+        parameters_.speed_of_sound  = speed_of_sound;
+        auto lattice_to_physical_time_ratio
+            = lattice_traits<Lattice>::lattice_speed_of_sound / speed_of_sound;
+        parameters_.lattice_time_step
+            = time_step / lattice_to_physical_time_ratio;
+        parameters_.lattice_viscosity
+            = fluid_viscosity / lattice_to_physical_time_ratio;
     }
 
     void init_domain(const simulation_nodes<value_type>& domain) {
@@ -256,7 +251,7 @@ class simulation_engine {
             = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         sclx::fill(
             solution_.macroscopic_values.fluid_density,
-            parameters_.nondim_factors.density_scale
+            parameters_.nominal_density
         );
 
         density_source_term_
@@ -268,24 +263,6 @@ class simulation_engine {
                                   + domain_.num_ghost_nodes;
         auto boundary_absorption = boundary_absorption_coefficient;
         sclx::array<value_type, 1> new_layer_absorption{{new_num_layer_points}};
-        //        std::copy(
-        //            absorption_coeffs.begin(),
-        //            absorption_coeffs.begin() + domain_.num_layer_points,
-        //            new_layer_absorption.begin()
-        //        );
-        //        std::fill(
-        //            new_layer_absorption.begin() + domain_.num_layer_points,
-        //            new_layer_absorption.begin() + domain_.num_layer_points
-        //                + domain_.num_boundary_points,
-        //            boundary_absorption
-        //        );
-        //        std::fill(
-        //            new_layer_absorption.begin() + domain_.num_layer_points
-        //                + domain_.num_boundary_points,
-        //            new_layer_absorption.end(),
-        //            0.f
-        //        );
-
         std::copy(
             absorption_coeffs.begin(),
             absorption_coeffs.begin() + domain_.num_layer_points,
@@ -293,9 +270,27 @@ class simulation_engine {
         );
         std::fill(
             new_layer_absorption.begin() + domain_.num_layer_points,
-            new_layer_absorption.end(),
+            new_layer_absorption.begin() + domain_.num_layer_points
+                + domain_.num_boundary_points,
             boundary_absorption
         );
+        std::fill(
+            new_layer_absorption.begin() + domain_.num_layer_points
+                + domain_.num_boundary_points,
+            new_layer_absorption.end(),
+            0.f
+        );
+
+        //        std::copy(
+        //            absorption_coeffs.begin(),
+        //            absorption_coeffs.begin() + domain_.num_layer_points,
+        //            new_layer_absorption.begin()
+        //        );
+        //        std::fill(
+        //            new_layer_absorption.begin() + domain_.num_layer_points,
+        //            new_layer_absorption.end(),
+        //            boundary_absorption
+        //        );
 
         /*
          * Below is the version that makes ghost nodes nonzero absorption
@@ -361,7 +356,7 @@ class simulation_engine {
                         && global_idx < boundary_end) {
                         for (uint d = 0; d < dimensions; ++d) {
                             pml_absorbing_directions(d, idx[0])
-                                = boundary_normals(d, idx[0] - boundary_start);
+                                = boundary_normals(d, global_idx - boundary_start);
                         }
                         return;
                     }
@@ -403,18 +398,7 @@ class simulation_engine {
         this->init_domain(nodes.get());
     }
 
-    value_type speed_of_sound() const {
-        return lattice_traits<lattice_type>::lattice_speed_of_sound
-             * parameters_.nondim_factors.velocity_scale;
-    }
-
-    static value_type speed_of_sound(
-        const value_type& characteristic_velocity,
-        const value_type& lattice_characteristic_velocity
-    ) {
-        return lattice_traits<lattice_type>::lattice_speed_of_sound
-             * characteristic_velocity / lattice_characteristic_velocity;
-    }
+    value_type speed_of_sound() const { return parameters_.speed_of_sound; }
 
     void compute_density_source_terms() {
         sclx::fill(density_source_term_, value_type{0});
@@ -491,10 +475,11 @@ class simulation_engine {
                         lattice_velocities
                     );
                     thrust::get<0>(result_arrays)[idx[0]]
-                        = rho * parameters.nondim_factors.density_scale;
+                        = rho * parameters.nominal_density;
                     for (int d = 0; d < dimensions; ++d) {
                         thrust::get<1>(result_arrays)(d, idx[0])
-                            = u[d] * parameters.nondim_factors.velocity_scale;
+                            = u[d] * parameters.speed_of_sound
+                            / lattice_traits<Lattice>::lattice_speed_of_sound;
                     }
                 }
             );
@@ -526,20 +511,19 @@ class simulation_engine {
 
                     value_type rho
                         = solution.macroscopic_values.fluid_density(idx[0])
-                        / parameters.nondim_factors.density_scale;
+                        / parameters.nominal_density;
                     value_type u[dimensions];
                     sclx::constexpr_assign_array<dimensions>(
                         u,
                         &solution.macroscopic_values.fluid_velocity(0, idx[0])
                     );
                     for (int d = 0; d < dimensions; ++d) {
-                        u[d] /= parameters.nondim_factors.velocity_scale;
+                        u[d]
+                            *= (lattice_traits<Lattice>::lattice_speed_of_sound
+                                / parameters.speed_of_sound);
                     }
-                    value_type lat_nu
-                        = parameters.fluid_viscosity
-                        / parameters.nondim_factors.viscosity_scale;
-                    value_type lat_dt = parameters.time_step
-                                      / parameters.nondim_factors.time_scale;
+                    value_type lat_nu = parameters.lattice_viscosity;
+                    value_type lat_dt = parameters.lattice_time_step;
 
                     lattice_interface<Lattice>::compute_moment_projection(
                         k,
@@ -568,11 +552,12 @@ class simulation_engine {
         interpolate_ghost_nodes();
         domain_.num_layer_points += domain_.num_boundary_points;
         domain_.num_layer_points += domain_.num_ghost_nodes;
-        parameters_.time_step /= 2;
+        parameters_.lattice_time_step /= 2;
         pml_absorption_operator_.apply();
         domain_.num_layer_points -= domain_.num_boundary_points;
         domain_.num_layer_points -= domain_.num_ghost_nodes;
-        parameters_.time_step *= 2;
+        parameters_.lattice_time_step *= 2;
+        interpolate_ghost_nodes();
     }
 
     void interpolate_boundaries() {
@@ -653,17 +638,16 @@ class simulation_engine {
             for (int alpha = 0; alpha < lattice_size; ++alpha) {
                 f_ghost[alpha]
                     = solution_.lattice_distributions[alpha].get_range(
-                        {domain_.points.shape()[1]
-                         - domain_.num_ghost_nodes},
+                        {domain_.points.shape()[1] - domain_.num_ghost_nodes},
                         {domain_.points.shape()[1]}
                     );
             }
 
-            sclx::array_list<value_type, 1, lattice_size> result_arrays(
-                f_ghost
+            sclx::array_list<value_type, 1, lattice_size> result_arrays(f_ghost
             );
             auto ghost_absorbing_dirs = pml_absorbing_directions_.get_range(
-                {pml_absorbing_directions_.shape()[1] - domain_.num_ghost_nodes},
+                {pml_absorbing_directions_.shape()[1] - domain_.num_ghost_nodes
+                },
                 {pml_absorbing_directions_.shape()[1]}
             );
 
@@ -696,8 +680,9 @@ class simulation_engine {
                         absorbing_dir[d] = ghost_absorbing_dirs(d, idx[0]);
                     }
 
-                    auto max_angle   = 1e-6;
-                    auto normal_norm = math::loopless::norm<dimensions>(absorbing_dir);
+                    auto max_angle = 1e-6;
+                    auto normal_norm
+                        = math::loopless::norm<dimensions>(absorbing_dir);
                     for (int alpha = 1; alpha < lattice_size; ++alpha) {
                         auto absorbing_dir_dot_calpha
                             = math::loopless::dot<dimensions>(
@@ -712,9 +697,14 @@ class simulation_engine {
                         );
                         calpha_norm = isnan(calpha_norm) ? 0 : calpha_norm;
                         auto angle_normal_calpha = naga::math::abs(math::acos(
-                            absorbing_dir_dot_calpha / (normal_norm * calpha_norm)
+                            absorbing_dir_dot_calpha
+                            / (normal_norm * calpha_norm)
                         ));
-                        if (naga::math::abs(std::fmod(angle_normal_calpha, naga::math::pi<value_type>)) < max_angle) {
+                        if (naga::math::abs(
+                                std::
+                                    fmod(angle_normal_calpha, naga::math::pi<value_type>)
+                            )
+                            < max_angle) {
                             continue;
                         }
                         result_arrays[alpha][idx[0]]
@@ -743,7 +733,7 @@ class simulation_engine {
                     = solution_.lattice_distributions[alpha].get_range(
                         {domain_.points.shape()[1] - domain_.num_boundary_points
                          - domain_.num_ghost_nodes},
-                        {domain_.points.shape()[1]- domain_.num_ghost_nodes}
+                        {domain_.points.shape()[1] - domain_.num_ghost_nodes}
                     );
             }
 
@@ -799,7 +789,11 @@ class simulation_engine {
                         auto angle_normal_calpha = naga::math::abs(math::acos(
                             normal_dot_calpha / (normal_norm * calpha_norm)
                         ));
-                        if (naga::math::abs(std::fmod(angle_normal_calpha, naga::math::pi<value_type>)) < max_angle) {
+                        if (naga::math::abs(
+                                std::
+                                    fmod(angle_normal_calpha, naga::math::pi<value_type>)
+                            )
+                            < max_angle) {
                             continue;
                         }
                         result_arrays[alpha][idx[0]]
@@ -812,16 +806,17 @@ class simulation_engine {
     }
 
     void bounce_back_step() {
-        bounce_back_step_boundary();
         bounce_back_step_ghost();
+        bounce_back_step_boundary();
 
         domain_.num_layer_points += domain_.num_boundary_points;
         domain_.num_layer_points += domain_.num_ghost_nodes;
-        parameters_.time_step /= 2;
+        parameters_.lattice_time_step /= 2;
         pml_absorption_operator_.apply();
         domain_.num_layer_points -= domain_.num_boundary_points;
         domain_.num_layer_points -= domain_.num_ghost_nodes;
-        parameters_.time_step *= 2;
+        parameters_.lattice_time_step *= 2;
+        interpolate_ghost_nodes();
     }
 
     void apply_density_source_terms() {
@@ -834,8 +829,8 @@ class simulation_engine {
                 solution_.lattice_distributions
             );
             auto& density_source_term = density_source_term_;
-            auto& density_scale = parameters_.nondim_factors.density_scale;
-            auto& densities     = solution_.macroscopic_values.fluid_density;
+            auto& density_scale       = parameters_.nominal_density;
+            auto& densities = solution_.macroscopic_values.fluid_density;
 
             handler.launch(
                 sclx::md_range_t<2>{lattice_size, domain_.points.shape()[1]},
@@ -874,14 +869,11 @@ class simulation_engine {
             = lattice_interface<Lattice>::lattice_velocities();
         auto lattice_weights = lattice_interface<Lattice>::lattice_weights();
 
-        auto& time_scale   = parameters_.nondim_factors.time_scale;
-        auto& length_scale = parameters_.nondim_factors.length_scale;
-        value_type time_step
-            = parameters_.time_step / time_scale * length_scale / 2.f;
+        value_type time_step = parameters_.lattice_time_step / 2.f;
 
-        size_t boundary_start
-            = domain_.points.shape()[1] - domain_.num_ghost_nodes - domain_
-                  .num_boundary_points;
+        size_t boundary_start = domain_.points.shape()[1]
+                              - domain_.num_ghost_nodes
+                              - domain_.num_boundary_points;
 
         std::vector<std::pair<int, std::future<void>>> streaming_futures(
             max_concurrency_
@@ -1023,11 +1015,10 @@ class simulation_engine {
     void save_state(Archive& ar) const {
         ar(parameters_.fluid_viscosity,
            parameters_.time_step,
-           parameters_.nondim_factors.density_scale,
-           parameters_.nondim_factors.velocity_scale,
-           parameters_.nondim_factors.length_scale,
-           parameters_.nondim_factors.time_scale,
-           parameters_.nondim_factors.viscosity_scale);
+           parameters_.nominal_density,
+           parameters_.speed_of_sound,
+           parameters_.lattice_time_step,
+           parameters_.lattice_viscosity);
 
         for (const auto& arr : solution_.lattice_distributions) {
             sclx::serialize_array(ar, arr);
@@ -1054,17 +1045,17 @@ class simulation_engine {
         ar(frame_number_);
 
         ar(pml_absorption_operator_);
+        sclx::serialize_array(ar, pml_absorbing_directions_);
     }
 
     template<class Archive>
     void load_state(Archive& ar) {
         ar(parameters_.fluid_viscosity,
            parameters_.time_step,
-           parameters_.nondim_factors.density_scale,
-           parameters_.nondim_factors.velocity_scale,
-           parameters_.nondim_factors.length_scale,
-           parameters_.nondim_factors.time_scale,
-           parameters_.nondim_factors.viscosity_scale);
+           parameters_.nominal_density,
+           parameters_.speed_of_sound,
+           parameters_.lattice_time_step,
+           parameters_.lattice_viscosity);
 
         for (auto& arr : solution_.lattice_distributions) {
             sclx::deserialize_array(ar, arr);
@@ -1099,6 +1090,7 @@ class simulation_engine {
 
         pml_absorption_operator_ = pml_absorption_operator<Lattice>{this};
         ar(pml_absorption_operator_);
+        sclx::deserialize_array(ar, pml_absorbing_directions_);
     }
 
     problem_parameters<value_type> parameters_{};

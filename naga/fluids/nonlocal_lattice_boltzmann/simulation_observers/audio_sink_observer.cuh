@@ -157,22 +157,22 @@ class audio_sink_observer : public simulation_observer<Lattice> {
         interpolator_->interpolate(
             solution.macroscopic_values.fluid_density,
             sink_signal_,
-            params.nondim_factors.density_scale
+            params.nominal_density
         );
         if constexpr (ChannelConfig == channel_configuration::mono) {
-            sink_signal_[0] -= params.nondim_factors.density_scale;
+            sink_signal_[0] -= params.nominal_density;
 
             audio_buffer_[0].push_back(sink_signal_[0]);
         } else {
-            sink_signal_[0] -= params.nondim_factors.density_scale;
-            sink_signal_[1] -= params.nondim_factors.density_scale;
+            sink_signal_[0] -= params.nominal_density;
+            sink_signal_[1] -= params.nominal_density;
 
             audio_buffer_[0].push_back(sink_signal_[0]);
             audio_buffer_[1].push_back(sink_signal_[1]);
         }
 
         for (const auto& signal : sink_signal_) {
-            if (std::abs(signal) > params.nondim_factors.density_scale * 2) {
+            if (std::abs(signal) > params.nominal_density * 2) {
                 save();
                 sclx::throw_exception<std::runtime_error>(
                     "Sink signal is too large. Simulation likely unstable."

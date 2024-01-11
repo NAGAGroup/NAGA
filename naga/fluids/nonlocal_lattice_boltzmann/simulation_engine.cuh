@@ -53,17 +53,13 @@ class simulation_engine {
         value_type fluid_viscosity,
         value_type nominal_density,
         value_type time_step,
-        value_type characteristic_length,
-        value_type characteristic_velocity,
-        value_type lattice_characteristic_velocity
+        value_type speed_of_sound
     ) {
         engine_ptr_->set_problem_parameters(
             fluid_viscosity,
             nominal_density,
             time_step,
-            characteristic_length,
-            characteristic_velocity,
-            lattice_characteristic_velocity
+            speed_of_sound
         );
     }
 
@@ -102,16 +98,6 @@ class simulation_engine {
     }
 
     value_type speed_of_sound() const { return engine_ptr_->speed_of_sound(); }
-
-    static value_type speed_of_sound(
-        const value_type& characteristic_velocity,
-        const value_type& lattice_characteristic_velocity
-    ) {
-        return detail::simulation_engine<Lattice>::speed_of_sound(
-            characteristic_velocity,
-            lattice_characteristic_velocity
-        );
-    }
 
     template<class Archive>
     void save_state(Archive& archive) const {

@@ -67,8 +67,9 @@ class compute_equilibrium_subtask {
         lattice_weights_
             = sclx::local_array<value_type, 1>(handler, {lattice_size});
 
-        density_scale_  = engine.parameters_.nondim_factors.density_scale;
-        velocity_scale_ = engine.parameters_.nondim_factors.velocity_scale;
+        density_scale_  = engine.parameters_.nominal_density;
+        velocity_scale_ = engine.parameters_.speed_of_sound / lattice_traits<
+            Lattice>::lattice_speed_of_sound;
 
         this->handler_ = handler;
     }

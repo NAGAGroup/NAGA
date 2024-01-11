@@ -195,7 +195,7 @@ struct problem_traits {
             const auto& amplitude     = amplitude_;
             const auto& audio_samples = audio_samples_;
             const auto& density = solution.macroscopic_values.fluid_density;
-            const auto& nominal_density = params.nondim_factors.density_scale;
+            const auto& nominal_density = params.nominal_density;
             const auto& points          = domain.points;
 
             if (frame_number >= audio_samples.elements()) {
@@ -321,7 +321,7 @@ struct problem_traits {
 
             auto scaled_time = time * time_multiplier_;
             const auto& density = solution.macroscopic_values.fluid_density;
-            const auto& nominal_density = params.nondim_factors.density_scale;
+            const auto& nominal_density = params.nominal_density;
             const auto& points          = domain.points;
             auto frame_amplitude = get_amplitude_at_time(scaled_time);
 
@@ -426,7 +426,7 @@ struct problem_traits {
             auto perturbation = amplitude_ * naga::math::sin(radians);
 
             const auto& density = solution.macroscopic_values.fluid_density;
-            const auto& nominal_density = params.nondim_factors.density_scale;
+            const auto& nominal_density = params.nominal_density;
             const auto& points          = domain.points;
             const auto& source_region   = source_region_;
 

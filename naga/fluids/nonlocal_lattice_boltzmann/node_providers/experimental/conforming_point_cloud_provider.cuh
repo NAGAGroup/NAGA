@@ -384,7 +384,7 @@ class conforming_point_cloud_provider<
             const auto& distance_to_boundary = distance_to_outer_boundary[i];
 
             if (distance_to_boundary > layer_thickness) {
-                absorption_coefficients.push_back(0.0);
+                absorption_coefficients.push_back(-1.0);
                 continue;
             }
 
@@ -421,20 +421,20 @@ class conforming_point_cloud_provider<
             bulk_points.end(),
             [&](const naga::point_t<value_type , 3>& x) {
                 size_t i = &x - &bulk_points[0];
-                return absorption_coefficients[i] == 0.0;
+                return absorption_coefficients[i] < 0.0;
             }
         );
         std::stable_partition(
             absorption_coefficients.begin(),
             absorption_coefficients.begin() + num_bulk_and_layer_points,
             [&](const value_type & x) {
-                return x == 0.0;
+                return x < 0.0;
             }
         );
         size_t num_layer_points = std::count_if(
             absorption_coefficients.begin(),
             absorption_coefficients.begin() + num_bulk_and_layer_points,
-            [](const auto& rate) { return rate > 0; }
+            [](const auto& rate) { return rate >= 0; }
         );
 
         size_t num_bulk_points  = num_bulk_and_layer_points - num_layer_points;

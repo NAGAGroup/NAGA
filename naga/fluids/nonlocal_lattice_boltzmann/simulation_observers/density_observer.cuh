@@ -106,7 +106,7 @@ class density_observer : public simulation_observer<Lattice> {
         interpolator_->interpolate(
             solution.macroscopic_values.fluid_density,
             current_density_,
-            params.nondim_factors.density_scale
+            params.nominal_density
         );
         density_values_.push_back(current_density_[0]);
         time_values_.push_back(scaled_time);

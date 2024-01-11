@@ -184,7 +184,7 @@ class partial_pml_subtask<d2q9_lattice<T>> {
                 - params.lattice_weights(alpha);
 
             value_type Q_value
-                = (f_tilde_eq + f_tilde_eq_prev) * params.lattice_dt / 2.f;
+                = (f_tilde_eq + f_tilde_eq_prev) * params.lattice_time_step / 2.f;
 
             params.lattice_Q1_values[alpha][idx] = Q_value;
 
@@ -198,7 +198,7 @@ class partial_pml_subtask<d2q9_lattice<T>> {
                       [idx[0] - params.absorption_layer_start];
 
             params.lattice_distributions[alpha][idx[0]]
-                -= params.lattice_dt * sigma
+                -= params.lattice_time_step * sigma
                  * (2.f * f_tilde_eq + sigma * Q_value);
         }
     }
@@ -249,10 +249,10 @@ class partial_pml_subtask<d2q9_lattice<T>> {
             lattice_weights
                 = sclx::local_array<value_type, 1>(handler, {lattice_size});
 
-            density_scale  = engine.parameters_.nondim_factors.density_scale;
-            velocity_scale = engine.parameters_.nondim_factors.velocity_scale;
-            lattice_dt     = engine.parameters_.time_step
-                       / engine.parameters_.nondim_factors.time_scale;
+            density_scale  = engine.parameters_.nominal_density;
+            velocity_scale = engine.parameters_.speed_of_sound / lattice_traits<
+                                 lattice>::lattice_speed_of_sound;
+            lattice_time_step     = engine.parameters_.lattice_time_step;
 
             this->handler = handler;
         }
@@ -273,7 +273,7 @@ class partial_pml_subtask<d2q9_lattice<T>> {
         sclx::local_array<value_type, 1> lattice_weights;
         value_type density_scale;
         value_type velocity_scale;
-        value_type lattice_dt;
+        value_type lattice_time_step;
     };
 
   private:
@@ -354,17 +354,11 @@ class pml_absorption_operator<d2q9_lattice<T>> {
                 engine_->temporary_distributions_[alpha]
             );
 
-            const auto& time_scale
-                = engine_->parameters_.nondim_factors.time_scale;
-            const auto& length_scale
-                = engine_->parameters_.nondim_factors.length_scale;
-            auto lattice_dt
-                = engine_->parameters_.time_step / time_scale * length_scale;
             auto layer_begin = engine_->domain_.num_bulk_points;
             auto layer_end   = engine_->domain_.num_bulk_points
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
-                nonlocal_calculus::forward_euler<T>(lattice_dt),
+                nonlocal_calculus::forward_euler<T>(engine_->parameters_.lattice_time_step),
                 engine_->solution_
                     .lattice_distributions[alpha],  // .get_range({layer_begin},
                                                     // {layer_end}),
@@ -449,11 +443,12 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
         } else {
             size_t pml_index        = i - pml_start_index;
             const value_type& sigma = absorption_coeff[pml_index];
-            const value_type* absorbing_dir
-                = &absorbing_directions(0, pml_index);
-            auto scaled_sigma = naga::math::abs(
-                sigma * naga::math::loopless::dot<dimensions>(absorbing_dir, c0)
-            );
+//            const value_type* absorbing_dir
+//                = &absorbing_directions(0, pml_index);
+//            auto scaled_sigma = naga::math::abs(
+//                sigma * naga::math::loopless::dot<dimensions>(absorbing_dir, c0)
+//            );
+            auto scaled_sigma = sigma;
             for (uint d = 0; d < dimensions; d++) {
                 c[d] = -2.f * c0[d] * scaled_sigma * Q1[pml_index];
             }
@@ -516,11 +511,12 @@ class pml_div_Q2_field_map {
         } else {
             size_t pml_index        = i - pml_start_index;
             const value_type& sigma = absorption_coeff[pml_index];
-            const value_type* absorbing_dir
-                = &absorbing_directions(0, pml_index);
-            auto scaled_sigma = naga::math::abs(
-                sigma * naga::math::loopless::dot<dimensions>(absorbing_dir, c0)
-            );
+//            const value_type* absorbing_dir
+//                = &absorbing_directions(0, pml_index);
+//            auto scaled_sigma = naga::math::abs(
+//                sigma * naga::math::loopless::dot<dimensions>(absorbing_dir, c0)
+//            );
+            auto scaled_sigma = sigma;
             for (uint d = 0; d < dimensions; d++) {
                 c[d] = c0[d] * scaled_sigma * scaled_sigma * Q2[pml_index];
             }
@@ -619,7 +615,7 @@ class partial_pml_subtask<d3q27_lattice<T>> {
                 - params.lattice_weights(alpha);
 
             value_type Q1_value
-                = (f_tilde_eq + f_tilde_eq_prev) * params.lattice_dt / 2.f;
+                = (f_tilde_eq + f_tilde_eq_prev) * params.lattice_time_step / 2.f;
 
             params.lattice_Q1_values[alpha][idx] = Q1_value;
 
@@ -627,7 +623,7 @@ class partial_pml_subtask<d3q27_lattice<T>> {
                 = params.lattice_Q2_values[alpha][idx];
 
             value_type Q2_value
-                = (Q1_value + Q1_value_prev) * params.lattice_dt / 2.f;
+                = (Q1_value + Q1_value_prev) * params.lattice_time_step / 2.f;
 
             params.lattice_Q2_values[alpha][idx] = Q2_value;
 
@@ -643,7 +639,7 @@ class partial_pml_subtask<d3q27_lattice<T>> {
             using namespace math::loopless;
 
             params.lattice_distributions[alpha][idx[0]]
-                -= sigma * params.lattice_dt
+                -= sigma * params.lattice_time_step
                  * (3.f * f_tilde_eq + 3.f * sigma * Q1_value
                     + pow<2>(sigma) * Q2_value);
         }
@@ -700,10 +696,10 @@ class partial_pml_subtask<d3q27_lattice<T>> {
             lattice_weights
                 = sclx::local_array<value_type, 1>(handler, {lattice_size});
 
-            density_scale  = engine.parameters_.nondim_factors.density_scale;
-            velocity_scale = engine.parameters_.nondim_factors.velocity_scale;
-            lattice_dt     = engine.parameters_.time_step
-                       / engine.parameters_.nondim_factors.time_scale;
+            density_scale  = engine.parameters_.nominal_density;
+            velocity_scale = engine.parameters_.speed_of_sound / lattice_traits<
+                lattice>::lattice_speed_of_sound;
+            lattice_time_step     = engine.parameters_.lattice_time_step;
 
             this->handler = handler;
         }
@@ -725,7 +721,7 @@ class partial_pml_subtask<d3q27_lattice<T>> {
         sclx::local_array<value_type, 1> lattice_weights;
         value_type density_scale;
         value_type velocity_scale;
-        value_type lattice_dt;
+        value_type lattice_time_step;
     };
 
   private:
@@ -819,17 +815,11 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                 engine_->temporary_distributions_[alpha]
             );
 
-            const auto& time_scale
-                = engine_->parameters_.nondim_factors.time_scale;
-            const auto& length_scale
-                = engine_->parameters_.nondim_factors.length_scale;
-            auto lattice_dt
-                = engine_->parameters_.time_step / time_scale * length_scale;
             auto layer_begin = engine_->domain_.num_bulk_points;
             auto layer_end   = engine_->domain_.num_bulk_points
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
-                nonlocal_calculus::forward_euler<T>(lattice_dt),
+                nonlocal_calculus::forward_euler<T>(engine_->parameters_.lattice_time_step),
                 engine_->solution_
                     .lattice_distributions[alpha],  // .get_range({layer_begin},
                                                     // {layer_end}),
@@ -859,7 +849,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             );
 
             sclx::algorithm::elementwise_reduce(
-                nonlocal_calculus::forward_euler<T>(lattice_dt),
+                nonlocal_calculus::forward_euler<T>(engine_->parameters_.lattice_time_step),
                 engine_->solution_
                     .lattice_distributions[alpha],  // .get_range({layer_begin},
                                                     // {layer_end}),
