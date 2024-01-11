@@ -358,7 +358,7 @@ class conforming_point_cloud_provider<
             = sclx::array<value_type, 2>{dimensions, num_boundary_points};
 
         std::vector<value_type > absorption_coefficients;
-        absorption_coefficients.reserve(num_bulk_and_layer_points);
+        absorption_coefficients.reserve(num_bulk_and_layer_points + num_ghost_points);
 
         const auto& closest_boundary_indices
             = conforming_point_cloud.closest_boundary_to_bulk();
@@ -395,6 +395,24 @@ class conforming_point_cloud_provider<
                 );
             absorption_coefficients.push_back(absorption_coefficient);
         }
+        for (uint i = 0; i < num_ghost_points; ++i) {
+            value_type peak_absorption_coefficient = 1.0;
+            value_type layer_thickness             = naga::math::abs(detail::min_bound_dist_scaled_ghost_node_3d);
+
+            const auto& distance_to_boundary = distance_to_outer_boundary[i + num_bulk_and_layer_points];
+
+            if (distance_to_boundary > layer_thickness) {
+                absorption_coefficients.push_back(0.0);
+                continue;
+            }
+
+            value_type absorption_coefficient
+                = peak_absorption_coefficient
+                * naga::math::loopless::pow<2>(
+                      1.0 - distance_to_boundary / layer_thickness
+                );
+            absorption_coefficients.push_back(absorption_coefficient);
+        }
 
         auto bulk_points = conforming_point_cloud.bulk_points();
 
@@ -408,14 +426,14 @@ class conforming_point_cloud_provider<
         );
         std::stable_partition(
             absorption_coefficients.begin(),
-            absorption_coefficients.end(),
+            absorption_coefficients.begin() + num_bulk_and_layer_points,
             [&](const value_type & x) {
                 return x == 0.0;
             }
         );
         size_t num_layer_points = std::count_if(
             absorption_coefficients.begin(),
-            absorption_coefficients.end(),
+            absorption_coefficients.begin() + num_bulk_and_layer_points,
             [](const auto& rate) { return rate > 0; }
         );
 
@@ -425,7 +443,7 @@ class conforming_point_cloud_provider<
 
         if (num_layer_points > 0) {
             nodes_.layer_absorption
-                = sclx::array<value_type, 1>{num_layer_points};
+                = sclx::array<value_type, 1>{num_layer_points + num_ghost_points};
         }
 
         for (size_t i = 0; i < num_bulk_points; ++i) {
@@ -458,6 +476,8 @@ class conforming_point_cloud_provider<
             for (size_t j = 0; j < dimensions; ++j) {
                 nodes_.points(j, i + num_bulk_and_layer_points + num_boundary_points)
                     = ghost_points[i][j];
+                nodes_.layer_absorption(i + num_layer_points)
+                    = absorption_coefficients[i + num_bulk_and_layer_points];
             }
         }
     }

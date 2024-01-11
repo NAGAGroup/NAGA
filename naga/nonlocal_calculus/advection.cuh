@@ -179,7 +179,8 @@ class advection_operator {
                 } else if (rk_df_dt_list[i].elements() > f0_.elements()) {
                     sliced_rk_df_dt_list[i] = sclx::array<T, 1>{
                         f0_.shape(),
-                        rk_df_dt_list[i].data()};
+                        rk_df_dt_list[i].data()
+                    };
                     sliced_rk_df_dt_list[i].set_primary_devices();
                 } else {
                     rk_df_dt_list[i]        = sclx::array<T, 1>{f0_.shape()};
@@ -203,7 +204,8 @@ class advection_operator {
             divergence_field_map<FieldMap> div_input_field{
                 velocity_field,
                 f0,
-                centering_offset};
+                centering_offset
+            };
 
             divergence_op_->apply(div_input_field, rk_df_dt_list[0]);
 
@@ -357,9 +359,8 @@ class advection_operator {
                     new_executors.push_back(old_executors[i]);
                 } else {
                     new_executors.push_back(
-                        std::make_shared<advection_executor>(
-                            advection_executor{}
-                        )
+                        std::make_shared<advection_executor>(advection_executor{
+                        })
                     );
                     new_executors.back()->init_thread();
                 }
@@ -454,7 +455,7 @@ class advection_operator {
         sclx::array<T, 1>& f0,
         sclx::array<T, 1>& f,
         T dt,
-        T centering_offset = T(0),
+        T centering_offset        = T(0),
         size_t boundary_idx_start = 0
     ) {
         if (f0.elements() != domain_size_) {
@@ -506,9 +507,11 @@ class advection_operator {
 
     advection_operator slice(size_t new_size) const {
         advection_operator new_op;
-        new_op = *this;
-        *new_op.divergence_op_ = divergence_op_->slice(new_size);
-        new_op.domain_size_   = new_size;
+        new_op.divergence_op_
+            = std::make_shared<divergence_operator<T, Dimensions>>(
+                divergence_op_->slice(new_size)
+            );
+        new_op.domain_size_ = new_size;
         return new_op;
     }
 

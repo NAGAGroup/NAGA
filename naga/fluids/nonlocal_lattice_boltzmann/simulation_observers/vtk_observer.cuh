@@ -113,56 +113,56 @@ class vtk_observer : public simulation_observer<Lattice> {
             previous_frame_future_.get();
         }
 
-        auto number_of_points_no_ghost = domain.points.shape()[1] - domain.num_ghost_nodes;
+        auto number_of_points = domain.points.shape()[1];
 
         vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
-        points->SetNumberOfPoints(static_cast<vtkIdType>(number_of_points_no_ghost));
+        points->SetNumberOfPoints(static_cast<vtkIdType>(number_of_points));
 
         using vtk_array_type = typename get_vtk_array_type<value_type>::type;
 
         vtkSmartPointer<vtk_array_type> f
             = vtkSmartPointer<vtk_array_type>::New();
         f->SetNumberOfComponents(Lattice::size);
-        f->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost));
+        f->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points));
         f->SetName("f");
 
         vtkSmartPointer<vtk_array_type> density
             = vtkSmartPointer<vtk_array_type>::New();
         density->SetNumberOfComponents(1);
-        density->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost));
+        density->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points));
         density->SetName("density");
 
         vtkSmartPointer<vtk_array_type> velocity
             = vtkSmartPointer<vtk_array_type>::New();
         velocity->SetNumberOfComponents(3);
-        velocity->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost));
+        velocity->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points));
         velocity->SetName("velocity");
 
         vtkSmartPointer<vtk_array_type> absorption
             = vtkSmartPointer<vtk_array_type>::New();
         absorption->SetNumberOfComponents(1);
         absorption->SetNumberOfTuples(
-            static_cast<vtkIdType>(number_of_points_no_ghost)
+            static_cast<vtkIdType>(number_of_points)
         );
         absorption->SetName("absorption");
 
         vtkSmartPointer<vtk_array_type> normals
             = vtkSmartPointer<vtk_array_type>::New();
         normals->SetNumberOfComponents(3);
-        normals->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost));
+        normals->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points));
         normals->SetName("normals");
 
         vtkSmartPointer<vtkIntArray> type = vtkSmartPointer<vtkIntArray>::New();
         type->SetNumberOfComponents(1);
-        type->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points_no_ghost)
+        type->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points)
         );
         type->SetName("type");
 
         vtkSmartPointer<vtkCellArray> cells
             = vtkSmartPointer<vtkCellArray>::New();
-        cells->Allocate(number_of_points_no_ghost);
+        cells->Allocate(number_of_points);
 
-        for (vtkIdType i = 0; i < number_of_points_no_ghost; ++i) {
+        for (vtkIdType i = 0; i < number_of_points; ++i) {
             value_type point[3]{0, 0, 0};
             for (int d = 0; d < Lattice::dimensions; ++d) {
                 point[d] = domain.points(d, i);
@@ -194,7 +194,11 @@ class vtk_observer : public simulation_observer<Lattice> {
             int type_i = 0;
             value_type normal_i[3]{0, 0, 0};
             value_type absorption_i = 0;
-            if (i >= domain.num_bulk_points + domain.num_layer_points) {
+            if (i >= domain.num_bulk_points + domain.num_layer_points + domain.num_boundary_points) {
+                type_i = 3;
+                absorption_i
+                    = domain.layer_absorption(i - domain.num_bulk_points);
+            } else if (i >= domain.num_bulk_points + domain.num_layer_points) {
                 type_i = 2;
                 for (int d = 0; d < Lattice::dimensions; ++d) {
                     normal_i[d] = domain.boundary_normals(
@@ -202,6 +206,8 @@ class vtk_observer : public simulation_observer<Lattice> {
                         i - domain.num_bulk_points - domain.num_layer_points
                     );
                 }
+                absorption_i
+                    = domain.layer_absorption(i - domain.num_bulk_points);
             } else if (i >= domain.num_bulk_points) {
                 type_i = 1;
                 absorption_i
@@ -246,14 +252,14 @@ void update_approx(
     const solution_t& solution
 ) {
         if (save_points_.empty()) {
-            auto number_of_points_no_ghost = domain.points.shape()[1] - domain.num_ghost_nodes;
+            auto number_of_points = domain.points.shape()[1] - domain.num_ghost_nodes;
 
             // randomly choose save points given the approximate number of save
             // points
             save_points_.reserve(approx_save_points_);
             std::uniform_int_distribution<size_t> dist(
                 0,
-                number_of_points_no_ghost - 1
+                number_of_points - 1
             );
             std::mt19937 gen;
             for (size_t i = 0; i < approx_save_points_; ++i) {
@@ -356,7 +362,11 @@ void update_approx(
             int type_i = 0;
             value_type normal_i[3]{0, 0, 0};
             value_type absorption_i = 0;
-            if (p >= domain.num_bulk_points + domain.num_layer_points) {
+            if (p >= domain.num_bulk_points + domain.num_layer_points + domain.num_boundary_points) {
+                type_i = 3;
+                absorption_i
+                    = domain.layer_absorption(p - domain.num_bulk_points);
+            } else if (p >= domain.num_bulk_points + domain.num_layer_points) {
                 type_i = 2;
                 for (int d = 0; d < Lattice::dimensions; ++d) {
                     normal_i[d] = domain.boundary_normals(
@@ -364,6 +374,8 @@ void update_approx(
                         p - domain.num_bulk_points - domain.num_layer_points
                     );
                 }
+                absorption_i
+                    = domain.layer_absorption(p - domain.num_bulk_points);
             } else if (p >= domain.num_bulk_points) {
                 type_i = 1;
                 absorption_i

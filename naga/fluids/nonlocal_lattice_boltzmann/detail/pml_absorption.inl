@@ -198,7 +198,8 @@ class partial_pml_subtask<d2q9_lattice<T>> {
                       [idx[0] - params.absorption_layer_start];
 
             params.lattice_distributions[alpha][idx[0]]
-                -= params.lattice_dt * sigma * (2.f * f_tilde_eq + sigma * Q_value);
+                -= params.lattice_dt * sigma
+                 * (2.f * f_tilde_eq + sigma * Q_value);
         }
     }
 
@@ -307,8 +308,8 @@ class pml_absorption_operator<d2q9_lattice<T>> {
         : engine_(engine) {
         std::vector<sclx::array<value_type, 1>> lattice_Q1_values_raw;
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            sclx::array<value_type, 1> Q1_alpha{
-                engine_->domain_.points.shape()[1]};
+            sclx::array<value_type, 1> Q1_alpha{engine_->domain_.points.shape(
+            )[1]};
             sclx::fill(
                 Q1_alpha,
                 lattice_interface<lattice>::lattice_weights().vals[alpha]
@@ -345,24 +346,34 @@ class pml_absorption_operator<d2q9_lattice<T>> {
                 engine_->domain_.layer_absorption,
                 engine_->domain_.num_bulk_points,
                 engine_->domain_.num_bulk_points
-                    + engine_->domain_.num_layer_points};
+                    + engine_->domain_.num_layer_points
+            };
 
-            engine_->advection_operator_ptr_->divergence_op().apply(
+            engine_->pml_advection_operator_ptr_->divergence_op().apply(
                 field_map,
                 engine_->temporary_distributions_[alpha]
             );
 
-            const auto& time_scale = engine_->parameters_.nondim_factors.time_scale;
-            const auto& length_scale = engine_->parameters_.nondim_factors.length_scale;
-            auto lattice_dt = engine_->parameters_.time_step / time_scale * length_scale;
+            const auto& time_scale
+                = engine_->parameters_.nondim_factors.time_scale;
+            const auto& length_scale
+                = engine_->parameters_.nondim_factors.length_scale;
+            auto lattice_dt
+                = engine_->parameters_.time_step / time_scale * length_scale;
             auto layer_begin = engine_->domain_.num_bulk_points;
-            auto layer_end = engine_->domain_.num_bulk_points
+            auto layer_end   = engine_->domain_.num_bulk_points
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
                 nonlocal_calculus::forward_euler<T>(lattice_dt),
-                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
-                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
-                engine_->temporary_distributions_[alpha] // .get_range({layer_begin}, {layer_end})
+                engine_->solution_
+                    .lattice_distributions[alpha],  // .get_range({layer_begin},
+                                                    // {layer_end}),
+                engine_->solution_
+                    .lattice_distributions[alpha],  // .get_range({layer_begin},
+                                                    // {layer_end}),
+                engine_->temporary_distributions_
+                    [alpha]  // .get_range({layer_begin},
+                             // {layer_end})
             );
         }
 
@@ -415,11 +426,13 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
     __host__ __device__ pml_div_Q1_field_map(
         const value_type* c0,
         const sclx::array<const value_type, 1>& absorption_coeff,
+        const sclx::array<const value_type, 2>& absorbing_directions,
         const sclx::array<const value_type, 1>& Q1,
         size_t pml_start_index,
         size_t pml_end_index
     )
         : absorption_coeff(absorption_coeff),
+          absorbing_directions(absorbing_directions),
           Q1(Q1),
           pml_start_index(pml_start_index),
           pml_end_index(pml_end_index) {
@@ -430,16 +443,19 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
     }
 
     __host__ __device__ point_type operator[](sclx::index_t i) const {
-        point_type c;
+        point_type c{{0.f, 0.f, 0.f}};
         if (i < pml_start_index || i >= pml_end_index) {
-            for (uint d = 0; d < dimensions; d++) {
-                c[d] = 0.f;
-            }
+            return c;
         } else {
-            size_t pml_index = i - pml_start_index;
-            value_type sigma = absorption_coeff[pml_index];
+            size_t pml_index        = i - pml_start_index;
+            const value_type& sigma = absorption_coeff[pml_index];
+            const value_type* absorbing_dir
+                = &absorbing_directions(0, pml_index);
+            auto scaled_sigma = naga::math::abs(
+                sigma * naga::math::loopless::dot<dimensions>(absorbing_dir, c0)
+            );
             for (uint d = 0; d < dimensions; d++) {
-                c[d] = -2.f * c0[d] * sigma * Q1[pml_index];
+                c[d] = -2.f * c0[d] * scaled_sigma * Q1[pml_index];
             }
         }
 
@@ -452,12 +468,13 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
     }
 
     __host__ __device__ size_t size() const {
-        return absorption_coeff.elements();
+        return Q1.elements();
     }
 
   private:
     value_type c0[dimensions];
     sclx::array<const value_type, 1> absorption_coeff;
+    sclx::array<const value_type, 2> absorbing_directions;
     sclx::array<const value_type, 1> Q1;
     size_t pml_start_index;
     size_t pml_end_index;
@@ -476,11 +493,13 @@ class pml_div_Q2_field_map {
     __host__ __device__ pml_div_Q2_field_map(
         const value_type* c0,
         const sclx::array<const value_type, 1>& absorption_coeff,
+        const sclx::array<const value_type, 2>& absorbing_directions,
         const sclx::array<const value_type, 1>& Q2,
         size_t pml_start_index,
         size_t pml_end_index
     )
         : absorption_coeff(absorption_coeff),
+          absorbing_directions(absorbing_directions),
           Q2(Q2),
           pml_start_index(pml_start_index),
           pml_end_index(pml_end_index) {
@@ -491,16 +510,19 @@ class pml_div_Q2_field_map {
     }
 
     __host__ __device__ point_type operator[](sclx::index_t i) const {
-        point_type c;
+        point_type c{{0.f, 0.f, 0.f}};
         if (i < pml_start_index || i >= pml_end_index) {
-            for (uint d = 0; d < dimensions; d++) {
-                c[d] = 0.f;
-            }
+            return c;
         } else {
-            size_t pml_index = i - pml_start_index;
-            value_type sigma = absorption_coeff[pml_index];
+            size_t pml_index        = i - pml_start_index;
+            const value_type& sigma = absorption_coeff[pml_index];
+            const value_type* absorbing_dir
+                = &absorbing_directions(0, pml_index);
+            auto scaled_sigma = naga::math::abs(
+                sigma * naga::math::loopless::dot<dimensions>(absorbing_dir, c0)
+            );
             for (uint d = 0; d < dimensions; d++) {
-                c[d] = c0[d] * sigma * sigma * Q2[pml_index];
+                c[d] = c0[d] * scaled_sigma * scaled_sigma * Q2[pml_index];
             }
         }
 
@@ -513,12 +535,13 @@ class pml_div_Q2_field_map {
     }
 
     __host__ __device__ size_t size() const {
-        return absorption_coeff.elements();
+        return Q2.elements();
     }
 
   private:
     value_type c0[dimensions];
     sclx::array<const value_type, 1> absorption_coeff;
+    sclx::array<const value_type, 2> absorbing_directions;
     sclx::array<const value_type, 1> Q2;
     size_t pml_start_index;
     size_t pml_end_index;
@@ -740,16 +763,16 @@ class pml_absorption_operator<d3q27_lattice<T>> {
         std::vector<sclx::array<value_type, 1>> lattice_Q1_values_raw;
         std::vector<sclx::array<value_type, 1>> lattice_Q2_values_raw;
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            sclx::array<value_type, 1> Q1_alpha{
-                engine_->domain_.points.shape()[1]};
+            sclx::array<value_type, 1> Q1_alpha{engine_->domain_.points.shape(
+            )[1]};
             sclx::fill(
                 Q1_alpha,
                 lattice_interface<lattice>::lattice_weights().vals[alpha]
             );
             lattice_Q1_values_raw.push_back(Q1_alpha);
 
-            sclx::array<value_type, 1> Q2_alpha{
-                engine_->domain_.points.shape()[1]};
+            sclx::array<value_type, 1> Q2_alpha{engine_->domain_.points.shape(
+            )[1]};
             sclx::fill(Q2_alpha, value_type{0});
             lattice_Q2_values_raw.push_back(Q2_alpha);
         }
@@ -783,50 +806,69 @@ class pml_absorption_operator<d3q27_lattice<T>> {
 
             pml_div_Q1_field_map<lattice> field_map_Q1{
                 lattice_interface<lattice>::lattice_velocities().vals[alpha],
-                Q1,
                 engine_->domain_.layer_absorption,
+                engine_->pml_absorbing_directions_,
+                Q1,
                 engine_->domain_.num_bulk_points,
                 engine_->domain_.num_bulk_points
-                    + engine_->domain_.num_layer_points};
+                    + engine_->domain_.num_layer_points
+            };
 
-            engine_->advection_operator_ptr_->divergence_op().apply(
+            engine_->pml_advection_operator_ptr_->divergence_op().apply(
                 field_map_Q1,
                 engine_->temporary_distributions_[alpha]
             );
 
-            const auto& time_scale = engine_->parameters_.nondim_factors.time_scale;
-            const auto& length_scale = engine_->parameters_.nondim_factors.length_scale;
-            auto lattice_dt = engine_->parameters_.time_step / time_scale * length_scale;
+            const auto& time_scale
+                = engine_->parameters_.nondim_factors.time_scale;
+            const auto& length_scale
+                = engine_->parameters_.nondim_factors.length_scale;
+            auto lattice_dt
+                = engine_->parameters_.time_step / time_scale * length_scale;
             auto layer_begin = engine_->domain_.num_bulk_points;
-            auto layer_end = engine_->domain_.num_bulk_points
+            auto layer_end   = engine_->domain_.num_bulk_points
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
                 nonlocal_calculus::forward_euler<T>(lattice_dt),
-                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
-                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
-                engine_->temporary_distributions_[alpha] // .get_range({layer_begin}, {layer_end})
+                engine_->solution_
+                    .lattice_distributions[alpha],  // .get_range({layer_begin},
+                                                    // {layer_end}),
+                engine_->solution_
+                    .lattice_distributions[alpha],  // .get_range({layer_begin},
+                                                    // {layer_end}),
+                engine_->temporary_distributions_
+                    [alpha]  // .get_range({layer_begin},
+                             // {layer_end})
             );
 
             const auto& Q2 = lattice_Q2_values_[alpha];
 
             pml_div_Q2_field_map<value_type> field_map_Q2{
                 lattice_interface<lattice>::lattice_velocities().vals[alpha],
-                Q2,
                 engine_->domain_.layer_absorption,
+                engine_->pml_absorbing_directions_,
+                Q2,
                 engine_->domain_.num_bulk_points,
                 engine_->domain_.num_bulk_points
-                    + engine_->domain_.num_layer_points};
+                    + engine_->domain_.num_layer_points
+            };
 
-            engine_->advection_operator_ptr_->divergence_op().apply(
+            engine_->pml_advection_operator_ptr_->divergence_op().apply(
                 field_map_Q2,
                 engine_->temporary_distributions_[alpha]
             );
 
             sclx::algorithm::elementwise_reduce(
                 nonlocal_calculus::forward_euler<T>(lattice_dt),
-                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
-                engine_->solution_.lattice_distributions[alpha], // .get_range({layer_begin}, {layer_end}),
-                engine_->temporary_distributions_[alpha] // .get_range({layer_begin}, {layer_end})
+                engine_->solution_
+                    .lattice_distributions[alpha],  // .get_range({layer_begin},
+                                                    // {layer_end}),
+                engine_->solution_
+                    .lattice_distributions[alpha],  // .get_range({layer_begin},
+                                                    // {layer_end}),
+                engine_->temporary_distributions_
+                    [alpha]  // .get_range({layer_begin},
+                             // {layer_end})
             );
         }
 

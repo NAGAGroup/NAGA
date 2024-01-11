@@ -123,7 +123,8 @@ class simulation_engine {
             );
         }
         size_t total_points = domain.num_bulk_points + domain.num_layer_points
-                            + domain.num_boundary_points + domain.num_ghost_nodes;
+                            + domain.num_boundary_points
+                            + domain.num_ghost_nodes;
         if (domain.points.shape()[1] != total_points) {
             sclx::throw_exception<std::invalid_argument>(
                 "The number of points in the simulation domain does not match "
@@ -145,7 +146,8 @@ class simulation_engine {
                 "naga::fluids::nonlocal_lbm::simulation_engine::"
             );
         }
-        if (domain.layer_absorption.elements() != domain.num_layer_points) {
+        if (domain.layer_absorption.elements()
+            != domain.num_layer_points + domain.num_ghost_nodes) {
             sclx::throw_exception<std::invalid_argument>(
                 "The number of layer absorption coefficients does not match "
                 "the number of layer points.",
@@ -158,12 +160,14 @@ class simulation_engine {
             // interpolation indices to the radial point method.
             sclx::array<value_type, 2> bulk_points = domain.points.get_range(
                 {0},
-                {domain.num_bulk_points + domain.num_layer_points}
+                {domain.points.shape()[1] - domain.num_ghost_nodes
+                 - domain.num_boundary_points}
             );
             sclx::array<value_type, 2> boundary_points
                 = domain.points.get_range(
-                    {domain.num_bulk_points + domain.num_layer_points},
-                    {domain.points.shape()[1]}
+                    {domain.points.shape()[1] - domain.num_ghost_nodes
+                     - domain.num_boundary_points},
+                    {domain.points.shape()[1] - domain.num_ghost_nodes}
                 );
 
             uint num_interp_points = 32;
@@ -196,11 +200,10 @@ class simulation_engine {
                 {0},
                 {domain.points.shape()[1] - domain.num_ghost_nodes}
             );
-            sclx::array<value_type, 2> ghost_points
-                = domain.points.get_range(
-                    {domain.points.shape()[1] - domain.num_ghost_nodes},
-                    {domain.points.shape()[1]}
-                );
+            sclx::array<value_type, 2> ghost_points = domain.points.get_range(
+                {domain.points.shape()[1] - domain.num_ghost_nodes},
+                {domain.points.shape()[1]}
+            );
 
             uint num_interp_points = 32;
             segmentation::nd_cubic_segmentation<value_type, dimensions>
@@ -228,9 +231,15 @@ class simulation_engine {
         advection_operator_ptr_ = std::make_shared<advection_operator_t>(
             advection_operator_t::create(domain.points)
         );
+
+        pml_advection_operator_ptr_ = advection_operator_ptr_;
+
         linalg::detail::batched_matrix_inverse_executor<
             value_type>::clear_problem_definitions();
-        max_concurrency_ = std::min(std::thread::hardware_concurrency() / 2, max_concurrency_);
+        max_concurrency_ = std::min(
+            std::thread::hardware_concurrency() / 2,
+            max_concurrency_
+        );
         advection_operator_ptr_->set_max_concurrent_threads(max_concurrency_);
 
         for (auto& f_alpha : solution_.lattice_distributions) {
@@ -253,34 +262,139 @@ class simulation_engine {
         density_source_term_
             = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
 
-        auto absorption_coeffs = domain_.layer_absorption;
-        auto new_num_layer_points  = domain_.num_layer_points + domain_.num_boundary_points + domain_.num_ghost_nodes;
+        auto absorption_coeffs    = domain_.layer_absorption;
+        auto new_num_layer_points = domain_.num_layer_points
+                                  + domain_.num_boundary_points
+                                  + domain_.num_ghost_nodes;
         auto boundary_absorption = boundary_absorption_coefficient;
-        sclx::array<value_type, 1> new_layer_absorption{
-            {new_num_layer_points}
-        };
+        sclx::array<value_type, 1> new_layer_absorption{{new_num_layer_points}};
+        //        std::copy(
+        //            absorption_coeffs.begin(),
+        //            absorption_coeffs.begin() + domain_.num_layer_points,
+        //            new_layer_absorption.begin()
+        //        );
+        //        std::fill(
+        //            new_layer_absorption.begin() + domain_.num_layer_points,
+        //            new_layer_absorption.begin() + domain_.num_layer_points
+        //                + domain_.num_boundary_points,
+        //            boundary_absorption
+        //        );
+        //        std::fill(
+        //            new_layer_absorption.begin() + domain_.num_layer_points
+        //                + domain_.num_boundary_points,
+        //            new_layer_absorption.end(),
+        //            0.f
+        //        );
+
         std::copy(
             absorption_coeffs.begin(),
-            absorption_coeffs.end(),
+            absorption_coeffs.begin() + domain_.num_layer_points,
             new_layer_absorption.begin()
         );
         std::fill(
-            new_layer_absorption.begin() + absorption_coeffs.elements(),
+            new_layer_absorption.begin() + domain_.num_layer_points,
             new_layer_absorption.end(),
             boundary_absorption
         );
+
+        /*
+         * Below is the version that makes ghost nodes nonzero absorption
+         */
+        //        std::copy(
+        //            absorption_coeffs.begin(),
+        //            absorption_coeffs.begin() + domain_.num_layer_points,
+        //            new_layer_absorption.begin()
+        //        );
+        //        std::fill(
+        //            new_layer_absorption.begin() + domain_.num_layer_points,
+        //            new_layer_absorption.begin() + domain_.num_layer_points
+        //                + domain_.num_boundary_points,
+        //            boundary_absorption
+        //        );
+        //        std::copy(
+        //            absorption_coeffs.begin() + domain_.num_layer_points,
+        //            absorption_coeffs.end(),
+        //            new_layer_absorption.begin() + domain_.num_layer_points
+        //                + domain_.num_boundary_points
+        //        );
+        //        std::transform(
+        //            new_layer_absorption.begin() + domain_.num_layer_points
+        //                + domain_.num_boundary_points,
+        //            new_layer_absorption.end(),
+        //            new_layer_absorption.begin() + domain_.num_layer_points
+        //                + domain_.num_boundary_points,
+        //            [&](value_type val) { return boundary_absorption * val; }
+        //        );
+
         domain_.layer_absorption = new_layer_absorption;
         domain_.num_layer_points = new_num_layer_points;
 
         pml_absorption_operator_ = pml_absorption_operator<Lattice>{this};
 
-
-        // before the boundary condition change to use acoustic damping instead of bounce back,
-        // the total number of points was num_bulk + num_layer + num_boundary
-        // now, it is num_bulk + num_layer, so we need to subtract num_boundary as observers
-        // still expect the old way, for the absorption step it will be added back temporarily
+        // before the boundary condition change to use acoustic damping instead
+        // of bounce back, the total number of points was num_bulk + num_layer +
+        // num_boundary now, it is num_bulk + num_layer, so we need to subtract
+        // num_boundary as observers still expect the old way, for the
+        // absorption step it will be added back temporarily
         domain_.num_layer_points -= domain_.num_boundary_points;
         domain_.num_layer_points -= domain_.num_ghost_nodes;
+
+        pml_absorbing_directions_
+            = sclx::array<value_type, 2>{{dimensions, new_num_layer_points}};
+
+        auto& points        = domain_.points;
+        auto bulk_end       = domain_.num_bulk_points;
+        auto boundary_start = points.shape()[1] - domain_.num_boundary_points
+                            - domain_.num_ghost_nodes;
+        auto boundary_end = points.shape()[1] - domain_.num_ghost_nodes;
+        auto ghost_start  = boundary_end;
+        auto& pml_absorbing_directions = pml_absorbing_directions_;
+        auto& boundary_normals         = domain_.boundary_normals;
+
+        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            handler.launch(
+                sclx::md_range_t<1>{pml_absorbing_directions.shape()[1]},
+                pml_absorbing_directions,
+                [=] __device__(const sclx::md_index_t<1>& idx, const auto&) {
+                    auto global_idx = idx[0] + bulk_end;
+                    if (global_idx >= boundary_start
+                        && global_idx < boundary_end) {
+                        for (uint d = 0; d < dimensions; ++d) {
+                            pml_absorbing_directions(d, idx[0])
+                                = boundary_normals(d, idx[0] - boundary_start);
+                        }
+                        return;
+                    }
+
+                    const auto& compute_euclidean_squared
+                        = naga::distance_functions::loopless::euclidean_squared<
+                            dimensions>{};
+                    value_type closest_distance_squared
+                        = std::numeric_limits<value_type>::infinity();
+                    size_t closest_boundary_idx;
+
+                    const value_type* query_point = &points(0, global_idx);
+                    for (size_t i = boundary_start; i < boundary_end; ++i) {
+                        const auto* boundary_point = &points(0, i);
+                        auto distance_squared      = compute_euclidean_squared(
+                            query_point,
+                            boundary_point
+                        );
+                        if (distance_squared < closest_distance_squared) {
+                            closest_distance_squared = distance_squared;
+                            closest_boundary_idx     = i;
+                        }
+                    }
+
+                    for (uint d = 0; d < dimensions; ++d) {
+                        pml_absorbing_directions(d, idx[0]) = boundary_normals(
+                            d,
+                            closest_boundary_idx - boundary_start
+                        );
+                    }
+                }
+            );
+        }).get();
 
         reset();
     }
@@ -319,8 +433,7 @@ class simulation_engine {
     }
 
     void compute_macroscopic_values() {
-        interpolate_boundaries();
-
+        interpolate_ghost_nodes();
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             sclx::local_array<value_type, 2> f_shared(
                 handler,
@@ -389,8 +502,6 @@ class simulation_engine {
     }
 
     void collision_step() {
-        interpolate_boundaries();
-
         sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
             sclx::array_list<value_type, 1, lattice_size> lattice_distributions(
                 solution_.lattice_distributions
@@ -455,12 +566,13 @@ class simulation_engine {
         }).get();
 
         interpolate_ghost_nodes();
-
         domain_.num_layer_points += domain_.num_boundary_points;
         domain_.num_layer_points += domain_.num_ghost_nodes;
+        parameters_.time_step /= 2;
         pml_absorption_operator_.apply();
         domain_.num_layer_points -= domain_.num_boundary_points;
         domain_.num_layer_points -= domain_.num_ghost_nodes;
+        parameters_.time_step *= 2;
     }
 
     void interpolate_boundaries() {
@@ -469,12 +581,14 @@ class simulation_engine {
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& f_alpha = solution_.lattice_distributions[alpha];
             sclx::array<value_type, 1> boundary_f_alpha = f_alpha.get_range(
-                {domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes},
-                {domain_.points.shape()[1]}
+                {domain_.points.shape()[1] - domain_.num_boundary_points
+                 - domain_.num_ghost_nodes},
+                {domain_.points.shape()[1] - domain_.num_ghost_nodes}
             );
             const sclx::array<value_type, 1>& bulk_f_alpha = f_alpha.get_range(
                 {0},
-                {domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes}
+                {domain_.points.shape()[1] - domain_.num_boundary_points
+                 - domain_.num_ghost_nodes}
             );
             interpolation_futures.emplace_back(
                 boundary_interpolator_ptr_->interpolate(
@@ -520,9 +634,99 @@ class simulation_engine {
         }
     }
 
-    void bounce_back_step() {
-        interpolate_boundaries();
+    void bounce_back_step_ghost() {
+        if (domain_.num_ghost_nodes == 0) {
+            return;
+        }
 
+        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            sclx::local_array<value_type, 2> lattice_velocities(
+                handler,
+                {dimensions, lattice_size}
+            );
+            sclx::local_array<value_type, 1> lattice_weights(
+                handler,
+                {lattice_size}
+            );
+
+            sclx::array<value_type, 1> f_ghost[lattice_size];
+            for (int alpha = 0; alpha < lattice_size; ++alpha) {
+                f_ghost[alpha]
+                    = solution_.lattice_distributions[alpha].get_range(
+                        {domain_.points.shape()[1]
+                         - domain_.num_ghost_nodes},
+                        {domain_.points.shape()[1]}
+                    );
+            }
+
+            sclx::array_list<value_type, 1, lattice_size> result_arrays(
+                f_ghost
+            );
+            auto ghost_absorbing_dirs = pml_absorbing_directions_.get_range(
+                {pml_absorbing_directions_.shape()[1] - domain_.num_ghost_nodes},
+                {pml_absorbing_directions_.shape()[1]}
+            );
+
+            handler.launch(
+                sclx::md_range_t<1>{domain_.num_ghost_nodes},
+                result_arrays,
+                [=] __device__(
+                    const sclx::md_index_t<1>& idx,
+                    const sclx::kernel_info<>& info
+                ) mutable {
+                    if (info.local_thread_linear_id() == 0) {
+                        for (int i = 0; i < dimensions * lattice_size; ++i) {
+                            lattice_velocities(
+                                i % dimensions,
+                                i / dimensions
+                            ) = lattice_interface<Lattice>::lattice_velocities()
+                                    .vals[i / dimensions][i % dimensions];
+                            if (i % dimensions == 0) {
+                                continue;
+                            }
+                            lattice_weights(i / dimensions)
+                                = lattice_interface<Lattice>::lattice_weights()
+                                      .vals[i / dimensions];
+                        }
+                    }
+                    handler.syncthreads();
+
+                    value_type absorbing_dir[dimensions]{};
+                    for (int d = 0; d < dimensions; ++d) {
+                        absorbing_dir[d] = ghost_absorbing_dirs(d, idx[0]);
+                    }
+
+                    auto max_angle   = 1e-6;
+                    auto normal_norm = math::loopless::norm<dimensions>(absorbing_dir);
+                    for (int alpha = 1; alpha < lattice_size; ++alpha) {
+                        auto absorbing_dir_dot_calpha
+                            = math::loopless::dot<dimensions>(
+                                absorbing_dir,
+                                &lattice_velocities(0, alpha)
+                            );
+                        if (absorbing_dir_dot_calpha > 0) {
+                            continue;
+                        }
+                        auto calpha_norm = math::loopless::norm<dimensions>(
+                            &lattice_velocities(0, alpha)
+                        );
+                        calpha_norm = isnan(calpha_norm) ? 0 : calpha_norm;
+                        auto angle_normal_calpha = naga::math::abs(math::acos(
+                            absorbing_dir_dot_calpha / (normal_norm * calpha_norm)
+                        ));
+                        if (naga::math::abs(std::fmod(angle_normal_calpha, naga::math::pi<value_type>)) < max_angle) {
+                            continue;
+                        }
+                        result_arrays[alpha][idx[0]]
+                            = result_arrays[lattice_interface<
+                                Lattice>::get_bounce_back_idx(alpha)][idx[0]];
+                    }
+                }
+            );
+        }).get();
+    }
+
+    void bounce_back_step_boundary() {
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             sclx::local_array<value_type, 2> lattice_velocities(
                 handler,
@@ -537,8 +741,9 @@ class simulation_engine {
             for (int alpha = 0; alpha < lattice_size; ++alpha) {
                 f_boundary[alpha]
                     = solution_.lattice_distributions[alpha].get_range(
-                        {domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes},
-                        {domain_.points.shape()[1]}
+                        {domain_.points.shape()[1] - domain_.num_boundary_points
+                         - domain_.num_ghost_nodes},
+                        {domain_.points.shape()[1]- domain_.num_ghost_nodes}
                     );
             }
 
@@ -576,29 +781,27 @@ class simulation_engine {
                         normal[d] = boundary_normals(d, idx[0]);
                     }
 
-                    auto max_angle = 1e-3;
-                    auto normal_norm = math::loopless::norm<dimensions>(
-                        normal
-                    );
+                    auto max_angle   = 1e-6;
+                    auto normal_norm = math::loopless::norm<dimensions>(normal);
                     for (int alpha = 1; alpha < lattice_size; ++alpha) {
-                        auto normal_dot_calpha = math::loopless::dot<dimensions>(
-                            normal,
-                            &lattice_velocities(0, alpha)
-                        );
-                        if (normal_dot_calpha
-                            < 0) {
+                        auto normal_dot_calpha
+                            = math::loopless::dot<dimensions>(
+                                normal,
+                                &lattice_velocities(0, alpha)
+                            );
+                        if (normal_dot_calpha < 0) {
                             continue;
                         }
                         auto calpha_norm = math::loopless::norm<dimensions>(
                             &lattice_velocities(0, alpha)
                         );
                         calpha_norm = isnan(calpha_norm) ? 0 : calpha_norm;
-                        auto angle_normal_calpha = math::acos(
+                        auto angle_normal_calpha = naga::math::abs(math::acos(
                             normal_dot_calpha / (normal_norm * calpha_norm)
-                        );
-//                        if (angle_normal_calpha < max_angle) {
-//                            result_arrays[alpha][idx[0]] = lattice_weights[alpha];
-//                        }
+                        ));
+                        if (naga::math::abs(std::fmod(angle_normal_calpha, naga::math::pi<value_type>)) < max_angle) {
+                            continue;
+                        }
                         result_arrays[alpha][idx[0]]
                             = result_arrays[lattice_interface<
                                 Lattice>::get_bounce_back_idx(alpha)][idx[0]];
@@ -606,8 +809,19 @@ class simulation_engine {
                 }
             );
         }).get();
+    }
 
-        interpolate_ghost_nodes();
+    void bounce_back_step() {
+        bounce_back_step_boundary();
+        bounce_back_step_ghost();
+
+        domain_.num_layer_points += domain_.num_boundary_points;
+        domain_.num_layer_points += domain_.num_ghost_nodes;
+        parameters_.time_step /= 2;
+        pml_absorption_operator_.apply();
+        domain_.num_layer_points -= domain_.num_boundary_points;
+        domain_.num_layer_points -= domain_.num_ghost_nodes;
+        parameters_.time_step *= 2;
     }
 
     void apply_density_source_terms() {
@@ -653,7 +867,6 @@ class simulation_engine {
     }
 
     void streaming_step() {
-
         using velocity_map = ::naga::nonlocal_calculus::
             constant_velocity_field<value_type, dimensions>;
 
@@ -667,7 +880,8 @@ class simulation_engine {
             = parameters_.time_step / time_scale * length_scale / 2.f;
 
         size_t boundary_start
-            = domain_.points.shape()[1] - domain_.num_boundary_points - domain_.num_ghost_nodes;
+            = domain_.points.shape()[1] - domain_.num_ghost_nodes - domain_
+                  .num_boundary_points;
 
         std::vector<std::pair<int, std::future<void>>> streaming_futures(
             max_concurrency_
@@ -713,6 +927,9 @@ class simulation_engine {
                 solution_.lattice_distributions[alpha]
             );
         }
+
+        interpolate_boundaries();
+        interpolate_ghost_nodes();
     }
 
     void step_forward() {
@@ -868,7 +1085,8 @@ class simulation_engine {
 
         advection_operator_ptr_ = std::make_shared<advection_operator_t>();
         ar(*advection_operator_ptr_);
-        boundary_interpolator_ptr_ = std::make_shared<interpolater_t>();
+        pml_advection_operator_ptr_ = advection_operator_ptr_;
+        boundary_interpolator_ptr_  = std::make_shared<interpolater_t>();
         ar(*boundary_interpolator_ptr_);
         ghost_interpolator_ptr_ = std::make_shared<interpolater_t>();
         ar(*ghost_interpolator_ptr_);
@@ -890,6 +1108,8 @@ class simulation_engine {
     using advection_operator_t
         = nonlocal_calculus::advection_operator<value_type, dimensions>;
     std::shared_ptr<advection_operator_t> advection_operator_ptr_{};
+    std::shared_ptr<advection_operator_t> pml_advection_operator_ptr_{};
+    sclx::array<value_type, 2> pml_absorbing_directions_{};
 
     using interpolater_t = interpolation::radial_point_method<value_type>;
     std::shared_ptr<interpolater_t> boundary_interpolator_ptr_{};

@@ -77,11 +77,6 @@ struct hash<naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge> {
 
 namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
-constexpr float min_bound_dist_scale_2d             = 1.f;
-constexpr float min_bound_dist_scaled_ghost_node_3d = -4.f;
-constexpr float min_bound_dist_scale_3d             = -1.02f;
-constexpr float max_bound_dist_scale_3d             = -.01f;
-
 template<class T>
 struct edge_info_t {
     using value_type = T;
@@ -2325,11 +2320,6 @@ class conforming_point_cloud_impl_t<T, 3> {
                     if (bulk_to_boundary_distances_arr
                             [&mask - &boundary_points_mask[0]]
                         < max_bound_dist_scale_3d * nodal_spacing) {
-                        ghost_points.push_back(point_t{
-                            {domain_points(0, &mask - &boundary_points_mask[0]),
-                             domain_points(1, &mask - &boundary_points_mask[0]),
-                             domain_points(2, &mask - &boundary_points_mask[0])}
-                        });
                         return;
                     }
                     bulk_points.push_back(point_t{
@@ -2369,6 +2359,29 @@ class conforming_point_cloud_impl_t<T, 3> {
             }
         );
 
+        std::for_each(
+            boundary_points_mask.begin(),
+            boundary_points_mask.end(),
+            [&](const auto& mask) {
+                if (mask == 0
+                    && bulk_to_boundary_distances_arr
+                               [&mask - &boundary_points_mask[0]]
+                           < max_bound_dist_scale_3d * nodal_spacing) {
+                    ghost_points.push_back(point_t{
+                        {domain_points(0, &mask - &boundary_points_mask[0]),
+                         domain_points(1, &mask - &boundary_points_mask[0]),
+                         domain_points(2, &mask - &boundary_points_mask[0])}
+                    });
+                    const auto& distance_to_boundary
+                        = bulk_to_boundary_distances_arr
+                              [&mask - &boundary_points_mask[0]];
+                    bulk_to_boundary_distances.push_back(
+                        naga::math::abs(distance_to_boundary)
+                    );
+                }
+            }
+        );
+
         std::transform(
             boundary_normals.begin(),
             boundary_normals.end(),
@@ -2389,25 +2402,27 @@ class conforming_point_cloud_impl_t<T, 3> {
         };
     }
 
-    const std::vector<point_t>& bulk_points() const { return bulk_points_; }
+    const std::vector<point_t>& bulk_points() const {
+            return bulk_points_; }
 
     const std::vector<T>& bulk_to_boundary_distances() const {
-        return bulk_to_boundary_distances_;
+            return bulk_to_boundary_distances_;
     }
 
     const std::vector<index_t>& closest_boundary_to_bulk() const {
-        return closest_boundary_to_bulk_;
+            return closest_boundary_to_bulk_;
     }
 
     const std::vector<point_t>& boundary_points() const {
-        return boundary_points_;
+            return boundary_points_;
     }
 
     const std::vector<normal_t>& boundary_normals() const {
-        return boundary_normals_;
+            return boundary_normals_;
     }
 
-    const std::vector<point_t>& ghost_points() const { return ghost_points_; }
+    const std::vector<point_t>& ghost_points() const {
+            return ghost_points_; }
 
   private:
     conforming_point_cloud_impl_t(
@@ -2431,65 +2446,65 @@ class conforming_point_cloud_impl_t<T, 3> {
     std::vector<point_t> ghost_points_;
     std::vector<point_t> boundary_points_;
     std::vector<normal_t> boundary_normals_;
-};
+    };
 
-template<class T>
-conforming_point_cloud_t<T, 3> conforming_point_cloud_t<T, 3>::create(
-    const T& approximate_spacing,
-    const std::filesystem::path& domain,
-    const std::vector<std::filesystem::path>& immersed_boundaries
-) {
-    conforming_point_cloud_t point_cloud;
-    auto impl = conforming_point_cloud_impl_t<T, dimensions>::create(
-        approximate_spacing,
-        domain,
-        immersed_boundaries
-    );
-    auto impl_ptr
-        = std::make_shared<conforming_point_cloud_impl_t<T, dimensions>>(
-            std::move(impl)
+    template<class T>
+    conforming_point_cloud_t<T, 3> conforming_point_cloud_t<T, 3>::create(
+        const T& approximate_spacing,
+        const std::filesystem::path& domain,
+        const std::vector<std::filesystem::path>& immersed_boundaries
+    ) {
+        conforming_point_cloud_t point_cloud;
+        auto impl = conforming_point_cloud_impl_t<T, dimensions>::create(
+            approximate_spacing,
+            domain,
+            immersed_boundaries
         );
-    point_cloud.impl = std::move(impl_ptr);
-    return point_cloud;
-}
+        auto impl_ptr
+            = std::make_shared<conforming_point_cloud_impl_t<T, dimensions>>(
+                std::move(impl)
+            );
+        point_cloud.impl = std::move(impl_ptr);
+        return point_cloud;
+    }
 
-template<class T>
-const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
-conforming_point_cloud_t<T, 3>::bulk_points() const {
-    return impl->bulk_points();
-}
+    template<class T>
+    const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
+    conforming_point_cloud_t<T, 3>::bulk_points() const {
+        return impl->bulk_points();
+    }
 
-template<class T>
-const std::vector<T>&
-conforming_point_cloud_t<T, 3>::bulk_to_boundary_distances() const {
-    return impl->bulk_to_boundary_distances();
-}
+    template<class T>
+    const std::vector<T>&
+    conforming_point_cloud_t<T, 3>::bulk_to_boundary_distances() const {
+        return impl->bulk_to_boundary_distances();
+    }
 
-template<class T>
-const std::vector<typename conforming_point_cloud_t<T, 3>::index_t>&
-conforming_point_cloud_t<T, 3>::closest_boundary_to_bulk() const {
-    return impl->closest_boundary_to_bulk();
-}
+    template<class T>
+    const std::vector<typename conforming_point_cloud_t<T, 3>::index_t>&
+    conforming_point_cloud_t<T, 3>::closest_boundary_to_bulk() const {
+        return impl->closest_boundary_to_bulk();
+    }
 
-template<class T>
-const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
-conforming_point_cloud_t<T, 3>::boundary_points() const {
-    return impl->boundary_points();
-}
+    template<class T>
+    const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
+    conforming_point_cloud_t<T, 3>::boundary_points() const {
+        return impl->boundary_points();
+    }
 
-template<class T>
-const std::vector<typename conforming_point_cloud_t<T, 3>::normal_t>&
-conforming_point_cloud_t<T, 3>::boundary_normals() const {
-    return impl->boundary_normals();
-}
+    template<class T>
+    const std::vector<typename conforming_point_cloud_t<T, 3>::normal_t>&
+    conforming_point_cloud_t<T, 3>::boundary_normals() const {
+        return impl->boundary_normals();
+    }
 
-template<class T>
-const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
-conforming_point_cloud_t<T, 3>::ghost_points() const {
-    return impl->ghost_points();
-}
+    template<class T>
+    const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
+    conforming_point_cloud_t<T, 3>::ghost_points() const {
+        return impl->ghost_points();
+    }
 
-template class conforming_point_cloud_t<float, 3>;
-template class conforming_point_cloud_t<double, 3>;
+    template class conforming_point_cloud_t<float, 3>;
+    template class conforming_point_cloud_t<double, 3>;
 
 }  // namespace naga::experimental::fluids::nonlocal_lbm::detail
