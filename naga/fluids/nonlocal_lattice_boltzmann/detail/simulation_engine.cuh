@@ -375,17 +375,17 @@ class simulation_engine {
         auto ghost_start       = boundary_end;
         auto& boundary_normals = domain_.boundary_normals;
 
-        // below we scale the absorption rates so that the same rate absorbs
-        // similarly across all speeds of sounds. the scale value below was
-        // found empirically and chosen such that, from a user's perspective
-        // 0 is no absorption and 1 is max absorption
-        value_type absorption_scale = 3.f / 100.f * parameters_.speed_of_sound;
-        sclx::algorithm::transform(
-            domain_.layer_absorption,
-            domain_.layer_absorption,
-            absorption_scale,
-            sclx::algorithm::multiplies<>{}
-        );
+//        // below we scale the absorption rates so that the same rate absorbs
+//        // similarly across all speeds of sounds. the scale value below was
+//        // found empirically and chosen such that, from a user's perspective
+//        // 0 is no absorption and 1 is max absorption
+//        value_type absorption_scale = speed_of_sound() * 3.f / 100.f;
+//        sclx::algorithm::transform(
+//            domain_.layer_absorption,
+//            domain_.layer_absorption,
+//            absorption_scale,
+//            sclx::algorithm::multiplies<>{}
+//        );
 
         reset();
     }
