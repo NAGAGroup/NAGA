@@ -122,6 +122,12 @@ class conforming_point_cloud_t<T, 2> {
 // and subsequently the 2D specialization, conform to the interface
 // below
 
+template <class T>
+struct mesh_placement {
+    naga::point_t<T, 3> location{{0, 0, 0}};
+    naga::point_t<T, 3> rotation{{0, 0, 0}};
+};
+
 template<class T>
 class conforming_point_cloud_t<T, 3> {
 
@@ -139,7 +145,8 @@ class conforming_point_cloud_t<T, 3> {
     static conforming_point_cloud_t create(
         const value_type& approximate_spacing,
         const std::filesystem::path& domain,
-        const std::vector<std::filesystem::path>& immersed_boundaries = {}
+        const std::vector<std::filesystem::path>& immersed_boundaries = {},
+        const std::vector<mesh_placement<value_type>>& immersed_mesh_placements     = {}
     );
 
     const std::vector<point_t>& bulk_points() const;

@@ -58,8 +58,8 @@ T distance_to_edge(
     const std::vector<T>& x2_normal
 ) {
     std::vector<T> average_normal
-        = {(x2_normal[0] + x1_normal[0]) / 2,
-           (x2_normal[1] + x1_normal[1]) / 2};
+        = {(x2_normal[0] + x1_normal[0]) / 2, (x2_normal[1] + x1_normal[1]) / 2
+        };
     T norm_normal = math::loopless::norm<2>(average_normal.data());
     average_normal[0] /= norm_normal;
     average_normal[1] /= norm_normal;
@@ -132,13 +132,13 @@ class conforming_point_cloud_provider : public node_provider<Lattice> {
     using value_type                 = typename base::value_type;
 
     conforming_point_cloud_provider(
-        const value_type & approximate_spacing,
+        const value_type& approximate_spacing,
         const sclx::filesystem::path& domain,
-        const std::vector<sclx::filesystem::path>& immersed_boundaries = {},
-        const value_type & domain_absorption_layer_thickness                = 0,
-        const value_type & domain_boundary_absorption_rate                  = 0,
-        const std::vector<value_type >& immersed_boundary_layer_thicknesses = {},
-        const std::vector<value_type >& immersed_boundary_absorption_rates  = {}
+        const std::vector<sclx::filesystem::path>& immersed_boundaries     = {},
+        const value_type& domain_absorption_layer_thickness                = 0,
+        const value_type& domain_boundary_absorption_rate                  = 0,
+        const std::vector<value_type>& immersed_boundary_layer_thicknesses = {},
+        const std::vector<value_type>& immersed_boundary_absorption_rates  = {}
     ) {}
 
     simulation_nodes<value_type> get() const final { return {}; }
@@ -154,13 +154,13 @@ class conforming_point_cloud_provider<
     using value_type                 = typename base::value_type;
 
     conforming_point_cloud_provider(
-        const value_type & approximate_spacing,
+        const value_type& approximate_spacing,
         const sclx::filesystem::path& domain,
-        const std::vector<sclx::filesystem::path>& immersed_boundaries = {},
-        const value_type & domain_absorption_layer_thickness                = 0,
-        const value_type & domain_boundary_absorption_rate                  = 0,
-        const std::vector<value_type >& immersed_boundary_layer_thicknesses = {},
-        const std::vector<value_type >& immersed_boundary_absorption_rates  = {}
+        const std::vector<sclx::filesystem::path>& immersed_boundaries     = {},
+        const value_type& domain_absorption_layer_thickness                = 0,
+        const value_type& domain_boundary_absorption_rate                  = 0,
+        const std::vector<value_type>& immersed_boundary_layer_thicknesses = {},
+        const std::vector<value_type>& immersed_boundary_absorption_rates  = {}
     ) {
 
         auto conforming_point_cloud
@@ -172,7 +172,8 @@ class conforming_point_cloud_provider<
 
         nodes_.points = sclx::array<value_type, 2>{
             dimensions,
-            conforming_point_cloud.points().size()};
+            conforming_point_cloud.points().size()
+        };
         for (size_t i = 0; i < conforming_point_cloud.points().size(); ++i) {
             for (size_t j = 0; j < dimensions; ++j) {
                 nodes_.points(j, i) = conforming_point_cloud.points()[i][j];
@@ -181,7 +182,8 @@ class conforming_point_cloud_provider<
 
         nodes_.boundary_normals = sclx::array<value_type, 2>{
             dimensions,
-            conforming_point_cloud.normals().size()};
+            conforming_point_cloud.normals().size()
+        };
         for (size_t i = 0; i < conforming_point_cloud.normals().size(); ++i) {
             for (size_t j = 0; j < dimensions; ++j) {
                 nodes_.boundary_normals(j, i)
@@ -195,7 +197,7 @@ class conforming_point_cloud_provider<
 
         nodes_.nodal_spacing = approximate_spacing;
 
-        std::vector<point_t<value_type , dimensions>> bulk_points(
+        std::vector<point_t<value_type, dimensions>> bulk_points(
             conforming_point_cloud.points().begin(),
             conforming_point_cloud.points().begin()
                 + conforming_point_cloud.num_bulk_points()
@@ -209,8 +211,8 @@ class conforming_point_cloud_provider<
             std::numeric_limits<value_type>::max()
         );
 
-        using closed_contour_t = typename detail::conforming_point_cloud_t<T,
-            dimensions>::input_domain_data_t;
+        using closed_contour_t = typename detail::
+            conforming_point_cloud_t<T, dimensions>::input_domain_data_t;
 
         std::mutex distance_mutex;
 
@@ -228,8 +230,8 @@ class conforming_point_cloud_provider<
                     = std::abs(distance_to_domain_contour);
                 std::lock_guard<std::mutex> lock(distance_mutex);
                 if (distance_to_domain_contour
-                    < domain_absorption_layer_thickness && distance_to_domain_contour
-                        < contour_distances(i)) {
+                        < domain_absorption_layer_thickness
+                    && distance_to_domain_contour < contour_distances(i)) {
                     contour_distances(i) = distance_to_domain_contour;
                     absorption_rates(i)
                         = ::naga::math::loopless::pow<2>(
@@ -318,6 +320,9 @@ class conforming_point_cloud_provider<
     simulation_nodes<value_type> nodes_{};
 };
 
+template <class T>
+using mesh_placement = detail::mesh_placement<T>;
+
 template<class T>
 class conforming_point_cloud_provider<
     ::naga::fluids::nonlocal_lbm::d3q27_lattice<T>>
@@ -328,19 +333,46 @@ class conforming_point_cloud_provider<
     using value_type                 = typename base::value_type;
 
     conforming_point_cloud_provider(
-        const value_type & approximate_spacing,
+        const value_type& approximate_spacing,
         const sclx::filesystem::path& domain,
-        const std::vector<sclx::filesystem::path>& immersed_boundaries = {},
-        const value_type & domain_absorption_layer_thickness                = 0,
-        const value_type & domain_boundary_absorption_rate                  = 0,
-        const std::vector<value_type >& immersed_boundary_layer_thicknesses = {},
-        const std::vector<value_type >& immersed_boundary_absorption_rates  = {}
+        const std::vector<sclx::filesystem::path>& immersed_boundaries     = {},
+        const value_type& domain_absorption_layer_thickness                = 0,
+        const value_type& domain_boundary_absorption_rate                  = 0,
+        std::vector<value_type> immersed_boundary_layer_thicknesses = {},
+        std::vector<value_type> immersed_boundary_absorption_rates  = {},
+        std::vector<mesh_placement<value_type>> immersed_mesh_placements     = {}
     ) {
+
+        if (immersed_mesh_placements.empty()) {
+            immersed_mesh_placements.resize(immersed_boundaries.size());
+            std::fill(
+                immersed_mesh_placements.begin(),
+                immersed_mesh_placements.end(),
+                mesh_placement<value_type>{});
+        }
+
+        if (immersed_boundary_layer_thicknesses.empty()) {
+            immersed_boundary_layer_thicknesses.resize(immersed_boundaries.size());
+            std::fill(
+                immersed_boundary_layer_thicknesses.begin(),
+                immersed_boundary_layer_thicknesses.end(),
+                0.0);
+        }
+
+        if (immersed_boundary_absorption_rates.empty()) {
+            immersed_boundary_absorption_rates.resize(immersed_boundaries.size());
+            std::fill(
+                immersed_boundary_absorption_rates.begin(),
+                immersed_boundary_absorption_rates.end(),
+                0.0);
+        }
+
         auto conforming_point_cloud
             = detail::conforming_point_cloud_t<T, 3>::create(
                 approximate_spacing,
                 domain,
-                immersed_boundaries
+                immersed_boundaries,
+                immersed_mesh_placements
             );
 
         size_t num_bulk_and_layer_points
@@ -348,7 +380,8 @@ class conforming_point_cloud_provider<
         size_t num_boundary_points
             = conforming_point_cloud.boundary_points().size();
         size_t num_ghost_points = conforming_point_cloud.ghost_points().size();
-        size_t num_points = num_bulk_and_layer_points + num_boundary_points + num_ghost_points;
+        size_t num_points = num_bulk_and_layer_points + num_boundary_points
+                          + num_ghost_points;
 
         nodes_.nodal_spacing       = approximate_spacing;
         nodes_.num_boundary_points = num_boundary_points;
@@ -357,8 +390,10 @@ class conforming_point_cloud_provider<
         nodes_.boundary_normals
             = sclx::array<value_type, 2>{dimensions, num_boundary_points};
 
-        std::vector<value_type > absorption_coefficients;
-        absorption_coefficients.reserve(num_bulk_and_layer_points + num_ghost_points);
+        std::vector<value_type> absorption_coefficients;
+        absorption_coefficients.reserve(
+            num_bulk_and_layer_points + num_ghost_points
+        );
 
         const auto& closest_boundary_indices
             = conforming_point_cloud.closest_boundary_to_bulk();
@@ -397,11 +432,12 @@ class conforming_point_cloud_provider<
         }
         for (uint i = 0; i < num_ghost_points; ++i) {
             value_type peak_absorption_coefficient = 1.0;
-            value_type layer_thickness             = naga::math::abs(detail::min_bound_dist_scaled_ghost_node_3d);
+            value_type signed_layer_thickness = detail::min_bound_dist_scaled_ghost_node_3d * approximate_spacing;
 
-            const auto& distance_to_boundary = distance_to_outer_boundary[i + num_bulk_and_layer_points];
+            const auto& signed_distance_to_boundary
+                = distance_to_outer_boundary[i + num_bulk_and_layer_points];
 
-            if (distance_to_boundary > layer_thickness) {
+            if (signed_distance_to_boundary > signed_layer_thickness) {
                 absorption_coefficients.push_back(0.0);
                 continue;
             }
@@ -409,7 +445,7 @@ class conforming_point_cloud_provider<
             value_type absorption_coefficient
                 = peak_absorption_coefficient
                 * naga::math::loopless::pow<2>(
-                      1.0 - distance_to_boundary / layer_thickness
+                      1.0 - naga::math::abs(signed_distance_to_boundary / signed_layer_thickness)
                 );
             absorption_coefficients.push_back(absorption_coefficient);
         }
@@ -419,7 +455,7 @@ class conforming_point_cloud_provider<
         std::stable_partition(
             bulk_points.begin(),
             bulk_points.end(),
-            [&](const naga::point_t<value_type , 3>& x) {
+            [&](const naga::point_t<value_type, 3>& x) {
                 size_t i = &x - &bulk_points[0];
                 return absorption_coefficients[i] < 0.0;
             }
@@ -427,9 +463,7 @@ class conforming_point_cloud_provider<
         std::stable_partition(
             absorption_coefficients.begin(),
             absorption_coefficients.begin() + num_bulk_and_layer_points,
-            [&](const value_type & x) {
-                return x < 0.0;
-            }
+            [&](const value_type& x) { return x < 0.0; }
         );
         size_t num_layer_points = std::count_if(
             absorption_coefficients.begin(),
@@ -472,8 +506,10 @@ class conforming_point_cloud_provider<
         const auto& ghost_points = conforming_point_cloud.ghost_points();
         for (size_t i = 0; i < num_ghost_points; ++i) {
             for (size_t j = 0; j < dimensions; ++j) {
-                nodes_.points(j, i + num_bulk_and_layer_points + num_boundary_points)
-                    = ghost_points[i][j];
+                nodes_.points(
+                    j,
+                    i + num_bulk_and_layer_points + num_boundary_points
+                ) = ghost_points[i][j];
                 nodes_.layer_absorption(i + num_layer_points)
                     = absorption_coefficients[i + num_bulk_and_layer_points];
             }

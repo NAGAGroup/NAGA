@@ -202,4 +202,57 @@ NAGA_HOST std::ostream& operator<<(std::ostream& os, const point_view_t<T, Dimen
     return os;
 }
 
+
+
+
+template <class Point, class TranslationVector>
+NAGA_HOST NAGA_DEVICE auto translate_point(const Point& p, const TranslationVector& translate) -> naga::point_t<decltype(p[0] + translate[0]), 3> {
+    using value_type = decltype(p[0] + translate[0]);
+
+    return naga::point_t<value_type, 3>{{p[0] + translate[0], p[1] + translate[1], p[2] + translate[2]}};
+}
+
+template <class Point, class RotationVector>
+NAGA_HOST NAGA_DEVICE auto rotate_point(const Point& p, const RotationVector& rot) -> naga::point_t<decltype(p[0] * rot[0]), 3> {
+    using value_type = decltype(p[0] * rot[0]);
+    auto x = p[0];
+    auto y = p[1];
+    auto z = p[2];
+
+    auto alpha = naga::math::pi<value_type> / 180.f * rot[0];
+    auto beta  = naga::math::pi<value_type> / 180.f * rot[1];
+    auto gamma = naga::math::pi<value_type> / 180.f * rot[2];
+
+    constexpr auto& cos = naga::math::cos<value_type>;
+    constexpr auto& sin = naga::math::sin<value_type>;
+
+    value_type rotation_matrix[3][3]{
+        {cos(beta) * cos(gamma),
+         -cos(beta) * sin(gamma),
+         sin(beta)},
+        {cos(alpha) * sin(gamma)
+             + sin(alpha) * sin(beta) * cos(gamma),
+         cos(alpha) * cos(gamma)
+             - sin(alpha) * sin(beta) * sin(gamma),
+         -sin(alpha) * cos(beta)},
+        {sin(alpha) * sin(gamma)
+             - cos(alpha) * sin(beta) * cos(gamma),
+         sin(alpha) * cos(gamma)
+             + cos(alpha) * sin(beta) * sin(gamma),
+         cos(alpha) * cos(beta)}
+    };
+
+    auto x_rotated = rotation_matrix[0][0] * x
+                   + rotation_matrix[0][1] * y
+                   + rotation_matrix[0][2] * z;
+    auto y_rotated = rotation_matrix[1][0] * x
+                   + rotation_matrix[1][1] * y
+                   + rotation_matrix[1][2] * z;
+    auto z_rotated = rotation_matrix[2][0] * x
+                   + rotation_matrix[2][1] * y
+                   + rotation_matrix[2][2] * z;
+
+    return naga::point_t<value_type, 3>{{x_rotated, y_rotated, z_rotated}};
+}
+
 }  // namespace naga

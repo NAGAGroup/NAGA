@@ -1841,7 +1841,8 @@ class conforming_point_cloud_impl_t<T, 3> {
     static conforming_point_cloud_impl_t create(
         const T& nodal_spacing,
         const std::filesystem::path& domain_obj,
-        const std::vector<std::filesystem::path>& immersed_boundary_objs = {}
+        const std::vector<std::filesystem::path>& immersed_boundary_objs = {},
+        const std::vector<mesh_placement<T>>& immersed_mesh_placements   = {}
     ) {
         auto domain_mesh = manifold_mesh_t<T>::import_from_obj(domain_obj);
         std::vector<manifold_mesh_t<T>> immersed_boundary_meshes;
@@ -1849,6 +1850,45 @@ class conforming_point_cloud_impl_t<T, 3> {
             immersed_boundary_meshes.push_back(
                 manifold_mesh_t<T>::import_from_obj(immersed_boundary_obj)
             );
+
+            // first rotate according to provided mesh placement
+            auto& immersed_boundary_mesh = immersed_boundary_meshes.back();
+            auto& immersed_mesh_placement
+                = immersed_mesh_placements[immersed_boundary_meshes.size() - 1];
+            auto& rotation = immersed_mesh_placement.rotation;
+            sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+                auto& vertices = immersed_boundary_mesh.vertices;
+                handler.launch(
+                    sclx::md_range_t<1>{vertices.shape()[1]},
+                    vertices,
+                    [=] __device__(const sclx::md_index_t<1>& idx, const auto&) mutable {
+                        const auto* p = &vertices(0, idx[0]);
+
+                        auto rotated_p = rotate_point(p, rotation);
+
+                        vertices(0, idx[0]) = rotated_p[0];
+                        vertices(1, idx[0]) = rotated_p[1];
+                        vertices(2, idx[0]) = rotated_p[2];
+                    }
+                );
+            }).get();
+            auto& location = immersed_mesh_placement.location;
+            sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+                auto& vertices = immersed_boundary_mesh.vertices;
+                handler.launch(
+                    sclx::md_range_t<1>{vertices.shape()[1]},
+                    vertices,
+                    [=] __device__(const sclx::md_index_t<1>& idx, const auto&) mutable {
+                        const auto* p = &vertices(0, idx[0]);
+
+                        auto translated_p = translate_point(p, location);
+
+                        vertices(0, idx[0]) = translated_p[0];
+                        vertices(1, idx[0]) = translated_p[1];
+                        vertices(2, idx[0]) = translated_p[2];
+                    }
+                );
+            }).get();
         }
 
         sdf_metadata domain_sdf = build_sdf(domain_mesh);
@@ -1962,6 +2002,13 @@ class conforming_point_cloud_impl_t<T, 3> {
                 for (const auto& immersed_sdf : immersed_boundary_sdfs) {
                     auto immersed_sdf_result
                         = get_sdf_to_points<T>(points, *immersed_sdf.sdf);
+                    // invert sign of immersed sdf
+                    std::transform(
+                        immersed_sdf_result.begin(),
+                        immersed_sdf_result.end(),
+                        immersed_sdf_result.begin(),
+                        [](const auto& sdf) { return -sdf; }
+                    );
                     size_t boundary_idx = 1
                                         + std::distance<const sdf_metadata*>(
                                               &immersed_boundary_sdfs[0],
@@ -2374,10 +2421,8 @@ class conforming_point_cloud_impl_t<T, 3> {
                     });
                     const auto& distance_to_boundary
                         = bulk_to_boundary_distances_arr
-                              [&mask - &boundary_points_mask[0]];
-                    bulk_to_boundary_distances.push_back(
-                        naga::math::abs(distance_to_boundary)
-                    );
+                            [&mask - &boundary_points_mask[0]];
+                    bulk_to_boundary_distances.push_back(distance_to_boundary);
                 }
             }
         );
@@ -2402,27 +2447,25 @@ class conforming_point_cloud_impl_t<T, 3> {
         };
     }
 
-    const std::vector<point_t>& bulk_points() const {
-            return bulk_points_; }
+    const std::vector<point_t>& bulk_points() const { return bulk_points_; }
 
     const std::vector<T>& bulk_to_boundary_distances() const {
-            return bulk_to_boundary_distances_;
+        return bulk_to_boundary_distances_;
     }
 
     const std::vector<index_t>& closest_boundary_to_bulk() const {
-            return closest_boundary_to_bulk_;
+        return closest_boundary_to_bulk_;
     }
 
     const std::vector<point_t>& boundary_points() const {
-            return boundary_points_;
+        return boundary_points_;
     }
 
     const std::vector<normal_t>& boundary_normals() const {
-            return boundary_normals_;
+        return boundary_normals_;
     }
 
-    const std::vector<point_t>& ghost_points() const {
-            return ghost_points_; }
+    const std::vector<point_t>& ghost_points() const { return ghost_points_; }
 
   private:
     conforming_point_cloud_impl_t(
@@ -2446,65 +2489,67 @@ class conforming_point_cloud_impl_t<T, 3> {
     std::vector<point_t> ghost_points_;
     std::vector<point_t> boundary_points_;
     std::vector<normal_t> boundary_normals_;
-    };
+};
 
-    template<class T>
-    conforming_point_cloud_t<T, 3> conforming_point_cloud_t<T, 3>::create(
-        const T& approximate_spacing,
-        const std::filesystem::path& domain,
-        const std::vector<std::filesystem::path>& immersed_boundaries
-    ) {
-        conforming_point_cloud_t point_cloud;
-        auto impl = conforming_point_cloud_impl_t<T, dimensions>::create(
-            approximate_spacing,
-            domain,
-            immersed_boundaries
+template<class T>
+conforming_point_cloud_t<T, 3> conforming_point_cloud_t<T, 3>::create(
+    const T& approximate_spacing,
+    const std::filesystem::path& domain,
+    const std::vector<std::filesystem::path>& immersed_boundaries,
+    const std::vector<mesh_placement<value_type>>& immersed_mesh_placements
+) {
+    conforming_point_cloud_t point_cloud;
+    auto impl = conforming_point_cloud_impl_t<T, dimensions>::create(
+        approximate_spacing,
+        domain,
+        immersed_boundaries,
+        immersed_mesh_placements
+    );
+    auto impl_ptr
+        = std::make_shared<conforming_point_cloud_impl_t<T, dimensions>>(
+            std::move(impl)
         );
-        auto impl_ptr
-            = std::make_shared<conforming_point_cloud_impl_t<T, dimensions>>(
-                std::move(impl)
-            );
-        point_cloud.impl = std::move(impl_ptr);
-        return point_cloud;
-    }
+    point_cloud.impl = std::move(impl_ptr);
+    return point_cloud;
+}
 
-    template<class T>
-    const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
-    conforming_point_cloud_t<T, 3>::bulk_points() const {
-        return impl->bulk_points();
-    }
+template<class T>
+const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
+conforming_point_cloud_t<T, 3>::bulk_points() const {
+    return impl->bulk_points();
+}
 
-    template<class T>
-    const std::vector<T>&
-    conforming_point_cloud_t<T, 3>::bulk_to_boundary_distances() const {
-        return impl->bulk_to_boundary_distances();
-    }
+template<class T>
+const std::vector<T>&
+conforming_point_cloud_t<T, 3>::bulk_to_boundary_distances() const {
+    return impl->bulk_to_boundary_distances();
+}
 
-    template<class T>
-    const std::vector<typename conforming_point_cloud_t<T, 3>::index_t>&
-    conforming_point_cloud_t<T, 3>::closest_boundary_to_bulk() const {
-        return impl->closest_boundary_to_bulk();
-    }
+template<class T>
+const std::vector<typename conforming_point_cloud_t<T, 3>::index_t>&
+conforming_point_cloud_t<T, 3>::closest_boundary_to_bulk() const {
+    return impl->closest_boundary_to_bulk();
+}
 
-    template<class T>
-    const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
-    conforming_point_cloud_t<T, 3>::boundary_points() const {
-        return impl->boundary_points();
-    }
+template<class T>
+const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
+conforming_point_cloud_t<T, 3>::boundary_points() const {
+    return impl->boundary_points();
+}
 
-    template<class T>
-    const std::vector<typename conforming_point_cloud_t<T, 3>::normal_t>&
-    conforming_point_cloud_t<T, 3>::boundary_normals() const {
-        return impl->boundary_normals();
-    }
+template<class T>
+const std::vector<typename conforming_point_cloud_t<T, 3>::normal_t>&
+conforming_point_cloud_t<T, 3>::boundary_normals() const {
+    return impl->boundary_normals();
+}
 
-    template<class T>
-    const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
-    conforming_point_cloud_t<T, 3>::ghost_points() const {
-        return impl->ghost_points();
-    }
+template<class T>
+const std::vector<typename conforming_point_cloud_t<T, 3>::point_t>&
+conforming_point_cloud_t<T, 3>::ghost_points() const {
+    return impl->ghost_points();
+}
 
-    template class conforming_point_cloud_t<float, 3>;
-    template class conforming_point_cloud_t<double, 3>;
+template class conforming_point_cloud_t<float, 3>;
+template class conforming_point_cloud_t<double, 3>;
 
 }  // namespace naga::experimental::fluids::nonlocal_lbm::detail

@@ -81,17 +81,24 @@ class audio_sink_observer : public simulation_observer<Lattice> {
         typename audio_sink_traits<value_type, dimensions, channel_config>::
             location_type;
 
+    static constexpr auto auto_scale
+        = std::numeric_limits<value_type>::infinity();
+
+    audio_sink_observer() = default;
+
     audio_sink_observer(
         sclx::filesystem::path output_wav_file,
         const value_type& sample_rate,
         const location_type& location,
         const simulation_domain_t& domain,
+        const value_type& peak_signal    = auto_scale,
         const value_type& time_multiplier = 1,
         size_t save_frequency             = 10
     )
         : sample_rate_(sample_rate),
           output_wav_file_(std::move(output_wav_file)),
           save_frequency_(save_frequency),
+          peak_signal_(peak_signal),
           time_multiplier_(time_multiplier) {
 
         std::vector<const naga::point_t<value_type, dimensions>*>
@@ -127,7 +134,8 @@ class audio_sink_observer : public simulation_observer<Lattice> {
             uint{32}
         );
         naga::default_point_map<value_type, dimensions> location_map{
-            sink_locations_};
+            sink_locations_
+        };
         auto [distances_squared, indices]
             = batched_nearest_neighbors(32, location_map, domain_segmentation);
 
@@ -203,7 +211,11 @@ class audio_sink_observer : public simulation_observer<Lattice> {
                 channel.begin(),
                 channel.end(),
                 channel.begin(),
-                [&](value_type signal) { return signal / max_signal_; }
+                [&](value_type signal) {
+                    return (peak_signal_ == auto_scale)
+                             ? signal / max_signal_
+                             : signal / peak_signal_;
+                }
             );
         }
         audio_file.setAudioBuffer(audio_buffer_copy);
@@ -255,6 +267,7 @@ class audio_sink_observer : public simulation_observer<Lattice> {
     value_type sample_rate_;
     size_t save_frequency_;
     value_type max_signal_ = 0.0;
+    value_type peak_signal_;
 };
 
 }  // namespace naga::fluids::nonlocal_lbm
