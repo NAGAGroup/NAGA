@@ -443,6 +443,10 @@ class nd_cubic_segmentation {
         );
     }
 
+    sclx::array<const T, 2> points() const {
+        return points_;
+    }
+
     friend class nd_cubic_segmentation_iterator<T, Dimensions>;
 
   private:

@@ -1,5 +1,6 @@
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
 #include <naga/regions/hypersphere.cuh>
+#include <naga/path.hpp>
 
 template<class Lattice>
 struct problem_traits {
@@ -22,11 +23,7 @@ struct problem_traits {
     using node_provider_t = naga::experimental::fluids::nonlocal_lbm::
         conforming_point_cloud_provider<lattice_type>;
 
-    class path_t {
-      public:
-        using point_type = naga::point_t<value_type, dimensions>;
-        virtual const point_type& operator()(const value_type& t) = 0;
-    };
+    using path_t = naga::path_t<value_type, dimensions>;
 
     class zero_path_t : public path_t {
       public:
@@ -44,6 +41,66 @@ struct problem_traits {
       private:
         zero_path_t(point_type origin) : origin_(std::move(origin)) {}
         naga::point_t<value_type, dimensions> origin_;
+    };
+
+    class csv_path_t : public path_t {
+        public:
+            using base       = path_t;
+            using point_type = typename base::point_type;
+
+            static std::shared_ptr<path_t> create(const std::string& csv_file, const value_type& desired_step_size) {
+                return std::shared_ptr<path_t>(new csv_path_t(csv_file, desired_step_size));
+            }
+
+            const point_type& operator()(const value_type& t) final {
+                auto index = static_cast<size_t>(t / step_size_);
+                if (index >= points_.size()) {
+                    return points_.back();
+                }
+                return points_[index];
+            }
+
+        private:
+            csv_path_t(const std::string& csv_file, const value_type& desired_step_size): step_size_{desired_step_size} {
+                std::vector<point_type> loaded_points;
+                std::vector<value_type> loaded_times;
+                std::ifstream file(csv_file);
+                // discard first line
+                std::string line;
+                std::getline(file, line);
+                while (std::getline(file, line)) {
+                    std::stringstream line_stream(line);
+                    std::string cell;
+                    std::getline(line_stream, cell, ',');
+                    value_type time = std::stod(cell);
+                    point_type point;
+                    for (int i = 0; i < dimensions; ++i) {
+                        std::getline(line_stream, cell, ',');
+                        point[i] = std::stod(cell);
+                    }
+                    loaded_times.push_back(time);
+                    loaded_points.push_back(point);
+                }
+                value_type duration = loaded_times.back();
+                for (value_type t = 0.0; t <= duration; t += step_size_) {
+                    // find first loaded time <= t
+                    auto lower_ptr = std::lower_bound(loaded_times.begin(), loaded_times.end(), t);
+                    auto lower_time = *lower_ptr;
+                    auto lower_index = std::distance(loaded_times.begin(), lower_ptr);
+                    auto upper_index = lower_index != loaded_times.size() - 1 ? lower_index + 1 : lower_index;
+                    auto lower_weight = 1.0 - (t - lower_time) / (loaded_times[upper_index] - lower_time);
+                    auto upper_weight = 1.0 - lower_weight;
+                    point_type point;
+                    for (int i = 0; i < dimensions; ++i) {
+                        point[i] = lower_weight * loaded_points[lower_index][i]
+                                    + upper_weight * loaded_points[upper_index][i];
+                    }
+                    points_.push_back(point);
+                }
+            }
+            std::vector<point_type> points_;
+            point_type current_point_;
+            value_type step_size_;
     };
 
     class circular_path : public path_t {
