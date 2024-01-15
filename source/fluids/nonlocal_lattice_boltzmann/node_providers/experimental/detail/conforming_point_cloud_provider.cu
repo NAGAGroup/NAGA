@@ -2087,12 +2087,12 @@ namespace naga::experimental::fluids::nonlocal_lbm::detail {
                         auto closest_bound = closest_boundary_to_bulk[i];
                         closest_boundary_to_bulk_arr[n_added]
                                 = closest_bound;
-                        if (closest_bound != 0) {
-                            if (sdf_result[i] <=
-                                (max_bound_dist_scale_3d + .01 - min_bound_dist_scale_3d) * nodal_spacing) {
-                                sdf_result[i] += min_bound_dist_scale_3d - .01;
-                            }
-                        }
+//                        if (closest_bound != 0) {
+//                            if (sdf_result[i] <=
+//                                (max_bound_dist_scale_3d + .01 - min_bound_dist_scale_3d) * nodal_spacing) {
+//                                sdf_result[i] += min_bound_dist_scale_3d - .01;
+//                            }
+//                        }
                         ++n_added;
                     }
                 }
@@ -2112,9 +2112,6 @@ namespace naga::experimental::fluids::nonlocal_lbm::detail {
             sclx::fill(boundary_points_mask, 0);
             sclx::array<T, 2> boundary_normals_arr{domain_points.shape()};
             sclx::fill<T>(boundary_normals_arr, 0.f);
-            sclx::array<T, 1> boundary_distance_to_surface{domain_points.shape()[1]
-            };
-            sclx::fill<T>(boundary_distance_to_surface, 0.f);
 
             std::vector<manifold_mesh_t<T>> all_meshes;
             all_meshes.push_back(domain_mesh);
@@ -2365,8 +2362,6 @@ namespace naga::experimental::fluids::nonlocal_lbm::detail {
                                                 = face_normal[1];
                                         boundary_normals_arr(2, global_idx)
                                                 = face_normal[2];
-                                        boundary_distance_to_surface[global_idx]
-                                                = centroid_to_p_dot_face_normal;
                                     }
                                 }
                             }
@@ -2402,7 +2397,7 @@ namespace naga::experimental::fluids::nonlocal_lbm::detail {
                             );
                             closest_boundary_to_bulk.push_back(
                                     closest_boundary_to_bulk_arr
-                                    [&mask - &boundary_points_mask[0]]
+                                    [&mask - &boundary_points_mask[0]] - min_bound_dist_scale_3d
                             );
                         } else {
                             boundary_points.push_back(point_t{
@@ -2444,7 +2439,7 @@ namespace naga::experimental::fluids::nonlocal_lbm::detail {
                             const auto &distance_to_boundary
                                     = bulk_to_boundary_distances_arr
                                     [&mask - &boundary_points_mask[0]];
-                            bulk_to_boundary_distances.push_back(distance_to_boundary);
+                            bulk_to_boundary_distances.push_back(distance_to_boundary - min_bound_dist_scale_3d);
                         }
                     }
             );

@@ -171,11 +171,11 @@ namespace naga::fluids::nonlocal_lbm {
             path_(path),
             save_frequency_(save_frequency),
             peak_signal_(peak_signal),
-            time_multiplier_(time_multiplier) {
-            domain_segmentation_t domain_segmentation_(
+            time_multiplier_(time_multiplier),
+            domain_segmentation_(
                     domain.points,
                     uint{32}
-            );
+            ) {
             nodal_spacing_ = domain.nodal_spacing;
             audio_buffer_.resize(channel_count);
 
@@ -365,7 +365,7 @@ namespace naga::fluids::nonlocal_lbm {
         typename AudioFile<value_type>::AudioBuffer audio_buffer_;
         sclx::filesystem::path output_wav_file_;
         value_type sample_rate_;
-        size_t save_frequency_;
+        size_t save_frequency_{};
         value_type max_signal_ = 0.0;
         value_type peak_signal_;
         std::shared_ptr<path_t> path_;

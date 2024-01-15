@@ -294,36 +294,36 @@ namespace naga::fluids::nonlocal_lbm::detail {
                                         + domain_.num_ghost_nodes;
             auto boundary_absorption = boundary_absorption_coefficient;
             sclx::array<value_type, 1> new_layer_absorption{{new_num_layer_points}};
-//        std::copy(
-//            absorption_coeffs.begin(),
-//            absorption_coeffs.begin() + domain_.num_layer_points,
-//            new_layer_absorption.begin()
-//        );
-//        std::fill(
-//            new_layer_absorption.begin() + domain_.num_layer_points,
-//            new_layer_absorption.begin() + domain_.num_layer_points
-//                + domain_.num_boundary_points,
-//            boundary_absorption
-//        );
-//        std::fill(
-//            new_layer_absorption.begin() + domain_.num_layer_points
-//                + domain_.num_boundary_points,
-//            new_layer_absorption.end(),
-//            0.f
-//        );
+        std::copy(
+            absorption_coeffs.begin(),
+            absorption_coeffs.begin() + domain_.num_layer_points,
+            new_layer_absorption.begin()
+        );
+        std::fill(
+            new_layer_absorption.begin() + domain_.num_layer_points,
+            new_layer_absorption.begin() + domain_.num_layer_points
+                + domain_.num_boundary_points,
+            boundary_absorption
+        );
+        std::fill(
+            new_layer_absorption.begin() + domain_.num_layer_points
+                + domain_.num_boundary_points,
+            new_layer_absorption.end(),
+            0.f
+        );
 
-            if (absorption_coeffs.elements() > 0) {
-                std::copy(
-                        absorption_coeffs.begin(),
-                        absorption_coeffs.begin() + domain_.num_layer_points,
-                        new_layer_absorption.begin()
-                );
-            }
-            std::fill(
-                    new_layer_absorption.begin() + domain_.num_layer_points,
-                    new_layer_absorption.end(),
-                    boundary_absorption
-            );
+//            if (absorption_coeffs.elements() > 0) {
+//                std::copy(
+//                        absorption_coeffs.begin(),
+//                        absorption_coeffs.begin() + domain_.num_layer_points,
+//                        new_layer_absorption.begin()
+//                );
+//            }
+//            std::fill(
+//                    new_layer_absorption.begin() + domain_.num_layer_points,
+//                    new_layer_absorption.end(),
+//                    boundary_absorption
+//            );
 
             /*
              * Below is the version that makes ghost nodes nonzero absorption
@@ -904,7 +904,6 @@ namespace naga::fluids::nonlocal_lbm::detail {
                 );
             }
 
-            interpolate_boundaries();
         }
 
         void step_forward() {
@@ -924,9 +923,9 @@ namespace naga::fluids::nonlocal_lbm::detail {
             collision_step();
 
             streaming_step();
+            interpolate_boundaries();
 
             bounce_back_step();
-
             streaming_step();
 
             ++frame_number_;

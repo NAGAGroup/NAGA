@@ -316,6 +316,10 @@ class divergence_operator {
         return support_indices_;
     }
 
+    [[nodiscard]] sclx::array<sclx::index_t, 2> support_indices() {
+        return support_indices_;
+    }
+
     template<class FieldMap = default_field_map>
     void apply_cusparse(
         const FieldMap& field,

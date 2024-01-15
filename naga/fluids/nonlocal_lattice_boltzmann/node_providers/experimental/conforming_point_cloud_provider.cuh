@@ -432,10 +432,10 @@ class conforming_point_cloud_provider<
         }
         for (uint i = 0; i < num_ghost_points; ++i) {
             value_type peak_absorption_coefficient = 1.0;
-            value_type signed_layer_thickness = detail::min_bound_dist_scaled_ghost_node_3d * approximate_spacing;
+            value_type signed_layer_thickness = naga::math::abs(detail::min_bound_dist_scaled_ghost_node_3d - detail::min_bound_dist_scale_3d) * approximate_spacing;
 
             const auto& signed_distance_to_boundary
-                = distance_to_outer_boundary[i + num_bulk_and_layer_points];
+                = naga::math::abs(distance_to_outer_boundary[i + num_bulk_and_layer_points]);
 
             if (signed_distance_to_boundary > signed_layer_thickness) {
                 absorption_coefficients.push_back(0.0);
