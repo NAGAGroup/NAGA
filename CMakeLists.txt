@@ -34,7 +34,7 @@ add_library(
 )
 target_include_directories(
   naga-lib PRIVATE ${PROJECT_SOURCE_DIR}/. ${EIGEN_INCLUDE_DIR}
-                   ${NANOFLANN_INCLUDE_DIR} ${PROJECT_SOURCE_DIR}/extern/tinyobjloader)
+                   ${NANOFLANN_INCLUDE_DIR} ${PROJECT_SOURCE_DIR}/extern/tinyobjloader ${PROJECT_SOURCE_DIR}/extern/TriangleMeshDistance/TriangleMeshDistance/include)
 target_link_libraries(naga-lib PRIVATE scalix sdf)
 
 # naga is a mostly header only library

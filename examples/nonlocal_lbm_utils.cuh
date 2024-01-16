@@ -1,12 +1,12 @@
 #include <naga/fluids/nonlocal_lattice_boltzmann.cuh>
-#include <naga/regions/hypersphere.cuh>
 #include <naga/path.hpp>
+#include <naga/regions/hypersphere.cuh>
 
 template<class Lattice>
 struct problem_traits {
     using lattice_type = Lattice;
     using value_type   = typename naga::fluids::nonlocal_lbm::lattice_traits<
-        lattice_type>::value_type;
+          lattice_type>::value_type;
     static constexpr uint dimensions
         = naga::fluids::nonlocal_lbm::lattice_traits<lattice_type>::dimensions;
 
@@ -44,63 +44,96 @@ struct problem_traits {
     };
 
     class csv_path_t : public path_t {
-        public:
-            using base       = path_t;
-            using point_type = typename base::point_type;
+      public:
+        using base       = path_t;
+        using point_type = typename base::point_type;
 
-            static std::shared_ptr<path_t> create(const std::string& csv_file, const value_type& desired_step_size) {
-                return std::shared_ptr<path_t>(new csv_path_t(csv_file, desired_step_size));
+        static std::shared_ptr<path_t> create(
+            const std::string& csv_file,
+            const value_type& desired_step_size,
+            point_type origin = point_type{}
+        ) {
+            return std::shared_ptr<path_t>(
+                new csv_path_t(csv_file, desired_step_size, origin)
+            );
+        }
+
+        const point_type& operator()(const value_type& t) final {
+            auto index = static_cast<size_t>(t / step_size_);
+            if (index >= points_.size()) {
+                return points_.back();
             }
+            return points_[index];
+        }
 
-            const point_type& operator()(const value_type& t) final {
-                auto index = static_cast<size_t>(t / step_size_);
-                if (index >= points_.size()) {
-                    return points_.back();
-                }
-                return points_[index];
-            }
-
-        private:
-            csv_path_t(const std::string& csv_file, const value_type& desired_step_size): step_size_{desired_step_size} {
-                std::vector<point_type> loaded_points;
-                std::vector<value_type> loaded_times;
-                std::ifstream file(csv_file);
-                // discard first line
-                std::string line;
-                std::getline(file, line);
-                while (std::getline(file, line)) {
-                    std::stringstream line_stream(line);
-                    std::string cell;
+      private:
+        csv_path_t(
+            const std::string& csv_file,
+            const value_type& desired_step_size,
+            const point_type &origin
+        )
+            : step_size_{desired_step_size} {
+            std::vector<point_type> loaded_points;
+            std::vector<value_type> loaded_times;
+            std::ifstream file(csv_file);
+            // discard first line
+            std::string line;
+            std::getline(file, line);
+            while (std::getline(file, line)) {
+                std::stringstream line_stream(line);
+                std::string cell;
+                std::getline(line_stream, cell, ',');
+                value_type time = std::stod(cell);
+                point_type point;
+                for (int i = 0; i < dimensions; ++i) {
                     std::getline(line_stream, cell, ',');
-                    value_type time = std::stod(cell);
-                    point_type point;
-                    for (int i = 0; i < dimensions; ++i) {
-                        std::getline(line_stream, cell, ',');
-                        point[i] = std::stod(cell);
-                    }
-                    loaded_times.push_back(time);
-                    loaded_points.push_back(point);
+                    point[i] = std::stod(cell);
                 }
-                value_type duration = loaded_times.back();
-                for (value_type t = 0.0; t <= duration; t += step_size_) {
-                    // find first loaded time <= t
-                    auto lower_ptr = std::lower_bound(loaded_times.begin(), loaded_times.end(), t);
-                    auto lower_time = *lower_ptr;
-                    auto lower_index = std::distance(loaded_times.begin(), lower_ptr);
-                    auto upper_index = lower_index != loaded_times.size() - 1 ? lower_index + 1 : lower_index;
-                    auto lower_weight = 1.0 - (t - lower_time) / (loaded_times[upper_index] - lower_time);
-                    auto upper_weight = 1.0 - lower_weight;
-                    point_type point;
-                    for (int i = 0; i < dimensions; ++i) {
-                        point[i] = lower_weight * loaded_points[lower_index][i]
-                                    + upper_weight * loaded_points[upper_index][i];
-                    }
-                    points_.push_back(point);
-                }
+                loaded_times.push_back(time);
+                loaded_points.push_back(point);
             }
-            std::vector<point_type> points_;
-            point_type current_point_;
-            value_type step_size_;
+            value_type duration = loaded_times.back();
+            for (value_type t = 0.0; t <= duration; t += step_size_) {
+                // find first loaded time <= t
+                auto lower_ptr = std::lower_bound(
+                    loaded_times.begin(),
+                    loaded_times.end(),
+                    t
+                );
+                auto lower_time = *lower_ptr;
+                auto lower_index
+                    = std::distance(loaded_times.begin(), lower_ptr);
+                auto upper_index = lower_index != loaded_times.size() - 1
+                                     ? lower_index + 1
+                                     : lower_index;
+                auto lower_weight
+                    = 1.0
+                    - (t - lower_time)
+                          / (loaded_times[upper_index] - lower_time);
+                auto upper_weight = 1.0 - lower_weight;
+                point_type point;
+                for (int i = 0; i < dimensions; ++i) {
+                    point[i] = lower_weight * loaded_points[lower_index][i]
+                             + upper_weight * loaded_points[upper_index][i];
+                }
+                points_.push_back(point);
+            }
+
+            std::transform(
+                points_.begin(),
+                points_.end(),
+                points_.begin(),
+                [&](auto point) {
+                    point[0] += origin[0];
+                    point[1] += origin[1];
+                    point[2] += origin[2];
+                    return point;
+                }
+            );
+        }
+        std::vector<point_type> points_;
+        point_type current_point_;
+        value_type step_size_;
     };
 
     class circular_path : public path_t {
@@ -140,8 +173,8 @@ struct problem_traits {
 
         static std::shared_ptr<path_t>
         create(const point_type& start_pos, const point_type& velocity) {
-            return std::shared_ptr<path_t>(
-                new linear_path(start_pos, velocity));
+            return std::shared_ptr<path_t>(new linear_path(start_pos, velocity)
+            );
         }
 
         const point_type& operator()(const value_type& t) final {
@@ -187,8 +220,8 @@ struct problem_traits {
             sample_rate_ = audio_file.getSampleRate();
 
             audio_samples_ = sclx::array<value_type, 1>{
-                static_cast<const size_t&>(audio_file.getNumSamplesPerChannel()
-                )};
+                static_cast<const size_t&>(audio_file.getNumSamplesPerChannel())
+            };
 
             std::copy(
                 audio_file.samples[0].begin(),
@@ -231,7 +264,8 @@ struct problem_traits {
         ) final {
             region_t source_region{
                 source_radius_,
-                (*path_)(time * time_multiplier_)};
+                (*path_)(time * time_multiplier_)
+            };
 
             auto lower_frame_number = std::floor(
                 time * time_multiplier_ * static_cast<value_type>(sample_rate_)
@@ -350,8 +384,8 @@ struct problem_traits {
             value_type frequency,
             value_type amplitude,
             value_type time_multiplier = 1.0,
-            std::shared_ptr<path_t> path = zero_path_t::create(
-                naga::point_t<value_type, dimensions>{})
+            std::shared_ptr<path_t> path
+            = zero_path_t::create(naga::point_t<value_type, dimensions>{})
         )
             : radius_(radius),
               frequency_(frequency),
@@ -360,9 +394,10 @@ struct problem_traits {
               path_(std::move(path)) {}
 
         auto get_amplitude_at_time(const value_type& time) const {
-            return amplitude_ * naga::math::sin(
-                2 * naga::math::pi<value_type> * frequency_ * time
-            );
+            return amplitude_
+                 * naga::math::sin(
+                       2 * naga::math::pi<value_type> * frequency_ * time
+                 );
         }
 
         std::future<void> add_density_source(
@@ -372,15 +407,13 @@ struct problem_traits {
             const value_type& time,
             sclx::array<value_type, 1>& source_terms
         ) final {
-            region_t source_region{
-                radius_,
-                (*path_)(time * time_multiplier_)};
+            region_t source_region{radius_, (*path_)(time * time_multiplier_)};
 
-            auto scaled_time = time * time_multiplier_;
+            auto scaled_time    = time * time_multiplier_;
             const auto& density = solution.macroscopic_values.fluid_density;
             const auto& nominal_density = params.nominal_density;
             const auto& points          = domain.points;
-            auto frame_amplitude = get_amplitude_at_time(scaled_time);
+            auto frame_amplitude        = get_amplitude_at_time(scaled_time);
 
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
@@ -539,12 +572,12 @@ struct problem_traits {
             const value_type& time_multiplier = 1.0
         )
             : sine_wav_density_source<region_t>(
-                region_t{source_radius, source_center},
-                amplitude,
-                pulse_width,
-                speed_of_sound,
-                1.0,
-                time_multiplier
-            ) {}
+                  region_t{source_radius, source_center},
+                  amplitude,
+                  pulse_width,
+                  speed_of_sound,
+                  1.0,
+                  time_multiplier
+              ) {}
     };
 };
