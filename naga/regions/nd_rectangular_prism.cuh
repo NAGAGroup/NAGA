@@ -67,6 +67,23 @@ class nd_rectangular_prism {
         return true;
     }
 
+    template<class VectorT>
+    __host__ __device__ auto& shift_region(const VectorT& point) {
+        for (uint i = 0; i < Dimensions; ++i) {
+            origin_[i] += point[i];
+        }
+
+        return *this;
+    }
+
+    template<class VectorT>
+    __host__ __device__ auto shift_region(const VectorT& point) const {
+        auto copy = *this;
+        copy.shift_region(point);
+        return copy;
+    }
+
+
   private:
     T origin_[Dimensions];
     T side_lengths_[Dimensions];

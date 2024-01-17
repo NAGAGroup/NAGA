@@ -487,17 +487,27 @@ struct problem_traits {
             const value_type& amplitude,
             const value_type& pulse_width,
             const value_type& speed_of_sound,
+            std::shared_ptr<path_t> path
+            = zero_path_t::create(naga::point_t<value_type, dimensions>{}),
             const value_type& periods         = 0.0,
             const value_type& time_multiplier = 1.0
         )
             : amplitude_(amplitude),
               time_multiplier_(time_multiplier),
               source_region_(std::move(source_region)),
-              periods_(periods) {
+              periods_(periods),
+              path_(std::move(path)) {
             frequency_ = speed_of_sound / pulse_width;
         }
 
         value_type frequency() const { return frequency_; }
+
+        auto get_amplitude_at_time(const value_type& time) const {
+            return amplitude_
+                 * naga::math::sin(
+                       2 * naga::math::pi<value_type> * frequency_ * time
+                 );
+        }
 
         std::future<void> add_density_source(
             const simulation_domain_t& domain,
@@ -515,12 +525,14 @@ struct problem_traits {
                 return std::async(std::launch::deferred, []() {});
             }
 
-            auto perturbation = amplitude_ * naga::math::sin(radians);
 
             const auto& density = solution.macroscopic_values.fluid_density;
             const auto& nominal_density = params.nominal_density;
             const auto& points          = domain.points;
-            const auto& source_region   = source_region_;
+            auto source_region = source_region_;
+            source_region.shift_region((*path_)(scaled_time));
+
+            auto perturbation = amplitude_ * naga::math::sin(radians);
 
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
@@ -559,6 +571,7 @@ struct problem_traits {
         value_type frequency_;
         value_type periods_;
         region_type source_region_;
+        std::shared_ptr<path_t> path_;
     };
 
     class pulse_density_source : public sine_wav_density_source<region_t> {

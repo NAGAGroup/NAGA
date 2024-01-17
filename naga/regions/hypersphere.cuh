@@ -65,6 +65,13 @@ class hypersphere {
 
     __host__ __device__ const T& radius() const { return radius_; }
 
+    template<class VectorT>
+    __host__ __device__ void shift_region(const VectorT& point) {
+        for (uint i = 0; i < Dimensions; ++i) {
+            center_[i] += point[i];
+        }
+    }
+
   private:
     T radius_;
     T center_[Dimensions];
