@@ -320,7 +320,7 @@ namespace naga::fluids::nonlocal_lbm {
             }
             audio_file.setAudioBuffer(audio_buffer_copy);
             audio_file.setSampleRate(sample_rate_);
-            audio_file.setBitDepth(16);
+            audio_file.setBitDepth(sizeof(value_type) * 8);
             audio_file.save(output_wav_file_.string());
         }
 

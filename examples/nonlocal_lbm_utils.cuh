@@ -497,6 +497,8 @@ struct problem_traits {
             frequency_ = speed_of_sound / pulse_width;
         }
 
+        value_type frequency() const { return frequency_; }
+
         std::future<void> add_density_source(
             const simulation_domain_t& domain,
             const problem_parameters_t& params,

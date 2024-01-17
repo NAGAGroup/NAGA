@@ -749,23 +749,23 @@ namespace naga::fluids::nonlocal_lbm::detail {
                                                             normal,
                                                             &lattice_velocities(0, alpha)
                                                     );
-                                            auto calpha_norm
-                                                    = math::loopless::norm<dimensions>(
-                                                            &lattice_velocities(0, alpha)
-                                                    );
-                                            calpha_norm
-                                                    = isnan(calpha_norm) ? 0 : calpha_norm;
-                                            auto angle_normal_calpha
-                                                    = naga::math::abs(math::acos(
-                                                            normal_dot_calpha
-                                                            / (normal_norm * calpha_norm)
-                                                    ));
-                                            if (angle_normal_calpha < max_angle
-                                                || (naga::math::pi<value_type>
-                                                    - angle_normal_calpha)
-                                                   < max_angle) {
-                                                continue;
-                                            }
+//                                            auto calpha_norm
+//                                                    = math::loopless::norm<dimensions>(
+//                                                            &lattice_velocities(0, alpha)
+//                                                    );
+//                                            calpha_norm
+//                                                    = isnan(calpha_norm) ? 0 : calpha_norm;
+//                                            auto angle_normal_calpha
+//                                                    = naga::math::abs(math::acos(
+//                                                            normal_dot_calpha
+//                                                            / (normal_norm * calpha_norm)
+//                                                    ));
+//                                            if (angle_normal_calpha < max_angle
+//                                                || (naga::math::pi<value_type>
+//                                                    - angle_normal_calpha)
+//                                                   < max_angle) {
+//                                                continue;
+//                                            }
 
                                             if (normal_dot_calpha <= 0) {
                                                 continue;

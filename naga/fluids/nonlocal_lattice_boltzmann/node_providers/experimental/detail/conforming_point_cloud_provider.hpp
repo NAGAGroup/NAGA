@@ -43,9 +43,9 @@ namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
 
 constexpr float min_bound_dist_scale_2d             = 1.f;
-constexpr float min_bound_dist_scaled_ghost_node_3d = -2.f;
-constexpr float min_bound_dist_scale_3d             = -1.f;
-constexpr float max_bound_dist_scale_3d             = 1e-6f;
+constexpr float min_bound_dist_scaled_ghost_node_3d = -1.f;
+constexpr float min_bound_dist_scale_3d             = -.5f;
+constexpr float max_bound_dist_scale_3d             = .5f + 1e-6f;
 
 template<class T, uint Dimensions>
 class conforming_point_cloud_impl_t;
