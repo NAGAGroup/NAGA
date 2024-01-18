@@ -1889,6 +1889,23 @@ class conforming_point_cloud_impl_t<T, 3> {
             auto& immersed_boundary_mesh = immersed_boundary_meshes.back();
             auto& immersed_mesh_placement
                 = immersed_mesh_placements[immersed_boundary_meshes.size() - 1];
+            auto& scale = immersed_mesh_placement.scale;
+            sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+                auto& vertices = immersed_boundary_mesh.vertices;
+                handler.launch(
+                    sclx::md_range_t<1>{vertices.shape()[1]},
+                    vertices,
+                    [=] __device__(const sclx::md_index_t<1>& idx, const auto&) mutable {
+                        const auto* p = &vertices(0, idx[0]);
+
+                        auto scaled_p = scale_point(p, scale);
+
+                        vertices(0, idx[0]) = scaled_p[0];
+                        vertices(1, idx[0]) = scaled_p[1];
+                        vertices(2, idx[0]) = scaled_p[2];
+                    }
+                );
+            }).get();
             auto& rotation = immersed_mesh_placement.rotation;
             sclx::execute_kernel([&](sclx::kernel_handler& handler) {
                 auto& vertices = immersed_boundary_mesh.vertices;
@@ -2074,11 +2091,18 @@ class conforming_point_cloud_impl_t<T, 3> {
                                 &immersed_sdf_result[0],
                                 &sdf_new
                             );
+                            if (sdf_new.distance < 0 && sdf_old.distance < 0) {
+                                if (std::abs(sdf_new.distance)
+                                    > std::abs(sdf_old.distance)) {
+                                    return closest_boundary_to_bulk[idx];
+                                }
+                            }
+
                             if (sdf_new.distance >= sdf_old.distance) {
                                 return closest_boundary_to_bulk[idx];
-                            } else {
-                                return boundary_idx;
                             }
+
+                            return boundary_idx;
                         }
                     );
                     std::transform(
@@ -2087,6 +2111,12 @@ class conforming_point_cloud_impl_t<T, 3> {
                         sdf_results.begin(),
                         sdf_results.begin(),
                         [](const auto& sdf_new, const auto& sdf_old) {
+                            if (sdf_new.distance < 0 && sdf_old.distance < 0) {
+                                return std::abs(sdf_new.distance)
+                                        > std::abs(sdf_old.distance)
+                                    ? sdf_old
+                                    : sdf_new;
+                            }
                             return sdf_new.distance >= sdf_old.distance
                                      ? sdf_old
                                      : sdf_new;
@@ -2149,8 +2179,10 @@ class conforming_point_cloud_impl_t<T, 3> {
                         = sdf_results[i].distance;
                     auto closest_bound = closest_boundary_to_bulk[i];
                     closest_boundary_to_bulk_arr[n_added] = closest_bound;
-                    if (sdf_results[i].distance < max_bound_dist_scale_3d * nodal_spacing
-                        && sdf_results[i].distance > min_bound_dist_scale_3d * nodal_spacing) {
+                    if (sdf_results[i].distance
+                            < max_bound_dist_scale_3d * nodal_spacing
+                        && sdf_results[i].distance
+                               > min_bound_dist_scale_3d * nodal_spacing) {
                         boundary_points_mask[n_added] = true;
                     } else {
                         boundary_points_mask[n_added] = false;
@@ -2240,7 +2272,8 @@ class conforming_point_cloud_impl_t<T, 3> {
                         = bulk_to_boundary_distances_arr
                             [&mask - &boundary_points_mask[0]];
                     bulk_to_boundary_distances.push_back(
-                        distance_to_boundary - min_bound_dist_scale_3d * nodal_spacing
+                        distance_to_boundary
+                        - min_bound_dist_scale_3d * nodal_spacing
                     );
                 }
             }

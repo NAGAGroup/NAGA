@@ -255,4 +255,11 @@ NAGA_HOST NAGA_DEVICE auto rotate_point(const Point& p, const RotationVector& ro
     return naga::point_t<value_type, 3>{{x_rotated, y_rotated, z_rotated}};
 }
 
+template <class Point, class ScaleVector>
+NAGA_HOST NAGA_DEVICE auto scale_point(const Point& p, const ScaleVector& scale) -> naga::point_t<decltype(p[0] * scale[0]), 3> {
+    using value_type = decltype(p[0] * scale[0]);
+
+    return naga::point_t<value_type, 3>{{p[0] * scale[0], p[1] * scale[1], p[2] * scale[2]}};
+}
+
 }  // namespace naga
