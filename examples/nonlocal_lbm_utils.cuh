@@ -304,6 +304,8 @@ struct problem_traits {
                 return std::async(std::launch::deferred, []() {});
             }
 
+            auto bulk_end = domain.num_bulk_points;
+
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
                 sclx::local_array<value_type, 2> local_points(
@@ -319,6 +321,10 @@ struct problem_traits {
                         const sclx::md_index_t<1>& idx,
                         const sclx::kernel_info<>& info
                     ) mutable {
+                        if (idx[0] >= bulk_end) {
+                            return;
+                        }
+
                         for (int i = 0; i < dimensions; ++i) {
                             local_points(i, info.local_thread_linear_id())
                                 = points(i, idx[0]);
@@ -422,6 +428,8 @@ struct problem_traits {
             const auto& points          = domain.points;
             auto frame_amplitude        = get_amplitude_at_time(scaled_time);
 
+            auto bulk_end = domain.num_bulk_points;
+
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
                 sclx::local_array<value_type, 2> local_points(
@@ -437,6 +445,9 @@ struct problem_traits {
                         const sclx::md_index_t<1>& idx,
                         const sclx::kernel_info<>& info
                     ) mutable {
+                        if (idx[0] >= bulk_end) {
+                            return;
+                        }
                         for (int i = 0; i < dimensions; ++i) {
                             local_points(i, info.local_thread_linear_id())
                                 = points(i, idx[0]);
@@ -590,6 +601,8 @@ struct problem_traits {
                 return std::async(std::launch::deferred, []() {});
             }
 
+            auto bulk_end = domain.num_bulk_points;
+
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
                 sclx::local_array<value_type, 2> local_points(
@@ -605,6 +618,9 @@ struct problem_traits {
                         const sclx::md_index_t<1>& idx,
                         const sclx::kernel_info<>& info
                     ) mutable {
+                        if (idx[0] >= bulk_end) {
+                            return;
+                        }
                         for (int i = 0; i < dimensions; ++i) {
                             local_points(i, info.local_thread_linear_id())
                                 = points(i, idx[0]);
@@ -707,6 +723,8 @@ struct problem_traits {
 
             auto perturbation = amplitude_ * naga::math::sin(radians);
 
+            auto bulk_end = domain.num_bulk_points;
+
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
                 sclx::local_array<value_type, 2> local_points(
@@ -722,6 +740,9 @@ struct problem_traits {
                         const sclx::md_index_t<1>& idx,
                         const sclx::kernel_info<>& info
                     ) mutable {
+                        if (idx[0] >= bulk_end) {
+                            return;
+                        }
                         for (int i = 0; i < dimensions; ++i) {
                             local_points(i, info.local_thread_linear_id())
                                 = points(i, idx[0]);
