@@ -70,7 +70,7 @@ struct problem_traits {
         csv_path_t(
             const std::string& csv_file,
             const value_type& desired_step_size,
-            const point_type &origin
+            const point_type& origin
         )
             : step_size_{desired_step_size} {
             std::vector<point_type> loaded_points;
@@ -204,12 +204,14 @@ struct problem_traits {
             const value_type& time_multiplier = 1.0,
             const size_t& frame_offset        = 0,
             std::shared_ptr<path_t> path
-            = zero_path_t::create(naga::point_t<value_type, dimensions>{})
+            = zero_path_t::create(naga::point_t<value_type, dimensions>{}),
+            bool loop_audio = false
         )
             : amplitude_(amplitude),
               source_radius_(source_radius),
               time_multiplier_(time_multiplier),
-              frame_offset_(frame_offset) {
+              frame_offset_(frame_offset),
+              loop_audio_(loop_audio) {
             AudioFile<value_type> audio_file(wav_file.string());
             if (!audio_file.isMono()) {
                 sclx::throw_exception<std::runtime_error>(
@@ -288,6 +290,10 @@ struct problem_traits {
             const auto& density = solution.macroscopic_values.fluid_density;
             const auto& nominal_density = params.nominal_density;
             const auto& points          = domain.points;
+
+            if (loop_audio_) {
+                frame_number = frame_number % audio_samples.elements();
+            }
 
             if (frame_number >= audio_samples.elements()) {
                 if (!has_finished_) {
@@ -373,6 +379,7 @@ struct problem_traits {
         value_type time_multiplier_;
         size_t sample_rate_;
         size_t frame_offset_;
+        bool loop_audio_;
         bool has_finished_ = false;
         std::shared_ptr<path_t> path_;
     };
@@ -477,6 +484,173 @@ struct problem_traits {
     };
 
     template<class SourceRegion>
+    class audio_source : public density_source_t {
+      public:
+        using region_type = SourceRegion;
+
+        audio_source(
+            region_type source_region,
+            const sclx::filesystem::path& wav_file,
+            const value_type& amplitude,
+            const size_t& frame_offset = 0,
+            std::shared_ptr<path_t> path
+            = zero_path_t::create(naga::point_t<value_type, dimensions>{}),
+            bool loop_audio = false
+        )
+            : amplitude_(amplitude),
+              source_region_(std::move(source_region)),
+              frame_offset_(frame_offset),
+              loop_audio_(loop_audio) {
+            AudioFile<value_type> audio_file(wav_file.string());
+            if (!audio_file.isMono()) {
+                sclx::throw_exception<std::runtime_error>(
+                    "Audio file must be mono",
+                    "audio_source::"
+                );
+            }
+            sample_rate_ = audio_file.getSampleRate();
+
+            audio_samples_ = sclx::array<value_type, 1>{
+                static_cast<const size_t&>(audio_file.getNumSamplesPerChannel())
+            };
+
+            std::copy(
+                audio_file.samples[0].begin(),
+                audio_file.samples[0].end(),
+                audio_samples_.begin()
+            );
+
+            auto max_source_term = *std::max_element(
+                audio_samples_.begin(),
+                audio_samples_.end()
+            );
+
+            if (max_source_term == 0.0) {
+                sclx::throw_exception<std::runtime_error>(
+                    "Audio file must not be silent",
+                    "audio_source::"
+                );
+            }
+
+            std::transform(
+                audio_samples_.begin(),
+                audio_samples_.end(),
+                audio_samples_.begin(),
+                [=](const auto& sample) { return sample / max_source_term; }
+            );
+
+            path_ = std::move(path);
+
+            std::cout << "Audio file has " << audio_samples_.elements()
+                      << " samples at " << audio_file.getSampleRate()
+                      << " Hz\n\n";
+        }
+
+        std::future<void> add_density_source(
+            const simulation_domain_t& domain,
+            const problem_parameters_t& params,
+            const solution_t& solution,
+            const value_type& time,
+            sclx::array<value_type, 1>& source_terms
+        ) final {
+            auto lower_frame_number = std::floor(
+                time  * static_cast<value_type>(sample_rate_)
+            );
+            auto upper_frame_number = std::ceil(
+                time  * static_cast<value_type>(sample_rate_)
+            );
+            auto fractional_frame_number
+                = time
+                * static_cast<value_type>(sample_rate_);
+            auto lower_weight
+                = 1.0 - (fractional_frame_number - lower_frame_number);
+            auto upper_weight
+                = 1.0 - (upper_frame_number - fractional_frame_number);
+
+            auto frame_number
+                = static_cast<size_t>(lower_frame_number) + frame_offset_;
+            const auto& amplitude     = amplitude_;
+            const auto& audio_samples = audio_samples_;
+            const auto& density = solution.macroscopic_values.fluid_density;
+            const auto& nominal_density = params.nominal_density;
+            const auto& points          = domain.points;
+            auto source_region          = source_region_;
+            source_region.shift_region((*path_)(time));
+
+            if (loop_audio_) {
+                frame_number = frame_number % audio_samples.elements();
+            }
+
+            if (frame_number >= audio_samples.elements()) {
+                if (!has_finished_) {
+                    std::cout << "Audio source has finished at frame "
+                              << frame_number << "\n\n";
+                    has_finished_ = true;
+                }
+                return std::async(std::launch::deferred, []() {});
+            }
+
+            return sclx::execute_kernel([=](sclx::kernel_handler& handler
+                                        ) mutable {
+                sclx::local_array<value_type, 2> local_points(
+                    handler,
+                    {dimensions,
+                     sclx::cuda::traits::kernel::default_block_shape[0]}
+                );
+
+                handler.launch(
+                    sclx::md_range_t<1>{source_terms.shape()},
+                    source_terms,
+                    [=] __device__(
+                        const sclx::md_index_t<1>& idx,
+                        const sclx::kernel_info<>& info
+                    ) mutable {
+                        for (int i = 0; i < dimensions; ++i) {
+                            local_points(i, info.local_thread_linear_id())
+                                = points(i, idx[0]);
+                        }
+                        auto audio_sample_upper
+                            = amplitude * audio_samples(frame_number + 1);
+                        auto audio_sample_lower
+                            = amplitude * audio_samples(frame_number);
+                        auto audio_sample = upper_weight * audio_sample_upper
+                                          + lower_weight * audio_sample_lower;
+                        if (source_region.contains(
+                                &local_points(0, info.local_thread_linear_id())
+                            )) {
+
+                            auto perturbation = audio_sample;
+
+                            auto current_density = density(idx[0]);
+                            perturbation += nominal_density - current_density;
+                            source_terms(idx[0]) += perturbation;
+                        }
+                    }
+                );
+            });
+        }
+
+        const size_t& sample_rate() const { return sample_rate_; }
+
+        value_type audio_length() const {
+            return static_cast<value_type>(audio_samples_.elements())
+                 / static_cast<value_type>(sample_rate_);
+        }
+
+        size_t sample_count() const { return audio_samples_.elements(); }
+
+      private:
+        sclx::array<value_type, 1> audio_samples_;
+        value_type amplitude_;
+        region_type source_region_;
+        size_t sample_rate_;
+        size_t frame_offset_;
+        bool loop_audio_;
+        bool has_finished_ = false;
+        std::shared_ptr<path_t> path_;
+    };
+
+    template<class SourceRegion>
     class sine_wav_density_source : public density_source_t {
       public:
         using point_t     = naga::point_t<value_type, dimensions>;
@@ -525,11 +699,10 @@ struct problem_traits {
                 return std::async(std::launch::deferred, []() {});
             }
 
-
             const auto& density = solution.macroscopic_values.fluid_density;
             const auto& nominal_density = params.nominal_density;
             const auto& points          = domain.points;
-            auto source_region = source_region_;
+            auto source_region          = source_region_;
             source_region.shift_region((*path_)(scaled_time));
 
             auto perturbation = amplitude_ * naga::math::sin(radians);

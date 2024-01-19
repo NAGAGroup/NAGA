@@ -81,7 +81,7 @@ class operator_builder {
         : domain_(domain),
           query_points_(query_points) {
 
-        T interaction_scaling_factor = 0.05f;
+        T interaction_scaling_factor = 0.2f;
         T approx_particle_spacing;
         {
             naga::segmentation::nd_cubic_segmentation<T, Dimensions>

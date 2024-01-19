@@ -2091,12 +2091,6 @@ class conforming_point_cloud_impl_t<T, 3> {
                                 &immersed_sdf_result[0],
                                 &sdf_new
                             );
-                            if (sdf_new.distance < 0 && sdf_old.distance < 0) {
-                                if (std::abs(sdf_new.distance)
-                                    > std::abs(sdf_old.distance)) {
-                                    return closest_boundary_to_bulk[idx];
-                                }
-                            }
 
                             if (sdf_new.distance >= sdf_old.distance) {
                                 return closest_boundary_to_bulk[idx];
@@ -2111,12 +2105,6 @@ class conforming_point_cloud_impl_t<T, 3> {
                         sdf_results.begin(),
                         sdf_results.begin(),
                         [](const auto& sdf_new, const auto& sdf_old) {
-                            if (sdf_new.distance < 0 && sdf_old.distance < 0) {
-                                return std::abs(sdf_new.distance)
-                                        > std::abs(sdf_old.distance)
-                                    ? sdf_old
-                                    : sdf_new;
-                            }
                             return sdf_new.distance >= sdf_old.distance
                                      ? sdf_old
                                      : sdf_new;
@@ -2276,16 +2264,6 @@ class conforming_point_cloud_impl_t<T, 3> {
                         - min_bound_dist_scale_3d * nodal_spacing
                     );
                 }
-            }
-        );
-
-        std::transform(
-            boundary_normals.begin(),
-            boundary_normals.end(),
-            boundary_normals.begin(),
-            [](auto& normal) {
-                naga::math::loopless::normalize<3>(normal);
-                return normal;
             }
         );
 
