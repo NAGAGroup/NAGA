@@ -51,10 +51,16 @@ struct problem_traits {
         static std::shared_ptr<path_t> create(
             const std::string& csv_file,
             const value_type& desired_step_size,
-            point_type origin = point_type{}
+            point_type origin = point_type{},
+            point_type lower_bound = point_type{{-std::numeric_limits<value_type>::infinity(),
+                                                -std::numeric_limits<value_type>::infinity(),
+                                                -std::numeric_limits<value_type>::infinity()}},
+            point_type upper_bound = point_type{{std::numeric_limits<value_type>::infinity(),
+                                                std::numeric_limits<value_type>::infinity(),
+                                                std::numeric_limits<value_type>::infinity()}}
         ) {
             return std::shared_ptr<path_t>(
-                new csv_path_t(csv_file, desired_step_size, origin)
+                new csv_path_t(csv_file, desired_step_size, origin, lower_bound, upper_bound)
             );
         }
 
@@ -70,7 +76,9 @@ struct problem_traits {
         csv_path_t(
             const std::string& csv_file,
             const value_type& desired_step_size,
-            const point_type& origin
+            point_type origin,
+            point_type lower_bound,
+            point_type upper_bound
         )
             : step_size_{desired_step_size} {
             std::vector<point_type> loaded_points;
@@ -127,6 +135,24 @@ struct problem_traits {
                     point[0] += origin[0];
                     point[1] += origin[1];
                     point[2] += origin[2];
+                    return point;
+                }
+            );
+
+            // clip to bounds
+            std::transform(
+                points_.begin(),
+                points_.end(),
+                points_.begin(),
+                [&](auto point) {
+                    for (int i = 0; i < dimensions; ++i) {
+                        if (point[i] < lower_bound[i]) {
+                            point[i] = lower_bound[i];
+                        }
+                        if (point[i] > upper_bound[i]) {
+                            point[i] = upper_bound[i];
+                        }
+                    }
                     return point;
                 }
             );

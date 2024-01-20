@@ -919,17 +919,17 @@ class simulation_engine {
         apply_density_source_terms();
 
         compute_macroscopic_values();
+        collision_step();
+
+        compute_macroscopic_values();
+        update_observers(time());
+
         interpolate_ghost_nodes(/*interpolate_Q=*/true);
         domain_.num_layer_points += domain_.num_boundary_points;
         domain_.num_layer_points += domain_.num_ghost_nodes;
         pml_absorption_operator_.apply();
         domain_.num_layer_points -= domain_.num_boundary_points;
         domain_.num_layer_points -= domain_.num_ghost_nodes;
-
-        compute_macroscopic_values();
-        update_observers(time());
-
-        collision_step();
 
         streaming_step();
         interpolate_boundaries();
