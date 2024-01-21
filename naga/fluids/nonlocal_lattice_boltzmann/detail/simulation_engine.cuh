@@ -921,6 +921,7 @@ class simulation_engine {
         compute_macroscopic_values();
         collision_step();
 
+        interpolate_boundaries();
         compute_macroscopic_values();
         update_observers(time());
 
@@ -937,7 +938,6 @@ class simulation_engine {
         bounce_back_step();
 
         streaming_step();
-        interpolate_boundaries();
 
         ++frame_number_;
     }

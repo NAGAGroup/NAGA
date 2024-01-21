@@ -1880,15 +1880,16 @@ class conforming_point_cloud_impl_t<T, 3> {
     ) {
         auto domain_mesh = manifold_mesh_t<T>::import_from_obj(domain_obj);
         std::vector<manifold_mesh_t<T>> immersed_boundary_meshes;
-        for (const auto& immersed_boundary_obj : immersed_boundary_objs) {
+        for (int ib_idx = 0; ib_idx < immersed_boundary_objs.size(); ++ib_idx) {
+            auto& immersed_boundary_obj = immersed_boundary_objs[ib_idx];
             immersed_boundary_meshes.push_back(
                 manifold_mesh_t<T>::import_from_obj(immersed_boundary_obj)
             );
 
-            // first rotate according to provided mesh placement
-            auto& immersed_boundary_mesh = immersed_boundary_meshes.back();
             auto& immersed_mesh_placement
-                = immersed_mesh_placements[immersed_boundary_meshes.size() - 1];
+                = immersed_mesh_placements[ib_idx];
+            auto& immersed_boundary_mesh = immersed_boundary_meshes.back();
+            // first scale according to provided mesh placement
             auto& scale = immersed_mesh_placement.scale;
             sclx::execute_kernel([&](sclx::kernel_handler& handler) {
                 auto& vertices = immersed_boundary_mesh.vertices;
@@ -1906,6 +1907,7 @@ class conforming_point_cloud_impl_t<T, 3> {
                     }
                 );
             }).get();
+            // then rotate according to provided mesh placement
             auto& rotation = immersed_mesh_placement.rotation;
             sclx::execute_kernel([&](sclx::kernel_handler& handler) {
                 auto& vertices = immersed_boundary_mesh.vertices;
@@ -1923,6 +1925,23 @@ class conforming_point_cloud_impl_t<T, 3> {
                     }
                 );
             }).get();
+            sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+                auto& normals = immersed_boundary_mesh.normals;
+                handler.launch(
+                    sclx::md_range_t<1>{normals.shape()[1]},
+                    normals,
+                    [=] __device__(const sclx::md_index_t<1>& idx, const auto&) mutable {
+                        const auto* n = &normals(0, idx[0]);
+
+                        auto rotated_n = rotate_point(n, rotation);
+
+                        normals(0, idx[0]) = rotated_n[0];
+                        normals(1, idx[0]) = rotated_n[1];
+                        normals(2, idx[0]) = rotated_n[2];
+                    }
+                );
+            }).get();
+            // then translate according to provided mesh placement
             auto& location = immersed_mesh_placement.location;
             sclx::execute_kernel([&](sclx::kernel_handler& handler) {
                 auto& vertices = immersed_boundary_mesh.vertices;
