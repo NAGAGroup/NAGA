@@ -290,6 +290,11 @@ struct problem_traits {
             const value_type& time,
             sclx::array<value_type, 1>& source_terms
         ) final {
+//            if (odd_sim_frame_) {
+//                odd_sim_frame_ = !odd_sim_frame_;
+//                return std::async(std::launch::deferred, []() {});
+//            }
+//            odd_sim_frame_ = !odd_sim_frame_;
             region_t source_region{
                 source_radius_,
                 (*path_)(time * time_multiplier_)
@@ -330,7 +335,7 @@ struct problem_traits {
                 return std::async(std::launch::deferred, []() {});
             }
 
-            auto bulk_end = domain.num_bulk_points;
+            auto bulk_end = domain.num_bulk_points + domain.num_layer_points;
 
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
@@ -364,27 +369,7 @@ struct problem_traits {
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
                             )) {
-                            auto distance
-                                = naga::distance_functions::loopless::euclidean<
-                                    3>{}(
-                                    &local_points(
-                                        0,
-                                        info.local_thread_linear_id()
-                                    ),
-                                    source_region.center()
-                                );
-
                             auto perturbation = audio_sample;
-                            //                            * (1
-                            //                               -
-                            //                               naga::math::loopless::pow<1>(
-                            //                                     distance /
-                            //                                     source_region.radius()
-                            //                                 ))
-                            //                            * naga::math::exp(-naga::math::loopless::pow<2>(
-                            //                                2 * distance /
-                            //                                source_region.radius()
-                            //                            ));
 
                             auto current_density = density(idx[0]);
                             perturbation += nominal_density - current_density;
@@ -414,6 +399,7 @@ struct problem_traits {
         bool loop_audio_;
         bool has_finished_ = false;
         std::shared_ptr<path_t> path_;
+        bool odd_sim_frame_ = false;
     };
 
     class spherical_sine_wave_source : public density_source_t {
@@ -454,7 +440,7 @@ struct problem_traits {
             const auto& points          = domain.points;
             auto frame_amplitude        = get_amplitude_at_time(scaled_time);
 
-            auto bulk_end = domain.num_bulk_points;
+            auto bulk_end = domain.num_bulk_points + domain.num_layer_points;
 
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
@@ -590,6 +576,12 @@ struct problem_traits {
             const value_type& time,
             sclx::array<value_type, 1>& source_terms
         ) final {
+//            if (odd_sim_frame_) {
+//                odd_sim_frame_ = !odd_sim_frame_;
+//                return std::async(std::launch::deferred, []() {});
+//            }
+//            odd_sim_frame_ = !odd_sim_frame_;
+
             auto lower_frame_number = std::floor(
                 time  * static_cast<value_type>(sample_rate_)
             );
@@ -627,7 +619,7 @@ struct problem_traits {
                 return std::async(std::launch::deferred, []() {});
             }
 
-            auto bulk_end = domain.num_bulk_points;
+            auto bulk_end = domain.num_bulk_points + domain.num_layer_points;
 
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {
@@ -690,6 +682,7 @@ struct problem_traits {
         bool loop_audio_;
         bool has_finished_ = false;
         std::shared_ptr<path_t> path_;
+        bool odd_sim_frame_ = false;
     };
 
     template<class SourceRegion>
@@ -749,7 +742,7 @@ struct problem_traits {
 
             auto perturbation = amplitude_ * naga::math::sin(radians);
 
-            auto bulk_end = domain.num_bulk_points;
+            auto bulk_end = domain.num_bulk_points + domain.num_layer_points;
 
             return sclx::execute_kernel([=](sclx::kernel_handler& handler
                                         ) mutable {

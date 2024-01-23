@@ -195,12 +195,26 @@ class simulation_engine {
                 {domain_.points.shape()[1] - domain_.num_ghost_nodes
                  - domain_.num_boundary_points}
             );
-            sclx::array<value_type, 2> boundary_points
-                = domain_.points.get_range(
-                    {domain_.points.shape()[1] - domain_.num_ghost_nodes
-                     - domain_.num_boundary_points},
-                    {domain_.points.shape()[1] - domain_.num_ghost_nodes}
-                );
+            auto boundary_points = domain_.points.get_range(
+                {domain_.points.shape()[1] - domain_.num_boundary_points
+                 - domain_.num_ghost_nodes},
+                {domain_.points.shape()[1] - domain_.num_ghost_nodes}
+            );
+            //            sclx::array<value_type, 2> boundary_interp_points{
+            //                dimensions,
+            //                domain_.num_boundary_points
+            //            };
+            //            for (size_t b_idx = 0; b_idx <
+            //            domain_.num_boundary_points;
+            //                 ++b_idx) {
+            //                for (size_t d = 0; d < dimensions; ++d) {
+            //                    boundary_interp_points(d, b_idx)
+            //                        = boundary_points(d, b_idx)
+            //                        + domain_.boundary_normals(d, b_idx)
+            //                              * parameters_.speed_of_sound
+            //                              * parameters_.time_step;
+            //                }
+            //            }
 
             uint num_interp_points = 32;
             segmentation::nd_cubic_segmentation<value_type, dimensions>
@@ -295,36 +309,36 @@ class simulation_engine {
                                   + domain_.num_ghost_nodes;
         auto boundary_absorption = boundary_absorption_coefficient;
         sclx::array<value_type, 1> new_layer_absorption{{new_num_layer_points}};
-        //        std::copy(
-        //            absorption_coeffs.begin(),
-        //            absorption_coeffs.begin() + domain_.num_layer_points,
-        //            new_layer_absorption.begin()
-        //        );
-        //        std::fill(
-        //            new_layer_absorption.begin() + domain_.num_layer_points,
-        //            new_layer_absorption.begin() + domain_.num_layer_points
-        //                + domain_.num_boundary_points,
-        //            boundary_absorption
-        //        );
-        //        std::fill(
-        //            new_layer_absorption.begin() + domain_.num_layer_points
-        //                + domain_.num_boundary_points,
-        //            new_layer_absorption.end(),
-        //            0.f
-        //        );
-
-        if (absorption_coeffs.elements() > 0) {
-            std::copy(
-                absorption_coeffs.begin(),
-                absorption_coeffs.begin() + domain_.num_layer_points,
-                new_layer_absorption.begin()
-            );
-        }
+        std::copy(
+            absorption_coeffs.begin(),
+            absorption_coeffs.begin() + domain_.num_layer_points,
+            new_layer_absorption.begin()
+        );
         std::fill(
             new_layer_absorption.begin() + domain_.num_layer_points,
-            new_layer_absorption.end(),
+            new_layer_absorption.begin() + domain_.num_layer_points
+                + domain_.num_boundary_points,
             boundary_absorption
         );
+        std::fill(
+            new_layer_absorption.begin() + domain_.num_layer_points
+                + domain_.num_boundary_points,
+            new_layer_absorption.end(),
+            0.f
+        );
+
+        //        if (absorption_coeffs.elements() > 0) {
+        //            std::copy(
+        //                absorption_coeffs.begin(),
+        //                absorption_coeffs.begin() + domain_.num_layer_points,
+        //                new_layer_absorption.begin()
+        //            );
+        //        }
+        //        std::fill(
+        //            new_layer_absorption.begin() + domain_.num_layer_points,
+        //            new_layer_absorption.end(),
+        //            boundary_absorption
+        //        );
 
         /*
          * Below is the version that makes ghost nodes nonzero absorption
@@ -695,121 +709,129 @@ class simulation_engine {
             pml_Q2_boundary
         );
         auto boundary_normals = domain_.boundary_normals;
+        auto rho0             = parameters_.nominal_density;
+        auto velocity_scale   = parameters_.speed_of_sound
+                            / lattice_traits<Lattice>::lattice_speed_of_sound;
+
+        auto boundary_velocities
+            = solution_.macroscopic_values.fluid_velocity.get_range(
+                {domain_.points.shape()[1] - domain_.num_boundary_points
+                 - domain_.num_ghost_nodes},
+                {domain_.points.shape()[1] - domain_.num_ghost_nodes}
+            );
+        auto boundary_densities
+            = solution_.macroscopic_values.fluid_density.get_range(
+                {domain_.points.shape()[1] - domain_.num_boundary_points
+                 - domain_.num_ghost_nodes},
+                {domain_.points.shape()[1] - domain_.num_ghost_nodes}
+            );
 
         auto bounce_back_lambda =
             [&](sclx::array_list<value_type, 1, lattice_size>& result_arrays) {
-                return sclx::execute_kernel([&, result_arrays](
-                                                sclx::kernel_handler& handler
-                                            ) {
-                    sclx::local_array<value_type, 2> lattice_velocities(
-                        handler,
-                        {dimensions, lattice_size}
-                    );
-                    sclx::local_array<value_type, 1> lattice_weights(
-                        handler,
-                        {lattice_size}
-                    );
+                return sclx::execute_kernel(
+                    [&, result_arrays](sclx::kernel_handler& handler) {
+                        sclx::local_array<value_type, 2> lattice_velocities(
+                            handler,
+                            {dimensions, lattice_size}
+                        );
+                        sclx::local_array<value_type, 1> lattice_weights(
+                            handler,
+                            {lattice_size}
+                        );
 
-                    handler.launch(
-                        sclx::md_range_t<1>{domain_.num_ghost_nodes},
-                        result_arrays,
-                        [=] __device__(
-                            const sclx::md_index_t<1>& idx,
-                            const sclx::kernel_info<>& info
-                        ) mutable {
-                            if (info.local_thread_linear_id() == 0) {
-                                for (int i = 0; i < dimensions * lattice_size;
-                                     ++i) {
-                                    lattice_velocities(
-                                        i % dimensions,
-                                        i / dimensions
-                                    )
-                                        = lattice_interface<
-                                              Lattice>::lattice_velocities()
-                                              .vals[i / dimensions]
-                                                   [i % dimensions];
-                                    if (i % dimensions == 0) {
-                                        continue;
+                        auto lattice_time_step = parameters_.lattice_time_step;
+                        auto lattice_viscosity = parameters_.lattice_viscosity;
+
+                        auto lattice_speed_of_sound
+                            = lattice_traits<Lattice>::lattice_speed_of_sound;
+
+                        handler.launch(
+                            sclx::md_range_t<1>{domain_.num_ghost_nodes},
+                            result_arrays,
+                            [=] __device__(
+                                const sclx::md_index_t<1>& idx,
+                                const sclx::kernel_info<>& info
+                            ) mutable {
+                                if (info.local_thread_linear_id() == 0) {
+                                    for (int i = 0;
+                                         i < dimensions * lattice_size;
+                                         ++i) {
+                                        lattice_velocities(
+                                            i % dimensions,
+                                            i / dimensions
+                                        )
+                                            = lattice_interface<
+                                                  Lattice>::lattice_velocities()
+                                                  .vals[i / dimensions]
+                                                       [i % dimensions];
+                                        if (i % dimensions == 0) {
+                                            continue;
+                                        }
+                                        lattice_weights(i / dimensions)
+                                            = lattice_interface<
+                                                  Lattice>::lattice_weights()
+                                                  .vals[i / dimensions];
                                     }
-                                    lattice_weights(i / dimensions)
-                                        = lattice_interface<
-                                              Lattice>::lattice_weights()
-                                              .vals[i / dimensions];
+                                }
+                                handler.syncthreads();
+
+                                naga::point_t<value_type, dimensions> u_wall;
+                                for (uint d = 0; d < dimensions; ++d) {
+                                    u_wall[d] = boundary_velocities(d, idx[0])
+                                              / velocity_scale;
+                                }
+                                auto rho = boundary_densities[idx[0]] / rho0;
+
+                                for (uint alpha = 0; alpha < lattice_size;
+                                     ++alpha) {
+                                    const auto c_alpha
+                                        = &lattice_velocities(0, alpha);
+                                    result_arrays[alpha][idx[0]]
+                                        -= 2.f * rho
+                                         * naga::math::loopless::dot<3>(
+                                               u_wall,
+                                               c_alpha
+                                         )
+                                         / naga::math::loopless::pow<2>(
+                                               lattice_speed_of_sound
+                                         )
+                                         * lattice_weights[alpha]
+                                         * lattice_time_step;
+                                }
+
+                                for (uint d = 0; d < dimensions; ++d) {
+                                    u_wall[d] = 0.f;
                                 }
                             }
-                            handler.syncthreads();
-
-                            value_type normal[dimensions]{};
-                            for (int d = 0; d < dimensions; ++d) {
-                                normal[d] = boundary_normals(d, idx[0]);
-                            }
-
-                            auto max_angle = .1f;
-                            auto normal_norm
-                                = math::loopless::norm<dimensions>(normal);
-                            for (int alpha = 1; alpha < lattice_size; ++alpha) {
-                                auto normal_dot_calpha
-                                    = math::loopless::dot<dimensions>(
-                                        normal,
-                                        &lattice_velocities(0, alpha)
-                                    );
-                                //                                            auto
-                                //                                            calpha_norm
-                                //                                                    = math::loopless::norm<dimensions>(
-                                //                                                            &lattice_velocities(0, alpha)
-                                //                                                    );
-                                //                                            calpha_norm
-                                //                                                    = isnan(calpha_norm) ? 0 : calpha_norm;
-                                //                                            auto
-                                //                                            angle_normal_calpha
-                                //                                                    = naga::math::abs(math::acos(
-                                //                                                            normal_dot_calpha
-                                //                                                            / (normal_norm * calpha_norm)
-                                //                                                    ));
-                                //                                            if
-                                //                                            (angle_normal_calpha
-                                //                                            <
-                                //                                            max_angle
-                                //                                                || (naga::math::pi<value_type>
-                                //                                                    - angle_normal_calpha)
-                                //                                                   < max_angle) {
-                                //                                                continue;
-                                //                                            }
-
-                                if (normal_dot_calpha <= 0) {
-                                    continue;
-                                }
-                                result_arrays[alpha][idx[0]]
-                                    = result_arrays[lattice_interface<
-                                        Lattice>::get_bounce_back_idx(alpha)]
-                                                   [idx[0]];
-                            }
-                        }
-                    );
-                });
+                        );
+                    }
+                );
             };
 
         auto f_fut = bounce_back_lambda(result_f_boundary);
+
+        f_fut.get();
+        return;
 
         if (!bounce_back_Q) {
             f_fut.get();
             return;
         }
 
-        auto Q1_fut = bounce_back_lambda(result_pml_Q1_boundary);
-
-        f_fut.get();
-        Q1_fut.get();
-
-        if constexpr (dimensions == 3) {
-            auto Q2_fut = bounce_back_lambda(result_pml_Q2_boundary);
-            Q2_fut.get();
-        }
+        //        auto Q1_fut = bounce_back_lambda(result_pml_Q1_boundary);
+        //
+        //        f_fut.get();
+        //        Q1_fut.get();
+        //
+        //        if constexpr (dimensions == 3) {
+        //            auto Q2_fut = bounce_back_lambda(result_pml_Q2_boundary);
+        //            Q2_fut.get();
+        //        }
     }
 
     void bounce_back_step() {
         //        bounce_back_step_ghost();
-        bounce_back_step_boundary(true);
+        bounce_back_step_boundary(false);
     }
 
     void apply_density_source_terms() {
@@ -915,29 +937,30 @@ class simulation_engine {
     }
 
     void step_forward() {
+        interpolate_ghost_nodes(true);
+        compute_macroscopic_values();
+
         compute_density_source_terms();
+
+        pml_absorption_operator_.apply();
+
+        compute_macroscopic_values();
+        apply_density_source_terms();
+
+        collision_step();
+
         apply_density_source_terms();
 
         compute_macroscopic_values();
-        collision_step();
-
-        interpolate_boundaries();
-        compute_macroscopic_values();
         update_observers(time());
 
-        interpolate_ghost_nodes(/*interpolate_Q=*/true);
-        domain_.num_layer_points += domain_.num_boundary_points;
-        domain_.num_layer_points += domain_.num_ghost_nodes;
-        pml_absorption_operator_.apply();
-        domain_.num_layer_points -= domain_.num_boundary_points;
-        domain_.num_layer_points -= domain_.num_ghost_nodes;
-
         streaming_step();
-        interpolate_boundaries();
 
         bounce_back_step();
 
         streaming_step();
+
+
 
         ++frame_number_;
     }
