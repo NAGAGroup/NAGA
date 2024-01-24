@@ -804,6 +804,7 @@ struct problem_traits {
                   amplitude,
                   pulse_width,
                   speed_of_sound,
+                  zero_path_t::create(naga::point_t<value_type, dimensions>{}),
                   1.0,
                   time_multiplier
               ) {}

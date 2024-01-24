@@ -939,28 +939,29 @@ class simulation_engine {
     void step_forward() {
         interpolate_ghost_nodes(true);
         compute_macroscopic_values();
+        update_observers(time());
 
         compute_density_source_terms();
-
-        pml_absorption_operator_.apply();
-
-        compute_macroscopic_values();
         apply_density_source_terms();
 
         collision_step();
 
-        apply_density_source_terms();
-
         compute_macroscopic_values();
-        update_observers(time());
+
+        pml_absorption_operator_.apply();
+
+        interpolate_boundaries();
+        compute_macroscopic_values();
+        apply_density_source_terms();
 
         streaming_step();
 
+        interpolate_boundaries();
+        compute_macroscopic_values();
         bounce_back_step();
 
         streaming_step();
-
-
+        interpolate_boundaries();
 
         ++frame_number_;
     }
