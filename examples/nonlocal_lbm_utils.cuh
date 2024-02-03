@@ -290,11 +290,11 @@ struct problem_traits {
             const value_type& time,
             sclx::array<value_type, 1>& source_terms
         ) final {
-//            if (odd_sim_frame_) {
-//                odd_sim_frame_ = !odd_sim_frame_;
-//                return std::async(std::launch::deferred, []() {});
-//            }
-//            odd_sim_frame_ = !odd_sim_frame_;
+            if (odd_sim_frame_) {
+                odd_sim_frame_ = !odd_sim_frame_;
+                return std::async(std::launch::deferred, []() {});
+            }
+            odd_sim_frame_ = !odd_sim_frame_;
             region_t source_region{
                 source_radius_,
                 (*path_)(time * time_multiplier_)
@@ -576,11 +576,11 @@ struct problem_traits {
             const value_type& time,
             sclx::array<value_type, 1>& source_terms
         ) final {
-//            if (odd_sim_frame_) {
-//                odd_sim_frame_ = !odd_sim_frame_;
-//                return std::async(std::launch::deferred, []() {});
-//            }
-//            odd_sim_frame_ = !odd_sim_frame_;
+            if (odd_sim_frame_) {
+                odd_sim_frame_ = !odd_sim_frame_;
+                return std::async(std::launch::deferred, []() {});
+            }
+            odd_sim_frame_ = !odd_sim_frame_;
 
             auto lower_frame_number = std::floor(
                 time  * static_cast<value_type>(sample_rate_)

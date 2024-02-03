@@ -45,6 +45,7 @@ class nd_rectangular_prism {
         for (uint i = 0; i < Dimensions; ++i) {
             origin_[i]       = origin[i];
             side_lengths_[i] = side_lengths[i];
+            center_[i]       = origin[i] + side_lengths[i] / 2;
         }
     }
 
@@ -83,9 +84,12 @@ class nd_rectangular_prism {
         return copy;
     }
 
+    __host__ __device__ const T* center() const { return center_; }
+
 
   private:
     T origin_[Dimensions];
     T side_lengths_[Dimensions];
+    T center_[Dimensions];
 };
 }  // namespace naga::regions

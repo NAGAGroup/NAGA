@@ -869,7 +869,7 @@ class simulation_engine {
                                      * density_source_term[idx[1]]
                                      / density_scale;
                     if (idx[0] == 0) {
-                        densities[idx[1]] += density_source_term[idx[1]] / 2.f;
+                        densities[idx[1]] += density_source_term[idx[1]];
                     }
                 }
             );
@@ -951,8 +951,6 @@ class simulation_engine {
         pml_absorption_operator_.apply();
 
         interpolate_boundaries();
-        compute_macroscopic_values();
-        apply_density_source_terms();
 
         streaming_step();
 
