@@ -625,7 +625,7 @@ class partial_pml_subtask<d3q27_lattice<T>> {
             using namespace math::loopless;
 
             params.lattice_distributions[alpha][idx[0]]
-                -= sigma * params.lattice_time_step
+                -= sigma
                  * (3.f * f_tilde_eq + 3.f * sigma * Q1_value
                     + pow<2>(sigma) * Q2_value);
         }
@@ -804,7 +804,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             auto layer_end   = engine_->domain_.num_bulk_points
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
-                nonlocal_calculus::forward_euler<T>(engine_->parameters_.lattice_time_step),
+                nonlocal_calculus::forward_euler<T>(1.f),
                 engine_->solution_
                     .lattice_distributions[alpha],  // .get_range({layer_begin},
                                                     // {layer_end}),
@@ -833,7 +833,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             );
 
             sclx::algorithm::elementwise_reduce(
-                nonlocal_calculus::forward_euler<T>(engine_->parameters_.lattice_time_step),
+                nonlocal_calculus::forward_euler<T>(1.f),
                 engine_->solution_
                     .lattice_distributions[alpha],  // .get_range({layer_begin},
                                                     // {layer_end}),

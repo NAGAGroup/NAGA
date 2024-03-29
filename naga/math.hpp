@@ -181,7 +181,7 @@ NAGA_HOST NAGA_DEVICE void normalize(VectorType& v, uint dims) {
 namespace loopless {
 
 template<uint N, class T>
-NAGA_HOST NAGA_DEVICE auto pow(const T& x) -> decltype(x * x) {
+NAGA_HOST NAGA_DEVICE constexpr auto pow(const T& x) -> decltype(x * x) {
     if constexpr (N == 0) {
         return 1;
     } else if constexpr (N == 1) {

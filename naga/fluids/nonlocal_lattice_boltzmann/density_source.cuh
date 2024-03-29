@@ -81,4 +81,47 @@ class density_source {
     detail::simulation_engine<Lattice>* registered_engine_ = nullptr;
 };
 
+template<class Lattice>
+class velocity_source {
+public:
+    using value_type = typename Lattice::value_type;
+
+    virtual std::future<void> add_velocity_source(
+        const simulation_nodes<const value_type>& domain,
+        const problem_parameters<value_type>& params,
+        const state_variables<Lattice>& state,
+        const value_type& time,
+        sclx::array<value_type, 2>& source_terms
+    ) = 0;
+
+    void unregister() {
+        if (!registered_engine_) {
+            return;
+        }
+        detail::unregister_velocity_source(*registered_engine_, this);
+    }
+
+    virtual ~velocity_source() { unregister(); }
+
+protected:
+    friend class detail::simulation_engine<Lattice>;
+
+    template<class Lattice_>
+    friend void detail::unregister_velocity_source(
+        detail::simulation_engine<Lattice_>& engine,
+        velocity_source<Lattice_>* source
+    );
+
+    void notify_registered(detail::simulation_engine<Lattice>* engine) {
+        if (registered_engine_) {
+            sclx::throw_exception<std::runtime_error>(
+                "Density source already registered with an engine.",
+                "naga::fluids::nonlocal_lbm::density_source::"
+            );
+        }
+        registered_engine_ = engine;
+    }
+    detail::simulation_engine<Lattice>* registered_engine_ = nullptr;
+};
+
 }  // namespace naga::fluids::nonlocal_lbm

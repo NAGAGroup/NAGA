@@ -45,6 +45,7 @@ struct problem_parameters {
     T nominal_density;
     T lattice_viscosity;
     T lattice_time_step;
+    T lattice_characteristic_frequency;
 };
 
 template<class Lattice>

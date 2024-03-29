@@ -65,6 +65,26 @@ struct mq_shape_function {
     value_type alpha_c_;
 };
 
+template<class PointType>
+struct exp_shape_function {
+    using value_type = typename point_traits<PointType>::value_type;
+    constexpr static uint dimensions = point_traits<PointType>::dimensions;
+
+    __host__ __device__ exp_shape_function(
+        const value_type& b = 0.03f
+    )
+        : b_(b) {}
+
+    __host__ __device__ value_type operator()(
+        const value_type& r_squared,
+        const value_type& approx_particle_spacing
+    ) const {
+        return math::exp(b_ * r_squared);
+    }
+
+    value_type b_;
+};
+
 template<class PointMapType>
 using default_shape_function
     = mq_shape_function<typename point_map_traits<PointMapType>::point_type>;

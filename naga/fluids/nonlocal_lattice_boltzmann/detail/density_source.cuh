@@ -36,6 +36,8 @@ namespace naga::fluids::nonlocal_lbm {
 // forward declarations
 template<class T>
 class density_source;
+template<class T>
+class velocity_source;
 }  // namespace naga::fluids::nonlocal_lbm
 
 namespace naga::fluids::nonlocal_lbm::detail {
@@ -47,5 +49,11 @@ template<class Lattice>
 void unregister_density_source(
     simulation_engine<Lattice>& engine,
     density_source<Lattice>* source
+    );
+
+template<class Lattice>
+void unregister_velocity_source(
+    simulation_engine<Lattice>& engine,
+    velocity_source<Lattice>* source
 );
 }  // namespace naga::fluids::nonlocal_lbm::detail

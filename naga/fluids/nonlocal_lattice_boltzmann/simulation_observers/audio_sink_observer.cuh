@@ -236,11 +236,11 @@ class audio_sink_observer : public simulation_observer<Lattice> {
         const problem_parameters_t& params,
         const solution_t& solution
     ) {
-        auto frame
-            = static_cast<size_t>(time_multiplier_ * time * sample_rate_);
-        if (frame < audio_buffer_[0].size()) {
-            return;
-        }
+        // auto frame
+        //     = static_cast<size_t>(time_multiplier_ * time * sample_rate_);
+        // if (frame < audio_buffer_[0].size()) {
+        //     return;
+        // }
 
         if (path_) {
             update_location(time_multiplier_ * time);
@@ -490,11 +490,11 @@ class audio_sink_observer<Lattice, channel_configuration::stereo>
         const problem_parameters_t& params,
         const solution_t& solution
     ) {
-        auto frame
-            = static_cast<size_t>(time_multiplier_ * time * sample_rate_);
-        if (frame < audio_buffer_[0].size()) {
-            return;
-        }
+        // auto frame
+        //     = static_cast<size_t>(time_multiplier_ * time * sample_rate_);
+        // if (frame < audio_buffer_[0].size()) {
+        //     return;
+        // }
         interpolator_->interpolate(
             solution.macroscopic_values.fluid_density,
             sink_signal_,

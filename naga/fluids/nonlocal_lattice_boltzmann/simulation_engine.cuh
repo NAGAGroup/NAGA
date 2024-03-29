@@ -53,13 +53,15 @@ class simulation_engine {
         value_type fluid_viscosity,
         value_type nominal_density,
         value_type time_step,
-        value_type speed_of_sound
+        value_type speed_of_sound,
+        value_type characteristic_frequency = 0.f
     ) {
         engine_ptr_->set_problem_parameters(
             fluid_viscosity,
             nominal_density,
             time_step,
-            speed_of_sound
+            speed_of_sound,
+            characteristic_frequency
         );
     }
 
@@ -77,6 +79,10 @@ class simulation_engine {
 
     void register_density_source(density_source<Lattice>& source) {
         engine_ptr_->register_density_source(source);
+    }
+
+    void register_velocity_source(velocity_source<Lattice>& source) {
+        engine_ptr_->register_velocity_source(source);
     }
 
     value_type time() const { return engine_ptr_->time(); }

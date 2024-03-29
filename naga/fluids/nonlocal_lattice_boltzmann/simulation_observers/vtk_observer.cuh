@@ -185,9 +185,9 @@ class vtk_observer : public simulation_observer<Lattice> {
 
             density->SetTuple1(i, solution.macroscopic_values.fluid_density(i));
 
-            value_type fluid_velocity[3]{0, 0, 0};
+            value_type fluid_velocity[3];
             for (int d = 0; d < Lattice::dimensions; ++d) {
-                point[d] = solution.macroscopic_values.fluid_velocity(d, i);
+                fluid_velocity[d] = solution.macroscopic_values.fluid_velocity(d, i);
             }
             velocity->SetTuple3(
                 i,
@@ -358,9 +358,9 @@ class vtk_observer : public simulation_observer<Lattice> {
 
             density->SetTuple1(i, solution.macroscopic_values.fluid_density(p));
 
-            value_type fluid_velocity[3]{0, 0, 0};
+            value_type fluid_velocity[3];
             for (int d = 0; d < Lattice::dimensions; ++d) {
-                point[d] = solution.macroscopic_values.fluid_velocity(d, p);
+                fluid_velocity[d] = solution.macroscopic_values.fluid_velocity(d, p);
             }
             velocity->SetTuple3(
                 i,

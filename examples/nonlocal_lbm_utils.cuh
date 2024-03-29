@@ -15,6 +15,9 @@ struct problem_traits {
 
     using density_source_t
         = naga::fluids::nonlocal_lbm::density_source<lattice_type>;
+
+    using velocity_source_t
+        = naga::fluids::nonlocal_lbm::velocity_source<lattice_type>;
     using simulation_domain_t  = typename sim_engine_t::simulation_domain_t;
     using problem_parameters_t = typename sim_engine_t::problem_parameters_t;
     using solution_t           = typename sim_engine_t::solution_t;
@@ -52,16 +55,20 @@ struct problem_traits {
             const std::string& csv_file,
             const value_type& desired_step_size,
             point_type origin = point_type{},
-            point_type lower_bound = point_type{{-std::numeric_limits<value_type>::infinity(),
-                                                -std::numeric_limits<value_type>::infinity(),
-                                                -std::numeric_limits<value_type>::infinity()}},
-            point_type upper_bound = point_type{{std::numeric_limits<value_type>::infinity(),
-                                                std::numeric_limits<value_type>::infinity(),
-                                                std::numeric_limits<value_type>::infinity()}}
+            point_type lower_bound
+            = point_type{{-std::numeric_limits<value_type>::infinity(), -std::numeric_limits<value_type>::infinity(), -std::numeric_limits<value_type>::infinity()}
+            },
+            point_type upper_bound
+            = point_type{{std::numeric_limits<value_type>::infinity(), std::numeric_limits<value_type>::infinity(), std::numeric_limits<value_type>::infinity()}
+            }
         ) {
-            return std::shared_ptr<path_t>(
-                new csv_path_t(csv_file, desired_step_size, origin, lower_bound, upper_bound)
-            );
+            return std::shared_ptr<path_t>(new csv_path_t(
+                csv_file,
+                desired_step_size,
+                origin,
+                lower_bound,
+                upper_bound
+            ));
         }
 
         const point_type& operator()(const value_type& t) final {
@@ -221,12 +228,13 @@ struct problem_traits {
         point_type current_point_;
     };
 
-    class spherical_audio_source : public density_source_t {
+    class spherical_audio_source_v2 : public velocity_source_t {
       public:
-        spherical_audio_source(
+        spherical_audio_source_v2(
             const sclx::filesystem::path& wav_file,
             const value_type& amplitude,
             const value_type& source_radius,
+            const value_type& max_frequency,
             const value_type& time_multiplier = 1.0,
             const size_t& frame_offset        = 0,
             std::shared_ptr<path_t> path
@@ -234,7 +242,9 @@ struct problem_traits {
             bool loop_audio = false
         )
             : amplitude_(amplitude),
-              source_radius_(source_radius),
+              source_outer_radius_(source_radius),
+              source_inner_radius_(source_radius * .5f),
+              max_frequency_(max_frequency),
               time_multiplier_(time_multiplier),
               frame_offset_(frame_offset),
               loop_audio_(loop_audio) {
@@ -246,6 +256,240 @@ struct problem_traits {
                 );
             }
             sample_rate_ = audio_file.getSampleRate();
+            if (sample_rate_ < max_frequency_ * 8) {
+                sclx::throw_exception<std::runtime_error>(
+                    "Sample rate must be at least 4 times the max frequency",
+                    "spherical_audio_source::"
+                );
+            }
+
+            audio_samples_ = sclx::array<value_type, 1>{
+                static_cast<const size_t&>(audio_file.getNumSamplesPerChannel())
+            };
+
+            std::copy(
+                audio_file.samples[0].begin(),
+                audio_file.samples[0].end(),
+                audio_samples_.begin()
+            );
+
+            auto max_source_term = *std::max_element(
+                audio_samples_.begin(),
+                audio_samples_.end()
+            );
+
+            if (max_source_term == 0.0) {
+                sclx::throw_exception<std::runtime_error>(
+                    "Audio file must not be silent",
+                    "spherical_audio_source::"
+                );
+            }
+
+            std::transform(
+                audio_samples_.begin(),
+                audio_samples_.end(),
+                audio_samples_.begin(),
+                [=](const auto& sample) { return sample / max_source_term; }
+            );
+
+            path_ = std::move(path);
+
+            std::cout << "Audio file has " << audio_samples_.elements()
+                      << " samples at " << audio_file.getSampleRate()
+                      << " Hz\n\n";
+        }
+
+        std::future<void> add_velocity_source(
+            const simulation_domain_t& domain,
+            const problem_parameters_t& params,
+            const solution_t& solution,
+            const value_type& time,
+            sclx::array<value_type, 2>& velocity_terms
+        ) final {
+            // if (odd_sim_frame_) {
+            //     odd_sim_frame_ = !odd_sim_frame_;
+            //     return std::async(std::launch::deferred, []() {});
+            // }
+            // odd_sim_frame_ = !odd_sim_frame_;
+            region_t source_region{
+                source_outer_radius_,
+                (*path_)(time * time_multiplier_)
+            };
+
+            auto lower_frame_number = std::floor(
+                time * time_multiplier_ * static_cast<value_type>(sample_rate_)
+            );
+            auto upper_frame_number = lower_frame_number + 1;
+            // auto max_half_period_count
+            //     = time * time_multiplier_ * max_frequency_ * 2;
+            // auto valid_frame
+            //     = static_cast<size_t>(lower_frame_number)
+            //         % static_cast<size_t>(
+            //             std::floor(sample_rate_ / max_frequency_) / 2
+            //         )
+            //    == 0;
+            // if (!valid_frame) {
+            //     return std::async(std::launch::deferred, [] {});
+            // }
+            auto fractional_frame_number
+                = time * time_multiplier_
+                * static_cast<value_type>(sample_rate_);
+            auto lower_weight
+                = 1.0 - (fractional_frame_number - lower_frame_number);
+            auto upper_weight
+                = 1.0 - (upper_frame_number - fractional_frame_number);
+
+            auto frame_number
+                = static_cast<size_t>(lower_frame_number) + frame_offset_;
+            const auto& amplitude       = amplitude_;
+            const auto& audio_samples   = audio_samples_;
+            const auto& nominal_density = params.nominal_density;
+            const auto& points          = domain.points;
+
+            if (loop_audio_) {
+                frame_number = frame_number % audio_samples.elements();
+            }
+
+            if (frame_number >= audio_samples.elements()) {
+                if (!has_finished_) {
+                    std::cout << "Audio source has finished at frame "
+                              << frame_number << "\n\n";
+                    has_finished_ = true;
+                }
+                return std::async(std::launch::deferred, []() {});
+            }
+
+            auto bulk_end = domain.num_bulk_points + domain.num_layer_points;
+
+            return sclx::execute_kernel([=](sclx::kernel_handler& handler
+                                        ) mutable {
+                sclx::local_array<value_type, 2> local_points(
+                    handler,
+                    {dimensions,
+                     sclx::cuda::traits::kernel::default_block_shape[0]}
+                );
+
+                auto& source_outer_radius = source_outer_radius_;
+                auto& source_inner_radius = source_inner_radius_;
+                handler.launch(
+                    sclx::md_range_t<1>{velocity_terms.shape()[1]},
+                    velocity_terms,
+                    [=] __device__(
+                        const sclx::md_index_t<>& idx,
+                        const sclx::kernel_info<>& info
+                    ) mutable {
+                        if (idx[0] >= bulk_end) {
+                            return;
+                        }
+
+                        for (int i = 0; i < dimensions; ++i) {
+                            local_points(i, info.local_thread_linear_id())
+                                = points(i, idx[0]);
+                        }
+                        auto audio_sample_upper
+                            = amplitude * audio_samples(frame_number + 1);
+                        auto audio_sample_lower
+                            = amplitude * audio_samples(frame_number);
+                        auto audio_sample = upper_weight * audio_sample_upper
+                                          + lower_weight * audio_sample_lower;
+                        if (source_region.contains(
+                                &local_points(0, info.local_thread_linear_id())
+                            )) {
+                            auto perturbation = audio_sample;
+
+                            naga::point_t<value_type, dimensions>
+                                center_to_point;
+                            for (int i = 0; i < dimensions; ++i) {
+                                center_to_point[i]
+                                    = local_points(
+                                          i,
+                                          info.local_thread_linear_id()
+                                      )
+                                    - source_region.center()[i];
+                            }
+                            auto distance = naga::math::sqrt(
+                                naga::math::loopless::dot<dimensions>(
+                                    center_to_point,
+                                    center_to_point
+                                )
+                            );
+                            if (distance < source_inner_radius) {
+                                return;
+                            }
+                            auto source_thickness
+                                = source_outer_radius - source_inner_radius;
+                            auto falloff = naga::math::loopless::pow<2>(
+                                (distance - source_outer_radius)
+                                / source_thickness
+                            );
+                            for (int i = 0; i < dimensions; ++i) {
+                                velocity_terms(i, idx[0]) = perturbation
+                                                          * center_to_point[i]
+                                                          / distance;
+                            }
+                        }
+                    }
+                );
+            });
+        }
+
+        const size_t& sample_rate() const { return sample_rate_; }
+
+        value_type audio_length() const {
+            return static_cast<value_type>(audio_samples_.elements())
+                 / static_cast<value_type>(sample_rate_);
+        }
+
+        size_t sample_count() const { return audio_samples_.elements(); }
+
+      private:
+        sclx::array<value_type, 1> audio_samples_;
+        value_type amplitude_;
+        value_type source_outer_radius_;
+        value_type source_inner_radius_;
+        value_type max_frequency_;
+        value_type time_multiplier_;
+        size_t sample_rate_;
+        size_t frame_offset_;
+        bool loop_audio_;
+        bool has_finished_ = false;
+        std::shared_ptr<path_t> path_;
+        bool odd_sim_frame_ = false;
+    };
+
+    class spherical_audio_source : public density_source_t {
+      public:
+        spherical_audio_source(
+            const sclx::filesystem::path& wav_file,
+            const value_type& amplitude,
+            const value_type& source_radius,
+            const value_type& max_frequency,
+            const value_type& time_multiplier = 1.0,
+            const size_t& frame_offset        = 0,
+            std::shared_ptr<path_t> path
+            = zero_path_t::create(naga::point_t<value_type, dimensions>{}),
+            bool loop_audio = false
+        )
+            : amplitude_(amplitude),
+              source_radius_(source_radius),
+              max_frequency_(max_frequency),
+              time_multiplier_(time_multiplier),
+              frame_offset_(frame_offset),
+              loop_audio_(loop_audio) {
+            AudioFile<value_type> audio_file(wav_file.string());
+            if (!audio_file.isMono()) {
+                sclx::throw_exception<std::runtime_error>(
+                    "Audio file must be mono",
+                    "spherical_audio_source::"
+                );
+            }
+            sample_rate_ = audio_file.getSampleRate();
+            if (sample_rate_ < max_frequency_ * 8) {
+                sclx::throw_exception<std::runtime_error>(
+                    "Sample rate must be at least 4 times the max frequency",
+                    "spherical_audio_source::"
+                );
+            }
 
             audio_samples_ = sclx::array<value_type, 1>{
                 static_cast<const size_t&>(audio_file.getNumSamplesPerChannel())
@@ -290,22 +534,29 @@ struct problem_traits {
             const value_type& time,
             sclx::array<value_type, 1>& source_terms
         ) final {
-            if (odd_sim_frame_) {
-                odd_sim_frame_ = !odd_sim_frame_;
-                return std::async(std::launch::deferred, []() {});
-            }
-            odd_sim_frame_ = !odd_sim_frame_;
+            // if (odd_sim_frame_) {
+            //     odd_sim_frame_ = !odd_sim_frame_;
+            //     return std::async(std::launch::deferred, []() {});
+            // }
+            // odd_sim_frame_ = !odd_sim_frame_;
             region_t source_region{
                 source_radius_,
                 (*path_)(time * time_multiplier_)
             };
 
-            auto lower_frame_number = std::floor(
+            value_type lower_frame_number = std::floor(
                 time * time_multiplier_ * static_cast<value_type>(sample_rate_)
             );
-            auto upper_frame_number = std::ceil(
-                time * time_multiplier_ * static_cast<value_type>(sample_rate_)
-            );
+            value_type upper_frame_number = lower_frame_number + 1;
+            // auto valid_frame
+            //     = static_cast<size_t>(lower_frame_number)
+            //         % static_cast<size_t>(
+            //             std::floor(sample_rate_ / max_frequency_) / 2
+            //         )
+            //    == 0;
+            // if (!valid_frame) {
+            //     return std::async(std::launch::deferred, [] {});
+            // }
             auto fractional_frame_number
                 = time * time_multiplier_
                 * static_cast<value_type>(sample_rate_);
@@ -316,11 +567,18 @@ struct problem_traits {
 
             auto frame_number
                 = static_cast<size_t>(lower_frame_number) + frame_offset_;
-            const auto& amplitude     = amplitude_;
-            const auto& audio_samples = audio_samples_;
+            const auto& amplitude      = amplitude_;
+            const auto& previous_value = previous_value_;
+            const auto& audio_samples  = audio_samples_;
             const auto& density = solution.macroscopic_values.fluid_density;
             const auto& nominal_density = params.nominal_density;
             const auto& points          = domain.points;
+
+            auto audio_sample_upper
+                = amplitude * audio_samples(frame_number + 1);
+            auto audio_sample_lower = amplitude * audio_samples(frame_number);
+            auto audio_sample       = upper_weight * audio_sample_upper
+                              + lower_weight * audio_sample_lower;
 
             if (loop_audio_) {
                 frame_number = frame_number % audio_samples.elements();
@@ -345,6 +603,7 @@ struct problem_traits {
                      sclx::cuda::traits::kernel::default_block_shape[0]}
                 );
 
+                auto& source_radius = source_radius_;
                 handler.launch(
                     sclx::md_range_t<1>{source_terms.shape()},
                     source_terms,
@@ -360,24 +619,44 @@ struct problem_traits {
                             local_points(i, info.local_thread_linear_id())
                                 = points(i, idx[0]);
                         }
-                        auto audio_sample_upper
-                            = amplitude * audio_samples(frame_number + 1);
-                        auto audio_sample_lower
-                            = amplitude * audio_samples(frame_number);
-                        auto audio_sample = upper_weight * audio_sample_upper
-                                          + lower_weight * audio_sample_lower;
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
                             )) {
                             auto perturbation = audio_sample;
 
+                            // naga::point_t<value_type, dimensions>
+                            //     center_to_point;
+                            // for (int i = 0; i < dimensions; ++i) {
+                            //     center_to_point[i]
+                            //         = local_points(
+                            //               i,
+                            //               info.local_thread_linear_id()
+                            //           )
+                            //         - source_region.center()[i];
+                            // }
+                            // auto distance = naga::math::sqrt(
+                            //     naga::math::loopless::dot<dimensions>(
+                            //         center_to_point,
+                            //         center_to_point
+                            //     )
+                            // );
+                            // // apply falloff
+                            // perturbation *= naga::math::exp(
+                            //     -naga::math::loopless::pow<2>(
+                            //         distance / (.5f * source_radius)
+                            //     )
+                            // );
+
                             auto current_density = density(idx[0]);
-                            perturbation += nominal_density - current_density;
+                            perturbation += nominal_density -
+                            current_density;
                             source_terms(idx[0]) += perturbation;
                         }
                     }
                 );
             });
+
+            previous_value_ = audio_sample;
         }
 
         const size_t& sample_rate() const { return sample_rate_; }
@@ -391,6 +670,7 @@ struct problem_traits {
 
       private:
         sclx::array<value_type, 1> audio_samples_;
+        value_type max_frequency_;
         value_type amplitude_;
         value_type source_radius_;
         value_type time_multiplier_;
@@ -399,7 +679,8 @@ struct problem_traits {
         bool loop_audio_;
         bool has_finished_ = false;
         std::shared_ptr<path_t> path_;
-        bool odd_sim_frame_ = false;
+        bool odd_sim_frame_        = false;
+        value_type previous_value_ = 0;
     };
 
     class spherical_sine_wave_source : public density_source_t {
@@ -582,15 +863,12 @@ struct problem_traits {
             }
             odd_sim_frame_ = !odd_sim_frame_;
 
-            auto lower_frame_number = std::floor(
-                time  * static_cast<value_type>(sample_rate_)
-            );
-            auto upper_frame_number = std::ceil(
-                time  * static_cast<value_type>(sample_rate_)
-            );
+            auto lower_frame_number
+                = std::floor(time * static_cast<value_type>(sample_rate_));
+            auto upper_frame_number
+                = std::ceil(time * static_cast<value_type>(sample_rate_));
             auto fractional_frame_number
-                = time
-                * static_cast<value_type>(sample_rate_);
+                = time * static_cast<value_type>(sample_rate_);
             auto lower_weight
                 = 1.0 - (fractional_frame_number - lower_frame_number);
             auto upper_weight

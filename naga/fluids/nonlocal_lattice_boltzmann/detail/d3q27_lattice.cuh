@@ -128,7 +128,8 @@ struct lattice_interface<d3q27_lattice<T>> {
         const value_type& density,
         const value_type* velocity,
         const value_type& lattice_viscosity,
-        const value_type& lattice_time_step
+        const value_type& lattice_time_step,
+        const value_type& lattice_characteristic_frequency
     ) {
         auto& k      = projection;
         auto& f      = distribution;
@@ -136,8 +137,6 @@ struct lattice_interface<d3q27_lattice<T>> {
         auto& u      = velocity;
         auto& lat_nu = lattice_viscosity;
         auto& lat_dt = lattice_time_step;
-
-        value_type omega_ab = 1.f / (3.f * lat_nu + .5f * lat_dt);
 
         k[0]                 = value_type{0};
         k[1]                 = value_type{0};
@@ -173,18 +172,28 @@ struct lattice_interface<d3q27_lattice<T>> {
         value_type Kxyyzz  = compute_central_moment<1, 2, 2>(f, u);
         value_type Kxxyyz  = compute_central_moment<2, 2, 1>(f, u);
         value_type Kxxyyzz = compute_central_moment<2, 2, 2>(f, u);
-        k[4]               = omega_ab * (-Kxy / 12);
+
+        value_type omega_ab;
+
+        auto lat_nu_bulk = 0.f;
+        omega_ab         =  1.f / (3.f * lat_nu_bulk / 2.f + .5f * lat_dt);
+
+        k[4] = omega_ab * (-Kxy / 12);
 
         k[5] = omega_ab * (-Kxz / 12);
 
         k[6] = omega_ab * (-Kyz / 12);
 
+        omega_ab         =  1.f / (3.f * lat_nu / 2.f + .5f * lat_dt);
+
         k[7] = omega_ab * (-(Kxx - Kyy) / 12);
 
         k[8] = omega_ab * (-(Kxx + Kyy - 2 * Kzz) / 36);
 
-        omega_ab = 1.f / lat_dt;
-        k[9]     = omega_ab * (-(Kxx + Kyy + Kzz - rho) / 18);
+        k[9] = omega_ab * (-(Kxx + Kyy + Kzz - rho) / 18);
+
+        // auto tau_high_order = .007f;
+        omega_ab = 1.9f / lat_dt;
 
         k[10] = omega_ab
               * (-(6 * Kxy * v1 + 3 * Kxyy + 6 * Kxz * v2 + 3 * Kxzz
@@ -245,6 +254,8 @@ struct lattice_interface<d3q27_lattice<T>> {
                    + 3 * Kyy * v0sq - 2 * Kyy - 3 * Kzz * v0sq + 2 * Kzz
                    - rho * v1sq + rho * v2sq)
                  / 24);
+
+        omega_ab = .8f / lat_dt;
 
         k[20] = omega_ab
               * (-(3 * Kxx * v1 * v2 + 3 * Kxxy * v2 + 3 * Kxxyz + 3 * Kxxz * v1

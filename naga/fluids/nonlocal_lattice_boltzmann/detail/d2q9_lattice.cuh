@@ -123,7 +123,8 @@ struct lattice_interface<d2q9_lattice<T>> {
         const value_type& density,
         const value_type* velocity,
         const value_type& lattice_viscosity,
-        const value_type& lattice_time_step
+        const value_type& lattice_time_step,
+        const value_type& lattice_characteristic_frequency
     ) {
         auto& k      = projection;
         auto& f      = distribution;
