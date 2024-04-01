@@ -670,7 +670,7 @@ class simulation_engine {
                                      / naga::math::loopless::pow<2>(
                                            lattice_speed_of_sound
                                      )
-                                     * lattice_weights[alpha] / 2.f;
+                                     * lattice_weights[alpha];
                             }
                         }
                     );
