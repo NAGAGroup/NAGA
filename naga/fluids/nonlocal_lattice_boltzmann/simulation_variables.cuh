@@ -52,7 +52,7 @@ template<class Lattice>
 struct state_variables {
     using value_type = typename lattice_traits<Lattice>::value_type;
     static constexpr uint lattice_size = lattice_traits<Lattice>::size;
-    sclx::array<value_type, 1> lattice_distributions[lattice_size];
+    std::array<sclx::array<value_type, 1>, lattice_size> lattice_distributions{};
     struct {
         sclx::array<value_type, 2> fluid_velocity;
         sclx::array<value_type, 1> fluid_density;
