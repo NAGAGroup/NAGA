@@ -735,11 +735,18 @@ class simulation_engine {
             solution_,
             parameters_
         );
-        bounce_back_step();
 
         domain_.num_layer_points += domain_.num_boundary_points;
         pml_absorption_operator_.apply();
         domain_.num_layer_points -= domain_.num_boundary_points;
+
+        compute_macroscopic_values(
+            solution_.lattice_distributions,
+            solution_,
+            parameters_
+        );
+
+        bounce_back_step();
 
         compute_macroscopic_values(
             solution_.lattice_distributions,
@@ -760,8 +767,6 @@ class simulation_engine {
             time_ * parameters_.lattice_time_step / parameters_.time_step,
             parameters_.lattice_time_step
         );
-
-        interpolate_boundaries();
 
         time_ += parameters_.time_step;
 

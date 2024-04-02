@@ -121,9 +121,6 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
                         .vals[i]
                 };
                 divergence_op->apply(vector_field, rates[i]);
-                auto boundary_rate
-                    = rates[i].get_range({boundary_start}, {boundary_end});
-                sclx::fill(boundary_rate, T{0});
             }
         });
 
