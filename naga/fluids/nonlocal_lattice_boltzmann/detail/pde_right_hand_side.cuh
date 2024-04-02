@@ -64,13 +64,7 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
           boundary_interpolater_(&boundary_interpolater),
           collision_(
               std::make_shared<collision_term<lattice>>(parameters, state)
-          ),
-          pml_(std::make_shared<pml_term<lattice>>(
-              domain,
-              parameters,
-              state,
-              divergence_op
-          )) {
+          ) {
         auto domain_size = state.lattice_distributions[0].elements();
         for (int i = 0; i < lattice_size; ++i) {
             rates_[i] = sclx::array<T, 1>{domain_size};
@@ -99,55 +93,80 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
 
         auto boundary_start
             = domain_->num_bulk_points + domain_->num_layer_points;
+        auto ghost_start
+            = domain_->points.shape()[1] - domain_->num_ghost_nodes;
         auto boundary_end = domain_->points.shape()[1];
 
-        auto homogeneous_future = std::async(
-            [rates, f, divergence_op, boundary_start, boundary_end]() {
-                for (int i = 0; i < lattice_size; ++i) {
-                    sclx::fill(rates[i], T{0});
-                    using velocity_field_t = naga::nonlocal_calculus::
-                        constant_velocity_field<T, dimensions>;
-                    auto velocity_field = velocity_field_t::create(
-                        lattice_interface<d3q27_lattice<T>>::lattice_velocities(
-                        )
-                            .vals[i]
-                    );
-                    using field_map_type = typename naga::nonlocal_calculus::
-                        advection_operator<value_type, dimensions>::
-                            template divergence_field_map<velocity_field_t>;
-                    auto vector_field = field_map_type{
-                        velocity_field,
-                        f[i],
-                        lattice_interface<d3q27_lattice<T>>::lattice_weights()
-                            .vals[i]
-                    };
-                    divergence_op->apply(vector_field, rates[i]);
-                    auto boundary_rate
-                        = rates[i].get_range({boundary_start}, {boundary_end});
-                    sclx::fill(boundary_rate, T{0});
-                }
+        auto homogeneous_future = std::async([rates,
+                                              f,
+                                              divergence_op,
+                                              boundary_start,
+                                              ghost_start,
+                                              boundary_end]() {
+            for (int i = 0; i < lattice_size; ++i) {
+                sclx::fill(rates[i], T{0});
+                using velocity_field_t = naga::nonlocal_calculus::
+                    constant_velocity_field<T, dimensions>;
+                auto velocity_field = velocity_field_t::create(
+                    lattice_interface<d3q27_lattice<T>>::lattice_velocities()
+                        .vals[i]
+                );
+                using field_map_type = typename naga::nonlocal_calculus::
+                    advection_operator<value_type, dimensions>::
+                        template divergence_field_map<velocity_field_t>;
+                auto vector_field = field_map_type{
+                    velocity_field,
+                    f[i],
+                    lattice_interface<d3q27_lattice<T>>::lattice_weights()
+                        .vals[i]
+                };
+                divergence_op->apply(vector_field, rates[i]);
+                auto boundary_rate
+                    = rates[i].get_range({boundary_start}, {boundary_end});
+                sclx::fill(boundary_rate, T{0});
             }
-        );
+        });
 
         auto collision_future = (*collision_)();
 
-        auto pml_future = (*pml_)(f, dt);
+//        auto pml_future = (*pml_)(f, dt);
 
         homogeneous_future.get();
         auto collision_terms = collision_future.get();
-        auto pml_terms       = pml_future.get();
+//        auto pml_terms       = pml_future.get();
 
+        std::vector<std::future<void>> futures;
         for (int i = 0; i < lattice_size; ++i) {
-            sclx::algorithm::elementwise_reduce(
+            futures.push_back(sclx::algorithm::elementwise_reduce(
                 sclx::algorithm::plus<>(),
                 rates_[i],
                 rates_[i],
-                collision_terms[i],
-                pml_terms[i]
-            );
+                collision_terms[i]
+            ));
+        }
+
+        for (int i = 0; i < lattice_size; ++i) {
+            futures[i].get();
+            auto ghost_rates
+                = rates_[i].get_range({ghost_start}, {boundary_end});
+            sclx::fill(ghost_rates, T{0});
         }
 
         return rates_;
+    }
+
+    void finalize(
+        std::array<sclx::array<T, 1>, lattice_size> /*unused*/,
+        std::array<sclx::array<T, 1>, lattice_size> f,
+        value_type /*unused*/,
+        value_type dt
+    ) {
+//        simulation_engine<lattice>::compute_macroscopic_values(
+//            f,
+//            *state_,
+//            *parameters_
+//        );
+//        (*pml_)(f, dt, true).get();
     }
 
     // provided by engine

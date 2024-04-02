@@ -55,13 +55,11 @@ struct rk4_solver {
 
         auto t = t0;
 
-        std::array<sclx::array<T, 1>, StateCount> fdot
-            = rhs->operator()(f, t, dt * runge_kutta_4::df_dt_weights[0]);
+        auto k1 = rhs->operator()(f, t, 0.f);
         for (size_t i = 0; i < StateCount; ++i) {
-            if (k1[i].elements() != fdot[i].elements()) {
-                k1[i] = sclx::array<T, 1>{fdot[i].elements()};
+            if (df_dt[i].elements() != k1[i].elements()) {
+                df_dt[i] = sclx::array<T, 1>{k1[i].elements()};
             }
-            sclx::assign_array(fdot[i], k1[i]).get();
             sclx::algorithm::elementwise_reduce(
                 naga::nonlocal_calculus::forward_euler<T>{
                     dt * runge_kutta_4::df_dt_weights[0]
@@ -71,16 +69,20 @@ struct rk4_solver {
                 k1[i]
             )
                 .get();
+            sclx::algorithm::transform(
+                k1[i],
+                k1[i],
+                runge_kutta_4::summation_weights[0],
+                sclx::algorithm::multiplies<>{}
+            )
+                .get();
+            sclx::assign_array(k1[i], df_dt[i]).get();
         }
 
         t = t0 + dt * runge_kutta_4::df_dt_weights[0];
 
-        fdot = rhs->operator()(f, t, dt * runge_kutta_4::df_dt_weights[0]);
+        auto k2 = rhs->operator()(f, t, dt * runge_kutta_4::df_dt_weights[0]);
         for (size_t i = 0; i < StateCount; ++i) {
-            if (k2[i].elements() != fdot[i].elements()) {
-                k2[i] = sclx::array<T, 1>{fdot[i].elements()};
-            }
-            sclx::assign_array(fdot[i], k2[i]).get();
             sclx::algorithm::elementwise_reduce(
                 naga::nonlocal_calculus::forward_euler<T>{
                     dt * runge_kutta_4::df_dt_weights[1]
@@ -90,16 +92,26 @@ struct rk4_solver {
                 k2[i]
             )
                 .get();
+            sclx::algorithm::transform(
+                k2[i],
+                k2[i],
+                runge_kutta_4::summation_weights[1],
+                sclx::algorithm::multiplies<>{}
+            )
+                .get();
+            sclx::algorithm::elementwise_reduce(
+                sclx::algorithm::plus<>(),
+                df_dt[i],
+                df_dt[i],
+                k2[i]
+            )
+                .get();
         }
 
         t = t0 + dt * runge_kutta_4::df_dt_weights[1];
 
-        fdot = rhs->operator()(f, t, dt * runge_kutta_4::df_dt_weights[0]);
+        auto k3 = rhs->operator()(f, t, dt * runge_kutta_4::df_dt_weights[1]);
         for (size_t i = 0; i < StateCount; ++i) {
-            if (k3[i].elements() != fdot[i].elements()) {
-                k3[i] = sclx::array<T, 1>{fdot[i].elements()};
-            }
-            sclx::assign_array(fdot[i], k3[i]).get();
             sclx::algorithm::elementwise_reduce(
                 naga::nonlocal_calculus::forward_euler<T>{
                     dt * runge_kutta_4::df_dt_weights[2]
@@ -109,33 +121,6 @@ struct rk4_solver {
                 k3[i]
             )
                 .get();
-        }
-
-        t = t0 + dt * runge_kutta_4::df_dt_weights[2];
-
-        fdot = rhs->operator()(f, t, dt * runge_kutta_4::df_dt_weights[3]);
-        for (size_t i = 0; i < StateCount; ++i) {
-            if (k4[i].elements() != fdot[i].elements()) {
-                k4[i] = sclx::array<T, 1>{fdot[i].elements()};
-            }
-            sclx::assign_array(fdot[i], k4[i]).get();
-        }
-
-        for (size_t i = 0; i < StateCount; ++i) {
-            sclx::algorithm::transform(
-                k1[i],
-                k1[i],
-                runge_kutta_4::summation_weights[0],
-                sclx::algorithm::multiplies<>{}
-            )
-                .get();
-            sclx::algorithm::transform(
-                k2[i],
-                k2[i],
-                runge_kutta_4::summation_weights[1],
-                sclx::algorithm::multiplies<>{}
-            )
-                .get();
             sclx::algorithm::transform(
                 k3[i],
                 k3[i],
@@ -143,6 +128,19 @@ struct rk4_solver {
                 sclx::algorithm::multiplies<>{}
             )
                 .get();
+            sclx::algorithm::elementwise_reduce(
+                sclx::algorithm::plus<>(),
+                df_dt[i],
+                df_dt[i],
+                k3[i]
+            )
+                .get();
+        }
+
+        t = t0 + dt * runge_kutta_4::df_dt_weights[2];
+
+        auto k4 = rhs->operator()(f, t, dt * runge_kutta_4::df_dt_weights[2]);
+        for (size_t i = 0; i < StateCount; ++i) {
             sclx::algorithm::transform(
                 k4[i],
                 k4[i],
@@ -150,33 +148,31 @@ struct rk4_solver {
                 sclx::algorithm::multiplies<>{}
             )
                 .get();
-
             sclx::algorithm::elementwise_reduce(
                 sclx::algorithm::plus<>(),
-                k1[i],
-                k1[i],
-                k2[i],
-                k3[i],
+                df_dt[i],
+                df_dt[i],
                 k4[i]
             )
                 .get();
+        }
 
+        for (size_t i = 0; i < StateCount; ++i) {
             sclx::algorithm::elementwise_reduce(
                 naga::nonlocal_calculus::forward_euler<T>{dt},
                 f[i],
                 f0[i],
-                k1[i]
+                df_dt[i]
             )
                 .get();
         }
+
+        rhs->finalize(f0, f, t0, dt);
     }
 
     std::shared_ptr<RHS> rhs;
     std::array<sclx::array<T, 1>, StateCount> f0{};
-    std::array<sclx::array<T, 1>, StateCount> k1{};
-    std::array<sclx::array<T, 1>, StateCount> k2{};
-    std::array<sclx::array<T, 1>, StateCount> k3{};
-    std::array<sclx::array<T, 1>, StateCount> k4{};
+    std::array<sclx::array<T, 1>, StateCount> df_dt{};
 
     struct runge_kutta_4 {
         static constexpr T df_dt_weights[3] = {1. / 2., 1. / 2., 1.};

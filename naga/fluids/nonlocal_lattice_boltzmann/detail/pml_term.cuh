@@ -62,10 +62,22 @@ struct pml_term<d3q27_lattice<T>> {
           divergence_op_(&divergence_op) {
         auto domain_size = state.lattice_distributions[0].elements();
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            f_tilde_eq0_[alpha] = sclx::array<T, 1>{domain_size};
             f_tilde_eq_[alpha] = sclx::array<T, 1>{domain_size};
+            Q10_[alpha]         = sclx::array<T, 1>{domain_size};
             Q1_[alpha]         = sclx::array<T, 1>{domain_size};
             sclx::fill(
+                f_tilde_eq0_[alpha],
+                lattice_interface<d3q27_lattice<T>>::lattice_weights()
+                    .vals[alpha]
+            );
+            sclx::fill(
                 f_tilde_eq_[alpha],
+                lattice_interface<d3q27_lattice<T>>::lattice_weights()
+                    .vals[alpha]
+            );
+            sclx::fill(
+                Q10_[alpha],
                 lattice_interface<d3q27_lattice<T>>::lattice_weights()
                     .vals[alpha]
             );
@@ -87,13 +99,16 @@ struct pml_term<d3q27_lattice<T>> {
 
     std::future<std::array<sclx::array<T, 1>, lattice_size>> operator()(
         const std::array<sclx::array<T, 1>, lattice_size>& f,
-        value_type dt
+        value_type dt,
+        bool save_terms = false
     ) {
         auto& domain       = *domain_;
         auto& solution     = *state_;
         auto& params       = *parameters_;
         auto domain_size   = state_->lattice_distributions[0].elements();
+        auto& f_tilde_eq0  = f_tilde_eq0_;
         auto& f_tilde_eq   = f_tilde_eq_;
+        auto& Q10           = Q10_;
         auto& Q1           = Q1_;
         auto& Q2           = Q2_;
         auto& pml_terms    = pml_terms_;
@@ -107,63 +122,37 @@ struct pml_term<d3q27_lattice<T>> {
              params,
              f,
              dt,
+             f_tilde_eq0,
              f_tilde_eq,
+             Q10,
              Q1,
              Q2,
              pml_terms,
              scratch,
-             divergence_op]() mutable {
+             divergence_op,
+             save_terms]() mutable {
+
                 auto domain_size = solution.lattice_distributions[0].elements();
                 for (auto& term : pml_terms) {
                     sclx::fill(term, T{0});
                 }
+                if (dt == 0) {
+                    for (size_t alpha = 0; alpha < lattice_size; ++alpha) {
+                        sclx::assign_array(f_tilde_eq[alpha], f_tilde_eq0[alpha]).get();
+                        sclx::assign_array(Q1[alpha], Q10[alpha]).get();
+                    }
+                }
                 auto velocity_scale
                     = params.speed_of_sound
                     / lattice_traits<lattice>::lattice_speed_of_sound;
-
-                for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                    pml_div_Q1_field_map<lattice> field_map_Q1{
-                        lattice_interface<lattice>::lattice_velocities()
-                            .vals[alpha],
-                        domain.layer_absorption,
-                        Q1[alpha],
-                        domain.num_bulk_points,
-                        domain.num_bulk_points + domain.num_layer_points
-                    };
-
-                    divergence_op->apply(field_map_Q1, scratch);
-
-                    sclx::algorithm::elementwise_reduce(
-                        sclx::algorithm::plus<>(),
-                        pml_terms[alpha],
-                        pml_terms[alpha],
-                        scratch
-                    );
-
-                    pml_div_Q2_field_map<value_type> field_map_Q2{
-                        lattice_interface<lattice>::lattice_velocities()
-                            .vals[alpha],
-                        domain.layer_absorption,
-                        Q2[alpha],
-                        domain.num_bulk_points,
-                        domain.num_bulk_points + domain.num_layer_points
-                    };
-
-                    divergence_op->apply(field_map_Q2, scratch);
-
-                    sclx::algorithm::elementwise_reduce(
-                        sclx::algorithm::plus<>(),
-                        pml_terms[alpha],
-                        pml_terms[alpha],
-                        scratch
-                    );
-                }
 
                 auto& absorption_coefficients = domain.layer_absorption;
                 auto& num_layer_points        = domain.num_layer_points;
                 auto& num_bulk_points         = domain.num_bulk_points;
                 auto absorption_layer_start   = num_bulk_points;
                 auto absorption_layer_end = num_bulk_points + num_layer_points;
+
+                auto& lattice_time_step = params.lattice_time_step;
 
                 sclx::execute_kernel([=](const sclx::kernel_handler& handler) {
                     sclx::local_array<value_type, 2> lattice_velocities;
@@ -211,10 +200,10 @@ struct pml_term<d3q27_lattice<T>> {
                             for (uint alpha = 0; alpha < lattice_size;
                                  ++alpha) {
                                 value_type f_tilde_eq_alpha_prev
-                                    = f_tilde_eq[alpha][idx];
+                                    = f_tilde_eq0[alpha][idx];
 
                                 const value_type& Q1_alpha_prev
-                                    = Q1[alpha][idx];
+                                    = Q10[alpha][idx];
 
                                 value_type f_tilde_eq_alpha
                                     = compute_equilibrium_distribution<lattice>(
@@ -259,13 +248,50 @@ struct pml_term<d3q27_lattice<T>> {
                     );
                 });
 
-                for (auto& term : pml_terms) {
-                    auto bulk_portion
-                        = term.get_range({0}, {absorption_layer_start});
-                    sclx::fill(bulk_portion, T{0});
-                    auto after_absorption_layer
-                        = term.get_range({absorption_layer_end}, {domain_size});
-                    sclx::fill(after_absorption_layer, T{0});
+                for (size_t alpha = 0; alpha < lattice_size; ++alpha) {
+                    pml_div_Q1_field_map<lattice> field_map_Q1{
+                        lattice_interface<lattice>::lattice_velocities()
+                            .vals[alpha],
+                        domain.layer_absorption,
+                        Q1[alpha],
+                        alpha,
+                        domain.num_bulk_points,
+                        domain.num_bulk_points + domain.num_layer_points
+                    };
+
+                    divergence_op->apply(field_map_Q1, scratch);
+
+                    sclx::algorithm::elementwise_reduce(
+                        sclx::algorithm::plus<>(),
+                        pml_terms[alpha],
+                        pml_terms[alpha],
+                        scratch
+                    );
+
+                    pml_div_Q2_field_map<value_type> field_map_Q2{
+                        lattice_interface<lattice>::lattice_velocities()
+                            .vals[alpha],
+                        domain.layer_absorption,
+                        Q2[alpha],
+                        domain.num_bulk_points,
+                        domain.num_bulk_points + domain.num_layer_points
+                    };
+
+                    divergence_op->apply(field_map_Q2, scratch);
+
+                    sclx::algorithm::elementwise_reduce(
+                        sclx::algorithm::plus<>(),
+                        pml_terms[alpha],
+                        pml_terms[alpha],
+                        scratch
+                    );
+
+                    sclx::algorithm::transform(
+                        pml_terms[alpha],
+                        pml_terms[alpha],
+                        dt,
+                        sclx::algorithm::multiplies<>{}
+                    );
                 }
             }
         );
@@ -283,6 +309,8 @@ struct pml_term<d3q27_lattice<T>> {
     problem_parameters<T>* parameters_;
     state_variables<d3q27_lattice<T>>* state_;
     naga::nonlocal_calculus::divergence_operator<T, dimensions>* divergence_op_;
+    std::array<sclx::array<T, 1>, lattice_size> f_tilde_eq0_{};
+    std::array<sclx::array<T, 1>, lattice_size> Q10_{};
     std::array<sclx::array<T, 1>, lattice_size> f_tilde_eq_{};
     std::array<sclx::array<T, 1>, lattice_size> Q1_{};
     std::array<sclx::array<T, 1>, lattice_size> Q2_{};
