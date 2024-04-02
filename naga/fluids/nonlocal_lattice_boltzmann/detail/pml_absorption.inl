@@ -353,7 +353,7 @@ class pml_absorption_operator<d2q9_lattice<T>> {
                     + engine_->domain_.num_layer_points
             };
 
-            engine_->advection_operator_ptr_->divergence_op().apply(
+            engine_->advection_operator_ptr_->divergence_op_().apply(
                 field_map,
                 engine_->temporary_distributions_[alpha]
             );
@@ -795,7 +795,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                     + engine_->domain_.num_layer_points
             };
 
-            engine_->advection_operator_ptr_->divergence_op().apply(
+            engine_->divergence_op_.apply(
                 field_map_Q1,
                 engine_->temporary_distributions_[alpha]
             );
@@ -827,7 +827,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                     + engine_->domain_.num_layer_points
             };
 
-            engine_->advection_operator_ptr_->divergence_op().apply(
+            engine_->divergence_op_.apply(
                 field_map_Q2,
                 engine_->temporary_distributions_[alpha]
             );

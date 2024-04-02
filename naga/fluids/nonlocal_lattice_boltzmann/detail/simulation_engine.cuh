@@ -41,8 +41,9 @@
 #include "../simulation_observer.cuh"
 #include "../simulation_variables.cuh"
 #include "equilibrium_distribution.cuh"
+#include "pde_right_hand_side.cuh"
 #include "pml_absorption.cuh"
-#include "subtask_factory.h"
+#include "rk4_solver.cuh"
 #include <scalix/fill.cuh>
 
 namespace naga::fluids::nonlocal_lbm::detail {
@@ -108,8 +109,9 @@ class simulation_engine {
         parameters_.lattice_viscosity
             = fluid_viscosity / lattice_to_physical_time_ratio;
 
-        characteristic_frequency = (characteristic_frequency == 0) ? 1.f / time_step
-                                                                    : characteristic_frequency;
+        characteristic_frequency = (characteristic_frequency == 0)
+                                     ? 1.f / time_step
+                                     : characteristic_frequency;
         auto lattice_characteristic_frequency
             = characteristic_frequency * lattice_to_physical_time_ratio;
         parameters_.lattice_characteristic_frequency
@@ -161,7 +163,7 @@ class simulation_engine {
 
         using div_op_t = naga::nonlocal_calculus::
             divergence_operator<value_type, dimensions>;
-        auto divergence_operator = div_op_t::create(
+        divergence_op_ = div_op_t::create(
             domain_.points.get_range(
                 {0},
                 {domain_.points.shape()[1] - domain_.num_ghost_nodes}
@@ -183,7 +185,7 @@ class simulation_engine {
                 )
             );
 
-            divergence_operator.set_subspace_to(
+            divergence_op_.set_subspace_to(
                 boundary_div_operator,
                 domain_.points.shape()[1] - domain_.num_ghost_nodes
                     - domain_.num_boundary_points,
@@ -191,8 +193,19 @@ class simulation_engine {
             );
         }
 
-        advection_operator_ptr_ = std::make_shared<advection_operator_t>(
-            advection_operator_t::create(divergence_operator)
+        for (auto& f_alpha : solution_.lattice_distributions) {
+            f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+        }
+        for (auto& tmp_alpha: temporary_distributions_) {
+            tmp_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+        }
+        solution_.macroscopic_values.fluid_velocity
+            = sclx::zeros<value_type, 2>(domain_.points.shape());
+        solution_.macroscopic_values.fluid_density
+            = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+        sclx::fill(
+            solution_.macroscopic_values.fluid_density,
+            parameters_.nominal_density
         );
 
         {
@@ -208,21 +221,6 @@ class simulation_engine {
                  - domain_.num_ghost_nodes},
                 {domain_.points.shape()[1] - domain_.num_ghost_nodes}
             );
-            //            sclx::array<value_type, 2> boundary_interp_points{
-            //                dimensions,
-            //                domain_.num_boundary_points
-            //            };
-            //            for (size_t b_idx = 0; b_idx <
-            //            domain_.num_boundary_points;
-            //                 ++b_idx) {
-            //                for (size_t d = 0; d < dimensions; ++d) {
-            //                    boundary_interp_points(d, b_idx)
-            //                        = boundary_points(d, b_idx)
-            //                        + domain_.boundary_normals(d, b_idx)
-            //                              * parameters_.speed_of_sound
-            //                              * parameters_.time_step;
-            //                }
-            //            }
 
             uint num_interp_points = 32;
             segmentation::nd_cubic_segmentation<value_type, dimensions>
@@ -247,67 +245,6 @@ class simulation_engine {
             );
         }
 
-        if (domain_.num_ghost_nodes > 0) {
-            // We use the nearest neighbors algorithm to provide the
-            // interpolation indices to the radial point method.
-            sclx::array<value_type, 2> bulk_points = domain_.points.get_range(
-                {0},
-                {domain_.points.shape()[1] - domain_.num_boundary_points
-                 - domain_.num_ghost_nodes}
-            );
-            sclx::array<value_type, 2> ghost_points = domain_.points.get_range(
-                {domain_.points.shape()[1] - domain_.num_ghost_nodes},
-                {domain_.points.shape()[1]}
-            );
-
-            uint num_interp_points = 32;
-            segmentation::nd_cubic_segmentation<value_type, dimensions>
-                source_segmentation(bulk_points, num_interp_points);
-            naga::default_point_map<value_type, dimensions> ghost_point_map{
-                ghost_points
-            };
-            auto [distances_squared, indices]
-                = naga::segmentation::batched_nearest_neighbors(
-                    num_interp_points,
-                    ghost_point_map,
-                    source_segmentation
-                );
-
-            ghost_interpolator_ptr_ = std::make_shared<interpolater_t>(
-                interpolater_t::create_interpolator(
-                    bulk_points,
-                    indices,
-                    ghost_point_map,
-                    domain_.nodal_spacing
-                )
-            );
-        }
-
-        linalg::detail::batched_matrix_inverse_executor<
-            value_type>::clear_problem_definitions();
-        max_concurrency_ = std::min(
-            std::thread::hardware_concurrency() / 2,
-            max_concurrency_
-        );
-        advection_operator_ptr_->set_max_concurrent_threads(max_concurrency_);
-
-        for (auto& f_alpha : solution_.lattice_distributions) {
-            f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
-        }
-        for (int t = 0; t < lattice_size; ++t) {
-            temporary_distributions_[t]
-                = sclx::array<value_type, 1>{domain_.points.shape()[1]};
-        }
-
-        solution_.macroscopic_values.fluid_velocity
-            = sclx::zeros<value_type, 2>(domain_.points.shape());
-        solution_.macroscopic_values.fluid_density
-            = sclx::array<value_type, 1>{domain_.points.shape()[1]};
-        sclx::fill(
-            solution_.macroscopic_values.fluid_density,
-            parameters_.nominal_density
-        );
-
         density_source_term_
             = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
 
@@ -328,7 +265,7 @@ class simulation_engine {
             new_layer_absorption.begin() + domain_.num_layer_points,
             new_layer_absorption.begin() + domain_.num_layer_points
                 + domain_.num_boundary_points,
-                0.f
+            0.f
         );
         std::fill(
             new_layer_absorption.begin() + domain_.num_layer_points
@@ -336,48 +273,6 @@ class simulation_engine {
             new_layer_absorption.end(),
             0.f
         );
-
-        //        if (absorption_coeffs.elements() > 0) {
-        //            std::copy(
-        //                absorption_coeffs.begin(),
-        //                absorption_coeffs.begin() + domain_.num_layer_points,
-        //                new_layer_absorption.begin()
-        //            );
-        //        }
-        //        std::fill(
-        //            new_layer_absorption.begin() + domain_.num_layer_points,
-        //            new_layer_absorption.end(),
-        //            boundary_absorption
-        //        );
-
-        /*
-         * Below is the version that makes ghost nodes nonzero absorption
-         */
-        //        std::copy(
-        //            absorption_coeffs.begin(),
-        //            absorption_coeffs.begin() + domain_.num_layer_points,
-        //            new_layer_absorption.begin()
-        //        );
-        //        std::fill(
-        //            new_layer_absorption.begin() + domain_.num_layer_points,
-        //            new_layer_absorption.begin() + domain_.num_layer_points
-        //                + domain_.num_boundary_points,
-        //            boundary_absorption
-        //        );
-        //        std::copy(
-        //            absorption_coeffs.begin() + domain_.num_layer_points,
-        //            absorption_coeffs.end(),
-        //            new_layer_absorption.begin() + domain_.num_layer_points
-        //                + domain_.num_boundary_points
-        //        );
-        //        std::transform(
-        //            new_layer_absorption.begin() + domain_.num_layer_points
-        //                + domain_.num_boundary_points,
-        //            new_layer_absorption.end(),
-        //            new_layer_absorption.begin() + domain_.num_layer_points
-        //                + domain_.num_boundary_points,
-        //            [&](value_type val) { return boundary_absorption * val; }
-        //        );
 
         domain_.layer_absorption = new_layer_absorption;
         domain_.num_layer_points = new_num_layer_points;
@@ -415,6 +310,18 @@ class simulation_engine {
         //            sclx::algorithm::multiplies<>{}
         //        );
 
+        auto rhs = std::make_shared<pde_right_hand_side<lattice_type>>(
+            pde_right_hand_side<lattice_type>{
+                domain_,
+                parameters_,
+                solution_,
+                divergence_op_,
+                *boundary_interpolator_ptr_
+            }
+        );
+        rk4_solver_ = std::make_shared<
+            rk4_solver<pde_right_hand_side<lattice_type>, lattice_size>>(rhs);
+
         reset();
     }
 
@@ -440,7 +347,11 @@ class simulation_engine {
         }
     }
 
-    void compute_macroscopic_values() {
+    static void compute_macroscopic_values(
+        std::array<sclx::array<value_type, 1>, lattice_size> f,
+        const state_variables<lattice_type>& solution,
+        const problem_parameters<value_type>& parameters
+    ) {
         sclx::execute_kernel([&](sclx::kernel_handler& handler) {
             sclx::local_array<value_type, 2> f_shared(
                 handler,
@@ -456,18 +367,14 @@ class simulation_engine {
                 sclx::array<value_type, 1>,
                 sclx::array<value_type, 2>>
                 result_arrays{
-                    solution_.macroscopic_values.fluid_density,
-                    solution_.macroscopic_values.fluid_velocity
+                    solution.macroscopic_values.fluid_density,
+                    solution.macroscopic_values.fluid_velocity
                 };
-            sclx::array<value_type, 1> lattice_distributions[lattice_size];
-            for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                lattice_distributions[alpha]
-                    = solution_.lattice_distributions[alpha];
-            }
-            auto parameters = parameters_;
 
             handler.launch(
-                sclx::md_range_t<1>{domain_.points.shape()[1]},
+                sclx::md_range_t<1>(
+                    solution.macroscopic_values.fluid_density.shape()
+                ),
                 result_arrays,
                 [=] __device__(
                     const sclx::md_index_t<1>& idx,
@@ -484,7 +391,7 @@ class simulation_engine {
                     }
                     for (int alpha = 0; alpha < lattice_size; ++alpha) {
                         f_shared(alpha, info.local_thread_linear_id())
-                            = lattice_distributions[alpha][idx[0]];
+                            = f[alpha][idx[0]];
                     }
                     handler.syncthreads();
 
@@ -508,73 +415,6 @@ class simulation_engine {
             );
         }).get();
     }
-
-    void collision_step() {
-
-        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
-            sclx::array_list<value_type, 1, lattice_size> lattice_distributions(
-                solution_.lattice_distributions
-            );
-
-            auto& parameters = parameters_;
-            auto& solution   = solution_;
-
-            handler.launch(
-                sclx::md_range_t<1>{domain_.points.shape()[1]},
-                lattice_distributions,
-                [=] __device__(
-                    const sclx::md_index_t<1>& idx,
-                    const sclx::kernel_info<>& info
-                ) {
-                    value_type k[lattice_size];
-
-                    value_type f[lattice_size];
-                    for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                        f[alpha] = lattice_distributions[alpha][idx[0]];
-                    }
-
-                    value_type rho
-                        = solution.macroscopic_values.fluid_density(idx[0])
-                        / parameters.nominal_density;
-                    value_type u[dimensions];
-                    sclx::constexpr_assign_array<dimensions>(
-                        u,
-                        &solution.macroscopic_values.fluid_velocity(0, idx[0])
-                    );
-                    for (int d = 0; d < dimensions; ++d) {
-                        u[d]
-                            *= (lattice_traits<Lattice>::lattice_speed_of_sound
-                                / parameters.speed_of_sound);
-                    }
-                    value_type lat_nu = parameters.lattice_viscosity;
-                    value_type lat_dt = parameters.lattice_time_step;
-
-                    lattice_interface<Lattice>::compute_moment_projection(
-                        k,
-                        f,
-                        rho,
-                        u,
-                        lat_nu,
-                        lat_dt,
-                        parameters.lattice_characteristic_frequency
-                    );
-
-                    auto K
-                        = lattice_interface<Lattice>::collision_matrix().vals;
-
-                    for (int l = 0; l < lattice_size; ++l) {
-                        value_type df_dt = 0;
-                        for (int j = 0; j < lattice_size; ++j) {
-                            df_dt += K[l][j] * k[j];
-                        }
-                        lattice_distributions[l][idx[0]]
-                            = f[l] + df_dt * lat_dt;
-                    }
-                }
-            );
-        }).get();
-    }
-
     void interpolate_boundaries() {
         std::vector<std::future<void>> interpolation_futures;
         interpolation_futures.reserve(lattice_size * 3);
@@ -601,95 +441,6 @@ class simulation_engine {
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& f_alpha = solution_.lattice_distributions[alpha];
             interpolation_futures.emplace_back(lambda(alpha, f_alpha));
-
-            auto Q1 = pml_absorption_operator_.get_Q1_values()[alpha];
-            interpolation_futures.emplace_back(lambda(alpha, Q1));
-
-            if constexpr (dimensions == 2) {
-                continue;
-            }
-
-            auto Q2 = pml_absorption_operator_.get_Q2_values()[alpha];
-            interpolation_futures.emplace_back(lambda(alpha, Q2));
-        }
-
-        for (auto& fut : interpolation_futures) {
-            fut.get();
-        }
-    }
-
-    void interpolate_ghost_nodes(bool interpolate_Q) {
-        if (domain_.num_ghost_nodes == 0) {
-            return;
-        }
-        std::vector<std::future<void>> interpolation_futures;
-        interpolation_futures.reserve(lattice_size);
-        for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            auto& f_alpha = solution_.lattice_distributions[alpha];
-            const sclx::array<value_type, 1>& bulk_f_alpha = f_alpha.get_range(
-                {0},
-                {domain_.points.shape()[1] - domain_.num_boundary_points
-                 - domain_.num_ghost_nodes}
-            );
-            const sclx::array<value_type, 1>& ghost_f_alpha = f_alpha.get_range(
-                {domain_.points.shape()[1] - domain_.num_ghost_nodes},
-                {domain_.points.shape()[1]}
-            );
-            interpolation_futures.emplace_back(
-                ghost_interpolator_ptr_->interpolate(
-                    bulk_f_alpha,
-                    ghost_f_alpha,
-                    lattice_interface<Lattice>::lattice_weights().vals[alpha]
-                )
-            );
-
-            if (!interpolate_Q) {
-                continue;
-            }
-
-            auto Q1_alpha = pml_absorption_operator_.get_Q1_values()[alpha];
-            const sclx::array<value_type, 1>& bulk_Q1_alpha
-                = Q1_alpha.get_range(
-                    {0},
-                    {domain_.points.shape()[1] - domain_.num_boundary_points
-                     - domain_.num_ghost_nodes}
-                );
-            const sclx::array<value_type, 1>& ghost_Q1_alpha
-                = Q1_alpha.get_range(
-                    {domain_.points.shape()[1] - domain_.num_ghost_nodes},
-                    {domain_.points.shape()[1]}
-                );
-            interpolation_futures.emplace_back(
-                ghost_interpolator_ptr_->interpolate(
-                    bulk_Q1_alpha,
-                    ghost_Q1_alpha,
-                    lattice_interface<Lattice>::lattice_weights().vals[alpha]
-                )
-            );
-
-            if constexpr (dimensions == 2) {
-                continue;
-            }
-
-            auto Q2_alpha = pml_absorption_operator_.get_Q2_values()[alpha];
-            const sclx::array<value_type, 1>& bulk_Q2_alpha
-                = Q2_alpha.get_range(
-                    {0},
-                    {domain_.points.shape()[1] - domain_.num_boundary_points
-                     - domain_.num_ghost_nodes}
-                );
-            const sclx::array<value_type, 1>& ghost_Q2_alpha
-                = Q2_alpha.get_range(
-                    {domain_.points.shape()[1] - domain_.num_ghost_nodes},
-                    {domain_.points.shape()[1]}
-                );
-            interpolation_futures.emplace_back(
-                ghost_interpolator_ptr_->interpolate(
-                    bulk_Q2_alpha,
-                    ghost_Q2_alpha,
-                    lattice_interface<Lattice>::lattice_weights().vals[alpha]
-                )
-            );
         }
 
         for (auto& fut : interpolation_futures) {
@@ -823,7 +574,6 @@ class simulation_engine {
 
     enum class bounce_back_config { half_step, full_step };
 
-    template<bounce_back_config config>
     void bounce_back_step() {
         sclx::array<value_type, 1> f_boundary[lattice_size];
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
@@ -912,11 +662,6 @@ class simulation_engine {
                             }
                             auto rho = boundary_densities[idx[0]] / rho0;
 
-                            constexpr value_type step_scale
-                                = (config == bounce_back_config::half_step)
-                                    ? 0.5f
-                                    : 1.f;
-
                             for (uint alpha = 0; alpha < lattice_size;
                                  ++alpha) {
                                 const auto c_alpha
@@ -930,7 +675,7 @@ class simulation_engine {
                                      / naga::math::loopless::pow<2>(
                                            lattice_speed_of_sound
                                      )
-                                     * lattice_weights[alpha] / 2.f;
+                                     * lattice_weights[alpha];
                             }
                         }
                     );
@@ -984,68 +729,25 @@ class simulation_engine {
         });
     }
 
-    void streaming_step() {
-        using velocity_map = ::naga::nonlocal_calculus::
-            constant_velocity_field<value_type, dimensions>;
-
-        auto lattice_velocities
-            = lattice_interface<Lattice>::lattice_velocities();
-        auto lattice_weights = lattice_interface<Lattice>::lattice_weights();
-
-        value_type time_step = parameters_.lattice_time_step / 2.f;
-
-        size_t boundary_start = domain_.points.shape()[1]
-                              - domain_.num_ghost_nodes
-                              - domain_.num_boundary_points;
-
-        std::vector<std::pair<int, std::future<void>>> streaming_futures(
-            max_concurrency_
-        );
-        for (int alpha = 0; alpha < lattice_size; ++alpha) {
-
-            auto velocity_map
-                = velocity_map::create(&(lattice_velocities.vals[alpha][0]));
-
-            auto& f_alpha0 = solution_.lattice_distributions[alpha];
-            auto& f_alpha  = temporary_distributions_[alpha];
-
-            value_type centering_offset = lattice_weights.vals[alpha];
-
-            if (streaming_futures[alpha % max_concurrency_].second.valid()) {
-                streaming_futures[alpha % max_concurrency_].second.get();
-                sclx::assign_array(
-                    temporary_distributions_
-                        [streaming_futures[alpha % max_concurrency_].first],
-                    solution_.lattice_distributions
-                        [streaming_futures[alpha % max_concurrency_].first]
-                );
-            }
-            auto fut = advection_operator_ptr_->step_forward(
-                velocity_map,
-                f_alpha0,
-                f_alpha,
-                time_step,
-                centering_offset,
-                boundary_start
-            );
-            streaming_futures[alpha % max_concurrency_]
-                = {alpha, std::move(fut)};
-        }
-
-        for (auto& [alpha, fut] : streaming_futures) {
-            if (!fut.valid()) {
-                continue;
-            }
-            fut.get();
-            sclx::assign_array(
-                temporary_distributions_[alpha],
-                solution_.lattice_distributions[alpha]
-            );
-        }
-    }
-
     void step_forward() {
-        compute_macroscopic_values();
+        compute_macroscopic_values(
+            solution_.lattice_distributions,
+            solution_,
+            parameters_
+        );
+        bounce_back_step();
+
+        domain_.num_layer_points += domain_.num_boundary_points;
+        pml_absorption_operator_.apply();
+        domain_.num_layer_points -= domain_.num_boundary_points;
+
+        compute_macroscopic_values(
+            solution_.lattice_distributions,
+            solution_,
+            parameters_
+        );
+
+        update_observers(time());
 
         compute_velocity_terms();
         apply_velocity_terms();
@@ -1053,31 +755,28 @@ class simulation_engine {
         compute_density_source_terms();
         apply_density_source_terms();
 
-        pml_absorption_operator_.apply();
-        compute_macroscopic_values();
+        rk4_solver_->step_forward(
+            solution_.lattice_distributions,
+            time_ * parameters_.lattice_time_step / parameters_.time_step,
+            parameters_.lattice_time_step
+        );
 
-        collision_step();
-        compute_macroscopic_values();
-
-        apply_density_source_terms();
-
-        update_observers(time());
-
-        bounce_back_step<bounce_back_config::full_step>();
-
-        streaming_step();
         interpolate_boundaries();
 
-        streaming_step();
-        interpolate_boundaries();
+        time_ += parameters_.time_step;
 
         ++frame_number_;
     }
 
     void reset() {
         frame_number_ = 0;
+        time_         = 0;
         init_distribution();
-        compute_macroscopic_values();
+        compute_macroscopic_values(
+            solution_.lattice_distributions,
+            solution_,
+            parameters_
+        );
     }
 
     value_type time() const { return parameters_.time_step * frame_number_; }
@@ -1148,103 +847,18 @@ class simulation_engine {
         }
     }
 
-    template<class Archive>
-    void save_state(Archive& ar) const {
-        ar(parameters_.fluid_viscosity,
-           parameters_.time_step,
-           parameters_.nominal_density,
-           parameters_.speed_of_sound,
-           parameters_.lattice_time_step,
-           parameters_.lattice_viscosity);
-
-        for (const auto& arr : solution_.lattice_distributions) {
-            sclx::serialize_array(ar, arr);
-        }
-        sclx::serialize_array(ar, solution_.macroscopic_values.fluid_velocity);
-        sclx::serialize_array(ar, solution_.macroscopic_values.fluid_density);
-
-        sclx::serialize_array(ar, domain_.points);
-        sclx::serialize_array(ar, domain_.boundary_normals);
-        sclx::serialize_array(ar, domain_.layer_absorption);
-        ar(domain_.num_bulk_points,
-           domain_.num_layer_points,
-           domain_.num_boundary_points,
-           domain_.nodal_spacing,
-           domain_.num_ghost_nodes);
-
-        ar(*advection_operator_ptr_);
-        ar(*boundary_interpolator_ptr_);
-        ar(*ghost_interpolator_ptr_);
-
-        sclx::serialize_array(ar, density_source_term_);
-        for (auto& tmp : temporary_distributions_) {
-            sclx::serialize_array(ar, tmp);
-        }
-        ar(frame_number_);
-
-        ar(pml_absorption_operator_);
-    }
-
-    template<class Archive>
-    void load_state(Archive& ar) {
-        ar(parameters_.fluid_viscosity,
-           parameters_.time_step,
-           parameters_.nominal_density,
-           parameters_.speed_of_sound,
-           parameters_.lattice_time_step,
-           parameters_.lattice_viscosity);
-
-        for (auto& arr : solution_.lattice_distributions) {
-            sclx::deserialize_array(ar, arr);
-        }
-        sclx::deserialize_array(
-            ar,
-            solution_.macroscopic_values.fluid_velocity
-        );
-        sclx::deserialize_array(ar, solution_.macroscopic_values.fluid_density);
-
-        sclx::deserialize_array(ar, domain_.points);
-        sclx::deserialize_array(ar, domain_.boundary_normals);
-        sclx::deserialize_array(ar, domain_.layer_absorption);
-        ar(domain_.num_bulk_points,
-           domain_.num_layer_points,
-           domain_.num_boundary_points,
-           domain_.nodal_spacing,
-           domain_.num_ghost_nodes);
-
-        advection_operator_ptr_ = std::make_shared<advection_operator_t>();
-        ar(*advection_operator_ptr_);
-        boundary_interpolator_ptr_ = std::make_shared<interpolater_t>();
-        ar(*boundary_interpolator_ptr_);
-        ghost_interpolator_ptr_ = std::make_shared<interpolater_t>();
-        ar(*ghost_interpolator_ptr_);
-
-        sclx::deserialize_array(ar, density_source_term_);
-        for (auto& tmp : temporary_distributions_) {
-            sclx::deserialize_array(ar, tmp);
-        }
-        ar(frame_number_);
-
-        pml_absorption_operator_ = pml_absorption_operator<Lattice>{this};
-        ar(pml_absorption_operator_);
-    }
-
     problem_parameters<value_type> parameters_{};
     state_variables<lattice_type> solution_{};
     simulation_nodes<value_type> domain_{};
 
-    using advection_operator_t
-        = nonlocal_calculus::advection_operator<value_type, dimensions>;
-    std::shared_ptr<advection_operator_t> advection_operator_ptr_{};
-
     using interpolater_t = interpolation::radial_point_method<value_type>;
     std::shared_ptr<interpolater_t> boundary_interpolator_ptr_{};
-    std::shared_ptr<interpolater_t> ghost_interpolator_ptr_{};
 
     sclx::array<value_type, 1> density_source_term_{};
     sclx::array<value_type, 2> velocity_term_{};
     sclx::array<value_type, 1> temporary_distributions_[lattice_size]{};
     uint frame_number_ = 0;
+    value_type time_{0};
 
     pml_absorption_operator<Lattice> pml_absorption_operator_{};
 
@@ -1252,6 +866,12 @@ class simulation_engine {
     std::vector<velocity_source<Lattice>*> velocity_sources_{};
 
     std::vector<simulation_observer<Lattice>*> observers_{};
+
+    nonlocal_calculus::divergence_operator<value_type, dimensions>
+        divergence_op_{};
+
+    std::shared_ptr<rk4_solver<pde_right_hand_side<lattice_type>, lattice_size>>
+        rk4_solver_;
 
     uint max_concurrency_ = lattice_size;
 };
