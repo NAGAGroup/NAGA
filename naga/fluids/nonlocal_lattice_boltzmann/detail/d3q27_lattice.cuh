@@ -183,16 +183,19 @@ struct lattice_interface<d3q27_lattice<T>> {
 
         k[6] = omega_ab * (-Kyz / 12);
 
-        auto lat_nu_bulk = 0.f;
-        omega_ab         = 1.f / (3.f * lat_nu_bulk / 2.f + .5f * lat_dt);
+//        auto lat_nu_bulk = 0.f;
+//        omega_ab         = 1.f / (3.f * lat_nu_bulk / 2.f + .5f * lat_dt);
 
         k[7] = omega_ab * (-(Kxx - Kyy) / 12);
 
         k[8] = omega_ab * (-(Kxx + Kyy - 2 * Kzz) / 36);
 
+        auto lat_nu_bulk = 0.f;
+        omega_ab         = 1.f / (lat_nu_bulk + .5f * lat_dt);
+
         k[9] = omega_ab * (-(Kxx + Kyy + Kzz - rho) / 18);
 
-        auto lat_nu_high_order = .11f;
+        auto lat_nu_high_order = .065f;
         omega_ab         = 1.f / (3.f * lat_nu_high_order / 2.f + .5f * lat_dt);
 
         k[10] = omega_ab
@@ -227,6 +230,10 @@ struct lattice_interface<d3q27_lattice<T>> {
 
         k[16] = omega_ab * (-(Kxy * v2 + Kxyz + Kxz * v1 + Kyz * v0) / 8);
 
+        lat_nu_high_order = 0.f;
+        omega_ab         = 1.f / (3.f * lat_nu_high_order / 2.f + .5f * lat_dt);
+//        omega_ab         = 1.f;
+
         k[17] = omega_ab
               * (-(3 * Kxx * v1sq + 3 * Kxx * v2sq - 4 * Kxx + 6 * Kxxy * v1
                    + 3 * Kxxyy + 6 * Kxxz * v2 + 3 * Kxxzz + 12 * Kxy * v0 * v1
@@ -254,9 +261,6 @@ struct lattice_interface<d3q27_lattice<T>> {
                    + 3 * Kyy * v0sq - 2 * Kyy - 3 * Kzz * v0sq + 2 * Kzz
                    - rho * v1sq + rho * v2sq)
                  / 24);
-
-        lat_nu_high_order = .95f;
-        omega_ab         = 1.f / (3.f * lat_nu_high_order / 2.f + .5f * lat_dt);
 
         k[20] = omega_ab
               * (-(3 * Kxx * v1 * v2 + 3 * Kxxy * v2 + 3 * Kxxyz + 3 * Kxxz * v1

@@ -622,7 +622,7 @@ struct problem_traits {
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
                             )) {
-                            auto perturbation = audio_sample;
+                            auto perturbation = audio_sample - previous_value;
 
                             // naga::point_t<value_type, dimensions>
                             //     center_to_point;
@@ -647,9 +647,9 @@ struct problem_traits {
                             //     )
                             // );
 
-                            auto current_density = density(idx[0]);
-                            perturbation += nominal_density -
-                            current_density;
+//                            auto current_density = density(idx[0]);
+//                            perturbation += nominal_density -
+//                            current_density;
                             source_terms(idx[0]) += perturbation;
                         }
                     }

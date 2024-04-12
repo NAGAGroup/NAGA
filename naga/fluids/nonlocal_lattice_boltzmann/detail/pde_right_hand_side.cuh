@@ -55,7 +55,8 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
         state_variables<d3q27_lattice<T>>& state,
         naga::nonlocal_calculus::divergence_operator<T, dimensions>&
             divergence_op,
-        interpolater_t& boundary_interpolater
+        interpolater_t& boundary_interpolater,
+        simulation_engine<lattice>& engine
     )
         : domain_(&domain),
           parameters_(&parameters),
@@ -64,7 +65,8 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
           boundary_interpolater_(&boundary_interpolater),
           collision_(
               std::make_shared<collision_term<lattice>>(parameters, state)
-          ) {
+          ),
+          engine_(&engine) {
         auto domain_size = state.lattice_distributions[0].elements();
         for (int i = 0; i < lattice_size; ++i) {
             rates_[i] = sclx::array<T, 1>{domain_size};
@@ -78,7 +80,7 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
     pde_right_hand_side& operator=(pde_right_hand_side&&)      = default;
 
     std::array<sclx::array<T, 1>, lattice_size>& operator()(
-        const std::array<sclx::array<T, 1>, lattice_size>& f,
+        std::array<sclx::array<T, 1>, lattice_size> f,
         value_type t0,
         value_type dt
     ) {
@@ -97,7 +99,10 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
             = domain_->points.shape()[1] - domain_->num_ghost_nodes;
         auto boundary_end = domain_->points.shape()[1];
 
-        auto homogeneous_future = std::async([rates,
+        auto engine = engine_;
+
+        auto homogeneous_future = std::async([engine,
+                                              rates,
                                               f,
                                               divergence_op,
                                               boundary_start,
@@ -121,16 +126,18 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
                         .vals[i]
                 };
                 divergence_op->apply(vector_field, rates[i]);
+                engine->interpolate_boundaries(rates);
+                engine->bounce_back_step(rates);
             }
         });
 
         auto collision_future = (*collision_)();
 
-//        auto pml_future = (*pml_)(f, dt);
+        //        auto pml_future = (*pml_)(f, dt);
 
         homogeneous_future.get();
         auto collision_terms = collision_future.get();
-//        auto pml_terms       = pml_future.get();
+        //        auto pml_terms       = pml_future.get();
 
         std::vector<std::future<void>> futures;
         for (int i = 0; i < lattice_size; ++i) {
@@ -158,12 +165,12 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
         value_type /*unused*/,
         value_type dt
     ) {
-//        simulation_engine<lattice>::compute_macroscopic_values(
-//            f,
-//            *state_,
-//            *parameters_
-//        );
-//        (*pml_)(f, dt, true).get();
+        //        simulation_engine<lattice>::compute_macroscopic_values(
+        //            f,
+        //            *state_,
+        //            *parameters_
+        //        );
+        //        (*pml_)(f, dt, true).get();
     }
 
     // provided by engine
@@ -178,6 +185,8 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
     std::shared_ptr<pml_term<lattice>> pml_;
 
     std::array<sclx::array<T, 1>, lattice_size> rates_{};
+
+    simulation_engine<lattice>* engine_;
 };
 
 }  // namespace naga::fluids::nonlocal_lbm::detail
