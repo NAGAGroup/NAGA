@@ -662,7 +662,7 @@ conforming_point_cloud_t<T, 2> conforming_point_cloud_t<T, 2>::create(
 template <class T>
 const typename conforming_point_cloud_t<T, 2>::input_domain_data_t&
 conforming_point_cloud_t<T, 2>::domain() const {
-    return impl->domain();
+    return impl->domain_();
 }
 
 template <class T>

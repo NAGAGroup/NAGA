@@ -320,17 +320,6 @@ struct problem_traits {
                 time * time_multiplier_ * static_cast<value_type>(sample_rate_)
             );
             auto upper_frame_number = lower_frame_number + 1;
-            // auto max_half_period_count
-            //     = time * time_multiplier_ * max_frequency_ * 2;
-            // auto valid_frame
-            //     = static_cast<size_t>(lower_frame_number)
-            //         % static_cast<size_t>(
-            //             std::floor(sample_rate_ / max_frequency_) / 2
-            //         )
-            //    == 0;
-            // if (!valid_frame) {
-            //     return std::async(std::launch::deferred, [] {});
-            // }
             auto fractional_frame_number
                 = time * time_multiplier_
                 * static_cast<value_type>(sample_rate_);
@@ -344,7 +333,15 @@ struct problem_traits {
             const auto& amplitude       = amplitude_;
             const auto& audio_samples   = audio_samples_;
             const auto& nominal_density = params.nominal_density;
-            const auto& points          = domain.points;
+            const auto& fluid_velocity
+                = solution.macroscopic_values.fluid_velocity;
+            const auto& points = domain.points;
+
+            auto audio_sample_upper
+                = amplitude * audio_samples(frame_number + 1);
+            auto audio_sample_lower = amplitude * audio_samples(frame_number);
+            auto audio_sample       = upper_weight * audio_sample_upper
+                              + lower_weight * audio_sample_lower;
 
             if (loop_audio_) {
                 frame_number = frame_number % audio_samples.elements();
@@ -386,16 +383,17 @@ struct problem_traits {
                             local_points(i, info.local_thread_linear_id())
                                 = points(i, idx[0]);
                         }
-                        auto audio_sample_upper
-                            = amplitude * audio_samples(frame_number + 1);
-                        auto audio_sample_lower
-                            = amplitude * audio_samples(frame_number);
-                        auto audio_sample = upper_weight * audio_sample_upper
-                                          + lower_weight * audio_sample_lower;
+
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
                             )) {
                             auto perturbation = audio_sample;
+                            auto fluid_speed
+                                = naga::math::loopless::norm<dimensions>(
+                                    &fluid_velocity(0, idx[0])
+                                );
+                            //                            perturbation +=
+                            //                            fluid_speed;
 
                             naga::point_t<value_type, dimensions>
                                 center_to_point;
@@ -416,12 +414,10 @@ struct problem_traits {
                             if (distance < source_inner_radius) {
                                 return;
                             }
+
                             auto source_thickness
                                 = source_outer_radius - source_inner_radius;
-                            auto falloff = naga::math::loopless::pow<2>(
-                                (distance - source_outer_radius)
-                                / source_thickness
-                            );
+
                             for (int i = 0; i < dimensions; ++i) {
                                 velocity_terms(i, idx[0]) = perturbation
                                                           * center_to_point[i]
@@ -567,9 +563,9 @@ struct problem_traits {
 
             auto frame_number
                 = static_cast<size_t>(lower_frame_number) + frame_offset_;
-            const auto& amplitude      = amplitude_;
-            const auto& previous_value = previous_value_;
-            const auto& audio_samples  = audio_samples_;
+            const auto& amplitude     = amplitude_;
+            auto previous_value       = previous_value_;
+            const auto& audio_samples = audio_samples_;
             const auto& density = solution.macroscopic_values.fluid_density;
             const auto& nominal_density = params.nominal_density;
             const auto& points          = domain.points;
@@ -579,6 +575,7 @@ struct problem_traits {
             auto audio_sample_lower = amplitude * audio_samples(frame_number);
             auto audio_sample       = upper_weight * audio_sample_upper
                               + lower_weight * audio_sample_lower;
+            previous_value_ = audio_sample;
 
             if (loop_audio_) {
                 frame_number = frame_number % audio_samples.elements();
@@ -622,7 +619,6 @@ struct problem_traits {
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
                             )) {
-                            auto perturbation = audio_sample;
 
                             // naga::point_t<value_type, dimensions>
                             //     center_to_point;
@@ -641,22 +637,25 @@ struct problem_traits {
                             //     )
                             // );
                             // // apply falloff
-                            // perturbation *= naga::math::exp(
+                            // audio_sample *= naga::math::exp(
                             //     -naga::math::loopless::pow<2>(
                             //         distance / (.5f * source_radius)
                             //     )
                             // );
 
-                            auto current_density = density(idx[0]);
-                            perturbation += nominal_density -
-                            current_density;
-                            source_terms(idx[0]) += perturbation;
+                            // auto perturbation    = audio_sample;
+                            // auto current_density = density(idx[0]);
+                            // perturbation += nominal_density - current_density;
+                            // source_terms(idx[0]) = perturbation;
+
+                            // auto perturbation = audio_sample - previous_value;
+                            // source_terms(idx[0]) = perturbation;
+
+                            source_terms(idx[0]) = audio_sample;
                         }
                     }
                 );
             });
-
-            previous_value_ = audio_sample;
         }
 
         const size_t& sample_rate() const { return sample_rate_; }

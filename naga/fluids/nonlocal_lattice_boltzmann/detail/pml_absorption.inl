@@ -353,7 +353,7 @@ class pml_absorption_operator<d2q9_lattice<T>> {
                     + engine_->domain_.num_layer_points
             };
 
-            engine_->advection_operator_ptr_->divergence_op().apply(
+            engine_->advection_operator_ptr_->divergence_op_().apply(
                 field_map,
                 engine_->temporary_distributions_[alpha]
             );
@@ -362,7 +362,7 @@ class pml_absorption_operator<d2q9_lattice<T>> {
             auto layer_end   = engine_->domain_.num_bulk_points
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
-                nonlocal_calculus::forward_euler<T>(engine_->parameters_.lattice_time_step),
+                nonlocal_calculus::forward_euler<T>(1.f),
                 engine_->solution_
                     .lattice_distributions[alpha],  // .get_range({layer_begin},
                                                     // {layer_end}),
@@ -795,7 +795,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                     + engine_->domain_.num_layer_points
             };
 
-            engine_->advection_operator_ptr_->divergence_op().apply(
+            engine_->divergence_op_.apply(
                 field_map_Q1,
                 engine_->temporary_distributions_[alpha]
             );
@@ -827,7 +827,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                     + engine_->domain_.num_layer_points
             };
 
-            engine_->advection_operator_ptr_->divergence_op().apply(
+            engine_->divergence_op_.apply(
                 field_map_Q2,
                 engine_->temporary_distributions_[alpha]
             );
