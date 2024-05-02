@@ -174,7 +174,7 @@ struct lattice_interface<d3q27_lattice<T>> {
 
         value_type omega_ab;
 
-        omega_ab = 1.f / (3.f * lat_nu + .5f * lat_dt);
+        omega_ab = 1.f / (3.f * lat_nu + .5f) / lat_dt;
 
         k[4] = omega_ab * (-Kxy / 12);
 
@@ -186,11 +186,11 @@ struct lattice_interface<d3q27_lattice<T>> {
 
         k[8] = omega_ab * (-(Kxx + Kyy - 2 * Kzz) / 36);
 
-        omega_ab = 1.98f;
-        {
-            auto unit_nu = (1.f / omega_ab - .5f) / 3.f;
-            omega_ab = 1.f / (3.f * unit_nu + .5f) / lat_dt;
-        }
+        // omega_ab = 1.98f;
+        // {
+        //     auto unit_nu = (1.f / omega_ab - .5f) / 3.f;
+        //     omega_ab = 1.f / (3.f * unit_nu + .5f) / lat_dt;
+        // }
 
         k[9] = omega_ab * (-(Kxx + Kyy + Kzz - rho) / 18);
 

@@ -84,11 +84,11 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
         value_type t0,
         value_type dt
     ) {
-        simulation_engine<lattice>::compute_macroscopic_values(
-            f,
-            *state_,
-            *parameters_
-        );
+        // simulation_engine<lattice>::compute_macroscopic_values(
+        //     f,
+        //     *state_,
+        //     *parameters_
+        // );
 
         auto& divergence_op = divergence_op_;
         auto& rates         = rates_;
@@ -105,6 +105,7 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
                                               rates,
                                               f,
                                               t0,
+                                              dt,
                                               divergence_op,
                                               boundary_start,
                                               ghost_start,

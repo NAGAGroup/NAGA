@@ -182,12 +182,13 @@ class simulation_engine {
         //     auto boundary_div_operator = div_op_t::create(
         //         domain_.points.get_range(
         //             {0},
-        //             {domain_.points.shape()[1] - domain_.num_ghost_nodes}
+        //             {domain_.points.shape()[1] - domain_.num_ghost_nodes
+        //              - domain_.num_boundary_points}
         //         ),
         //         domain_.points.get_range(
         //             {domain_.points.shape()[1] - domain_.num_ghost_nodes
         //              - domain_.num_boundary_points},
-        //             {domain_.points.shape()[1]}
+        //             {domain_.points.shape()[1] - domain_.num_ghost_nodes}
         //         )
         //     );
         //
@@ -195,16 +196,20 @@ class simulation_engine {
         //         boundary_div_operator,
         //         domain_.points.shape()[1] - domain_.num_ghost_nodes
         //             - domain_.num_boundary_points,
-        //         domain_.points.shape()[1]
+        //         domain_.points.shape()[1] - domain_.num_ghost_nodes
         //     );
         // }
 
         for (auto& f_alpha : solution_.lattice_distributions) {
             f_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
-        for (auto& tmp_alpha : temporary_distributions_) {
+        for (auto& tmp_alpha : scratchpad1) {
             tmp_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
         }
+        for (auto& tmp_alpha : scratchpad2) {
+            tmp_alpha = sclx::array<value_type, 1>{domain_.points.shape()[1]};
+        }
+
         solution_.macroscopic_values.fluid_velocity
             = sclx::zeros<value_type, 2>(domain_.points.shape());
         solution_.macroscopic_values.fluid_density
@@ -460,28 +465,28 @@ class simulation_engine {
         }
     }
 
-    void collision_step(std::array<sclx::array<value_type, 1>, lattice_size> f
+    void collision_step(
+        std::array<sclx::array<value_type, 1>, lattice_size> f0,
+        std::array<sclx::array<value_type, 1>, lattice_size> f
     ) {
         sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
-            sclx::array_list<value_type, 1, lattice_size> lattice_distributions(
-                f
-            );
+            sclx::array_list<value_type, 1, lattice_size> f_result(f);
 
             auto& parameters = parameters_;
             auto& solution   = solution_;
 
             handler.launch(
                 sclx::md_range_t<1>{f[0].shape()[0]},
-                lattice_distributions,
+                f_result,
                 [=] __device__(
                     const sclx::md_index_t<1>& idx,
                     const sclx::kernel_info<>& info
                 ) {
                     value_type k[lattice_size];
 
-                    value_type f[lattice_size];
+                    value_type f0_i[lattice_size];
                     for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                        f[alpha] = lattice_distributions[alpha][idx[0]];
+                        f0_i[alpha] = f0[alpha][idx[0]];
                     }
 
                     value_type rho
@@ -502,7 +507,7 @@ class simulation_engine {
 
                     lattice_interface<Lattice>::compute_moment_projection(
                         k,
-                        f,
+                        f0_i,
                         rho,
                         u,
                         lat_nu,
@@ -517,8 +522,7 @@ class simulation_engine {
                         for (int j = 0; j < lattice_size; ++j) {
                             df_dt += K[l][j] * k[j];
                         }
-                        lattice_distributions[l][idx[0]]
-                            = f[l] + df_dt * lat_dt;
+                        f_result[l][idx[0]] += df_dt * lat_dt;
                     }
                 }
             );
@@ -892,6 +896,42 @@ class simulation_engine {
                                         lattice_t>::get_bounce_back_idx(alpha)]
                                                    [idx[0]];
                             }
+                            // constexpr value_type tau = 2.f;
+                            // naga::point_t<value_type, dimensions> u_wall;
+                            // for (int d = 0; d < dimensions; ++d) {
+                            //     u_wall[d] = boundary_velocities(d, idx[0])
+                            //               / velocity_scale;
+                            // }
+                            // const auto rho  = boundary_densities[idx[0]] /
+                            // rho0; decltype(u_wall) force_term; for (int d =
+                            // 0; d < dimensions; ++d) {
+                            //     force_term[d] = -rho * force_term[d];
+                            //     boundary_velocities(d, idx[0]) /= 2.f;
+                            // }
+                            // for (int alpha = 0; alpha < lattice_size;
+                            // ++alpha) {
+                            //     value_type force_source = 0.f;
+                            //     const auto c_alpha
+                            //         = &lattice_velocities(0, alpha);
+                            //     for (int d = 0; d < dimensions; ++d) {
+                            //         force_source
+                            //             += force_term[d] * (1. - 1. / tau /
+                            //             2)
+                            //              * lattice_weights[alpha]
+                            //              * ((c_alpha[d] - u_wall[d])
+                            //                     /
+                            //                     naga::math::loopless::pow<2>(
+                            //                         lattice_speed_of_sound
+                            //                     )
+                            //                 + naga::math::loopless::dot<
+                            //                       dimensions>(c_alpha,
+                            //                       u_wall) /
+                            //                       naga::math::loopless::pow<
+                            //                           4>(lattice_speed_of_sound)
+                            //                       * c_alpha[d]);
+                            //     }
+                            //     result_arrays[alpha][idx[0]] += force_source;
+                            // }
                         }
                     );
                 });
@@ -1007,26 +1047,7 @@ class simulation_engine {
                         return;
                     }
                     auto imposed_density = 1.f + source_term / density_scale;
-                    // naga::point_t<value_type, dimensions> velocity_i;
-                    // naga::point_t<value_type, dimensions> c_alpha;
-                    // for (int d = 0; d < dimensions; ++d) {
-                    //     velocity_i[d] = velocities(d, idx[1]) /
-                    //     velocity_scale; c_alpha[d]    = lattice_interface<
-                    //                         lattice_type>::lattice_velocities()
-                    //                      .vals[idx[0]][d];
-                    // }
-                    // auto feq_alpha
-                    //     = compute_equilibrium_distribution<lattice_type>(
-                    //         imposed_density,
-                    //         &velocity_i[0],
-                    //         &c_alpha[0],
-                    //         lattice_weights[idx[0]]
-                    //     );
-                    //
-                    // auto& f_alpha = result_arrays[idx[0]][idx[1]];
-                    // f_alpha       = feq_alpha;
-
-                    densities[idx[1]] = imposed_density * density_scale;
+                    densities[idx[1]]    = imposed_density * density_scale;
                 }
             );
         });
@@ -1072,7 +1093,8 @@ class simulation_engine {
                         return;
                     }
                     auto imposed_density = 1.f + source_term / density_scale;
-                    auto delta_rho       = imposed_density - densities[idx[1]] / density_scale;
+                    auto delta_rho
+                        = imposed_density - densities[idx[1]] / density_scale;
                     result_arrays[idx[0]][idx[1]]
                         += delta_rho * lattice_weights[idx[0]];
 
@@ -1206,19 +1228,19 @@ class simulation_engine {
         });
     }
 
-    void selective_filter_step() {
+    void selective_filter_step(
+        std::array<sclx::array<value_type, 1>, lattice_size> f0,
+        std::array<sclx::array<value_type, 1>, lattice_size> f
+    ) {
         auto support_indices = divergence_op_.support_indices();
         auto support_size    = support_indices.shape()[0];
         auto domain_points   = domain_.points;
         auto& delta_x        = domain_.nodal_spacing;
-        auto gaussian_sigma = delta_x * .5f;
+        auto gaussian_sigma  = delta_x / 3.f;
+        auto sigma           = .3f;
 
         bool compute_weights = false;
-        if (filtered_distributions_[0].elements() == 0) {
-            for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                filtered_distributions_[alpha]
-                    = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
-            }
+        if (filter_weights_.elements() == 0) {
             filter_weights_ = sclx::zeros<value_type, 2>(
                 {support_size, domain_.points.shape()[1]}
             );
@@ -1228,12 +1250,12 @@ class simulation_engine {
         std::promise<void> capture_promise;
         auto capture_fut = capture_promise.get_future();
 
-        auto fut = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+        auto bulk_end = domain_.num_bulk_points + domain_.num_layer_points;
+        // bulk_end = domain_.num_bulk_points;
 
-            auto f_old = solution_.lattice_distributions;
-            sclx::array_list<value_type, 1, lattice_size> f_new(
-                filtered_distributions_
-            );
+        auto fut = sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            auto f_old = f0;
+            sclx::array_list<value_type, 1, lattice_size> f_new(f);
             auto filter_weights = filter_weights_;
             capture_promise.set_value();
 
@@ -1241,12 +1263,17 @@ class simulation_engine {
                 sclx::md_range_t<2>{lattice_size, domain_.points.shape()[1]},
                 f_new,
                 [=] __device__(const sclx::md_index_t<2>& idx, const sclx::kernel_info<2>&) mutable {
-                    value_type sigma = 0.5f;
-                    auto alpha       = idx[0];
-                    auto pidx        = idx[1];
-                    const auto& x    = &domain_points(0, pidx);
-                    auto f_alpha_i   = f_old[alpha][pidx];
-                    value_type sum   = 0;
+                    auto alpha = idx[0];
+                    auto pidx  = idx[1];
+
+                    if (pidx >= bulk_end) {
+                        f_new[alpha][pidx] = f_old[alpha][pidx];
+                        return;
+                    }
+
+                    const auto& x  = &domain_points(0, pidx);
+                    auto f_alpha_i = f_old[alpha][pidx];
+                    value_type sum = 0;
                     // uint num_summed = 0;
                     value_type sum_weights = 0;
                     for (int s = 0; s < support_size; ++s) {
@@ -1257,14 +1284,17 @@ class simulation_engine {
                                 dimensions>{}(x, x_s);
                         value_type weight;
                         if (compute_weights) {
-                            weight = 1.f
-                                   / naga::math::sqrt(2 * naga::math::pi<value_type>)
-                                   / gaussian_sigma
+                            auto scale = naga::math::loopless::pow<dimensions>(
+                                delta_x
+                                / naga::math::
+                                    sqrt(2 * naga::math::pi<value_type>)
+                                / gaussian_sigma
+                            );
+                            weight = scale
                                    * naga::math::exp(
                                          -0.5
-                                         * naga::math::pow(
-                                             x2x_s_distance / gaussian_sigma,
-                                             2
+                                         * naga::math::loopless::pow<2>(
+                                             x2x_s_distance / gaussian_sigma
                                          )
                                    );
                             filter_weights(s, pidx) = weight;
@@ -1275,52 +1305,53 @@ class simulation_engine {
                         auto f_alpha_s = f_old[alpha][support_indices(s, pidx)];
                         sum += weight * (f_alpha_s - f_alpha_i);
                     }
-                    for (int s = 0; compute_weights && s < support_size; ++s) {
-                        filter_weights(s, pidx) /= sum_weights;
-                        if (s == 0) {
-                            sum /= sum_weights;
-                        }
-                    }
-                    f_new[alpha][pidx]
-                        = f_alpha_i + sigma * sum;
+                    // for (int s = 0; compute_weights && s < support_size; ++s)
+                    // {
+                    //     filter_weights(s, pidx) /= sum_weights;
+                    //     if (s == 0) {
+                    //         sum /= sum_weights;
+                    //     }
+                    // }
+                    f_new[alpha][pidx] = f_alpha_i + sigma * sum;
                 }
             );
         });
 
         capture_fut.get();
-        for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            auto f_alpha_old = solution_.lattice_distributions[alpha];
-            auto f_alpha_new = filtered_distributions_[alpha];
-            solution_.lattice_distributions[alpha] = f_alpha_new;
-            filtered_distributions_[alpha]         = f_alpha_old;
-        }
-
         fut.get();
     }
 
     void step_forward() {
-        compute_macroscopic_values(
-            solution_.lattice_distributions,
-            solution_,
-            parameters_
-        );
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            sclx::assign_array(
+                solution_.lattice_distributions[alpha],
+                scratchpad1[alpha]
+            );
+        }
+        compute_macroscopic_values(scratchpad1, solution_, parameters_);
 
         update_observers(time());
 
         pml_absorption_operator_.apply();
+        interpolate_boundaries(scratchpad1);
 
-        compute_macroscopic_values(
-            solution_.lattice_distributions,
-            solution_,
-            parameters_
-        );
+        // for (int alpha = 0; alpha < lattice_size; ++alpha) {
+        //     sclx::assign_array(scratchpad1[alpha], scratchpad2[alpha]);
+        // }
+
+        collision_step(solution_.lattice_distributions, scratchpad1);
+        selective_filter_step(scratchpad1, scratchpad2);
+
+
+        auto f_old                      = solution_.lattice_distributions;
+        auto f_new                      = scratchpad2;
+        solution_.lattice_distributions = f_new;
+        scratchpad2                     = f_old;
 
         compute_density_source_terms(time());
         // compute_velocity_terms(time());
         apply_density_source_termsv5();
         //         apply_velocity_terms();
-
-        collision_step(solution_.lattice_distributions);
 
         bounce_back_step(solution_.lattice_distributions);
 
@@ -1329,7 +1360,6 @@ class simulation_engine {
             time_ * parameters_.lattice_time_step / parameters_.time_step,
             parameters_.lattice_time_step
         );
-        selective_filter_step();
         interpolate_boundaries(solution_.lattice_distributions);
 
         time_ += parameters_.time_step;
@@ -1425,12 +1455,11 @@ class simulation_engine {
 
     sclx::array<value_type, 1> density_source_term_{};
     sclx::array<value_type, 2> velocity_term_{};
-    sclx::array<value_type, 1> temporary_distributions_[lattice_size]{};
     size_t frame_number_ = 0;
     value_type time_{0};
     size_t frames_for_node2node_travel_;
-    std::array<sclx::array<value_type, 1>, lattice_size>
-        filtered_distributions_{};
+    std::array<sclx::array<value_type, 1>, lattice_size> scratchpad1{};
+    std::array<sclx::array<value_type, 1>, lattice_size> scratchpad2{};
     sclx::array<value_type, 2> filter_weights_{};
 
     pml_absorption_operator<Lattice> pml_absorption_operator_{};

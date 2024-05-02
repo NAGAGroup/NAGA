@@ -183,8 +183,8 @@ class partial_pml_subtask<d2q9_lattice<T>> {
                 = params.lattice_Q1_values[alpha][idx]
                 - params.lattice_weights(alpha);
 
-            value_type Q_value
-                = (f_tilde_eq + f_tilde_eq_prev) * params.lattice_time_step / 2.f;
+            value_type Q_value = (f_tilde_eq + f_tilde_eq_prev)
+                               * params.lattice_time_step / 2.f;
 
             params.lattice_Q1_values[alpha][idx] = Q_value;
 
@@ -250,9 +250,9 @@ class partial_pml_subtask<d2q9_lattice<T>> {
                 = sclx::local_array<value_type, 1>(handler, {lattice_size});
 
             density_scale  = engine.parameters_.nominal_density;
-            velocity_scale = engine.parameters_.speed_of_sound / lattice_traits<
-                                 lattice>::lattice_speed_of_sound;
-            lattice_time_step     = engine.parameters_.lattice_time_step;
+            velocity_scale = engine.parameters_.speed_of_sound
+                           / lattice_traits<lattice>::lattice_speed_of_sound;
+            lattice_time_step = engine.parameters_.lattice_time_step;
 
             this->handler = handler;
         }
@@ -304,9 +304,7 @@ class pml_absorption_operator<d2q9_lattice<T>> {
 
     pml_absorption_operator() = default;
 
-    auto get_Q1_values() const {
-        return lattice_Q1_values_;
-    }
+    auto get_Q1_values() const { return lattice_Q1_values_; }
 
     explicit pml_absorption_operator(simulation_engine<lattice>* engine)
         : engine_(engine) {
@@ -458,9 +456,7 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
         return (*this)[index[0]];
     }
 
-    __host__ __device__ size_t size() const {
-        return Q1.elements();
-    }
+    __host__ __device__ size_t size() const { return Q1.elements(); }
 
   private:
     value_type c0[dimensions];
@@ -517,9 +513,7 @@ class pml_div_Q2_field_map {
         return (*this)[index[0]];
     }
 
-    __host__ __device__ size_t size() const {
-        return Q2.elements();
-    }
+    __host__ __device__ size_t size() const { return Q2.elements(); }
 
   private:
     value_type c0[dimensions];
@@ -600,8 +594,8 @@ class partial_pml_subtask<d3q27_lattice<T>> {
                 = params.lattice_Q1_values[alpha][idx]
                 - params.lattice_weights(alpha);
 
-            value_type Q1_value
-                = (f_tilde_eq + f_tilde_eq_prev) * params.lattice_time_step / 2.f;
+            value_type Q1_value = (f_tilde_eq + f_tilde_eq_prev)
+                                * params.lattice_time_step / 2.f;
 
             params.lattice_Q1_values[alpha][idx] = Q1_value;
 
@@ -624,10 +618,10 @@ class partial_pml_subtask<d3q27_lattice<T>> {
 
             using namespace math::loopless;
 
-            params.lattice_distributions[alpha][idx[0]]
+            params.f[alpha][idx[0]]
                 -= sigma
-                 * (3.f * f_tilde_eq + 3.f * sigma * Q1_value
-                    + pow<2>(sigma) * Q2_value);
+                      * (3.f * f_tilde_eq + 3.f * sigma * Q1_value
+                         + pow<2>(sigma) * Q2_value);
         }
     }
 
@@ -635,7 +629,7 @@ class partial_pml_subtask<d3q27_lattice<T>> {
         sclx::array<value_type, 1> result_arrays_raw[3 * lattice_size]{};
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
-            result_arrays_raw[alpha] = params_->lattice_distributions[alpha];
+            result_arrays_raw[alpha] = params_->f[alpha];
             result_arrays_raw[alpha + lattice_size]
                 = params_->lattice_Q1_values[alpha];
             result_arrays_raw[alpha + 2 * lattice_size]
@@ -663,10 +657,11 @@ class partial_pml_subtask<d3q27_lattice<T>> {
             absorption_layer_end   = engine.domain_.num_bulk_points
                                  + engine.domain_.num_layer_points;
 
-            lattice_distributions
-                = sclx::array_list<value_type, 1, lattice_size>(
-                    engine.solution_.lattice_distributions
-                );
+            f0 = sclx::array_list<value_type, 1, lattice_size>(
+                engine.solution_.lattice_distributions
+            );
+            f = sclx::array_list<value_type, 1, lattice_size>(engine.scratchpad1
+            );
 
             this->lattice_Q1_values = lattice_Q1_values;
             this->lattice_Q2_values = lattice_Q2_values;
@@ -683,9 +678,9 @@ class partial_pml_subtask<d3q27_lattice<T>> {
                 = sclx::local_array<value_type, 1>(handler, {lattice_size});
 
             density_scale  = engine.parameters_.nominal_density;
-            velocity_scale = engine.parameters_.speed_of_sound / lattice_traits<
-                lattice>::lattice_speed_of_sound;
-            lattice_time_step     = engine.parameters_.lattice_time_step;
+            velocity_scale = engine.parameters_.speed_of_sound
+                           / lattice_traits<lattice>::lattice_speed_of_sound;
+            lattice_time_step = engine.parameters_.lattice_time_step;
 
             this->handler = handler;
         }
@@ -695,7 +690,8 @@ class partial_pml_subtask<d3q27_lattice<T>> {
         sclx::index_t absorption_layer_start{};
         sclx::index_t absorption_layer_end{};
 
-        sclx::array_list<value_type, 1, lattice_size> lattice_distributions;
+        sclx::array_list<value_type, 1, lattice_size> f0;
+        sclx::array_list<value_type, 1, lattice_size> f;
         sclx::array_list<value_type, 1, lattice_size> lattice_Q1_values;
         sclx::array_list<value_type, 1, lattice_size> lattice_Q2_values;
 
@@ -767,21 +763,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
     }
 
     void apply() {
-        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
-            auto subtask
-                = subtask_factory<partial_pml_subtask<lattice>>::create(
-                    *engine_,
-                    handler,
-                    lattice_Q1_values_,
-                    lattice_Q2_values_
-                );
-
-            handler.launch(
-                sclx::md_range_t<1>{engine_->domain_.points.shape()[1]},
-                subtask.result(),
-                subtask
-            );
-        }).get();
+        compute_Qvalues();
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             const auto& Q1 = lattice_Q1_values_[alpha];
@@ -797,7 +779,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
 
             engine_->divergence_op_.apply(
                 field_map_Q1,
-                engine_->temporary_distributions_[alpha]
+                engine_->scratchpad2[alpha]
             );
 
             auto layer_begin = engine_->domain_.num_bulk_points;
@@ -805,15 +787,12 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
                 nonlocal_calculus::forward_euler<T>(1.f),
-                engine_->solution_
-                    .lattice_distributions[alpha],  // .get_range({layer_begin},
-                                                    // {layer_end}),
-                engine_->solution_
-                    .lattice_distributions[alpha],  // .get_range({layer_begin},
-                                                    // {layer_end}),
-                engine_->temporary_distributions_
-                    [alpha]  // .get_range({layer_begin},
-                             // {layer_end})
+                engine_->scratchpad1[alpha],  // .get_range({layer_begin},
+                                              // {layer_end}),
+                engine_->scratchpad1[alpha],     // .get_range({layer_begin},
+                                             // {layer_end}),
+                engine_->scratchpad2[alpha]  // .get_range({layer_begin},
+                                             // {layer_end})
             );
 
             const auto& Q2 = lattice_Q2_values_[alpha];
@@ -829,23 +808,42 @@ class pml_absorption_operator<d3q27_lattice<T>> {
 
             engine_->divergence_op_.apply(
                 field_map_Q2,
-                engine_->temporary_distributions_[alpha]
+                engine_->scratchpad2[alpha]
             );
 
             sclx::algorithm::elementwise_reduce(
                 nonlocal_calculus::forward_euler<T>(1.f),
-                engine_->solution_
-                    .lattice_distributions[alpha],  // .get_range({layer_begin},
-                                                    // {layer_end}),
-                engine_->solution_
-                    .lattice_distributions[alpha],  // .get_range({layer_begin},
-                                                    // {layer_end}),
-                engine_->temporary_distributions_
-                    [alpha]  // .get_range({layer_begin},
-                             // {layer_end})
+                engine_->scratchpad1[alpha],  // .get_range({layer_begin},
+                                              // {layer_end}),
+                engine_->scratchpad1[alpha],  // .get_range({layer_begin},
+                                              // {layer_end}),
+                engine_->scratchpad2[alpha]   // .get_range({layer_begin},
+                                              // {layer_end})
             );
         }
 
+        post_collision();
+    }
+
+    void compute_Qvalues() {
+        sclx::execute_kernel([&](sclx::kernel_handler& handler) {
+            auto subtask
+                = subtask_factory<partial_pml_subtask<lattice>>::create(
+                    *engine_,
+                    handler,
+                    lattice_Q1_values_,
+                    lattice_Q2_values_
+                );
+
+            handler.launch(
+                sclx::md_range_t<1>{engine_->domain_.points.shape()[1]},
+                subtask.result(),
+                subtask
+            );
+        }).get();
+    }
+
+    void post_collision() {
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             auto& Q1 = lattice_Q1_values_[alpha];
 
@@ -868,13 +866,9 @@ class pml_absorption_operator<d3q27_lattice<T>> {
         }).get();
     }
 
-    auto get_Q1_values() const {
-        return lattice_Q1_values_;
-    }
+    auto get_Q1_values() const { return lattice_Q1_values_; }
 
-    auto get_Q2_values() const {
-        return lattice_Q2_values_;
-    }
+    auto get_Q2_values() const { return lattice_Q2_values_; }
 
     template<class Archive>
     void save(Archive& ar) const {
