@@ -104,11 +104,11 @@ class vtk_observer : public simulation_observer<Lattice> {
     ) {
         const auto& results_path = output_directory_;
         auto save_frame
-            = static_cast<size_t>(time_multiplier_ * time * frame_rate_);
+            = static_cast<std::uint32_t>(time_multiplier_ * time * frame_rate_);
         save_frame
             = frame_rate_ != 0.
                 ? save_frame
-                : static_cast<size_t>(std::ceil(time / parameters.time_step));
+                : static_cast<std::uint32_t>(std::ceil(time / parameters.time_step));
         if (frame_rate_ != 0 && save_frame < current_frame_) {
             return;
         }
@@ -267,7 +267,7 @@ class vtk_observer : public simulation_observer<Lattice> {
             // randomly choose save points given the approximate number of save
             // points
             save_points_.reserve(approx_save_points_);
-            std::uniform_int_distribution<size_t> dist(0, number_of_points - 1);
+            std::uniform_int_distribution<std::uint32_t> dist(0, number_of_points - 1);
             std::mt19937 gen;
             for (size_t i = 0; i < approx_save_points_; ++i) {
                 save_points_.push_back(dist(gen));
@@ -278,11 +278,11 @@ class vtk_observer : public simulation_observer<Lattice> {
         }
         const auto& results_path = output_directory_;
         auto save_frame
-            = static_cast<size_t>(time_multiplier_ * time * frame_rate_);
+            = static_cast<std::uint32_t>(time_multiplier_ * time * frame_rate_);
         save_frame
             = frame_rate_ != 0.
                 ? save_frame
-                : static_cast<size_t>(std::ceil(time / parameters.time_step));
+                : static_cast<std::uint32_t>(std::ceil(time / parameters.time_step));
         if (frame_rate_ != 0 && save_frame < current_frame_) {
             return;
         }
@@ -451,7 +451,7 @@ class vtk_observer : public simulation_observer<Lattice> {
     std::future<void> previous_frame_future_;
     size_t current_frame_ = 0;
     size_t approx_save_points_;
-    std::vector<size_t> save_points_;
+    std::vector<std::uint32_t> save_points_;
     bool include_ghost_nodes_;
 };
 

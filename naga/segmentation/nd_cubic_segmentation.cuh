@@ -142,14 +142,14 @@ class partition_iterator {
 
   private:
     const sclx::array<const T, 2>* points_;
-    const size_t* indices_;
+    const std::uint32_t* indices_;
     uint partition_size_;
 
     uint counter_ = 0;
 
     __host__ __device__ partition_iterator(
         const sclx::array<const T, 2>* points,
-        const size_t* indices,
+        const std::uint32_t* indices,
         const uint& partition_size
     )
         : points_(points),
@@ -187,18 +187,18 @@ class partition_t {
 
     __host__ __device__ bool empty() const { return partition_size_ == 0; }
 
-    __host__ __device__ const size_t* indices() const { return indices_; }
+    __host__ __device__ const std::uint32_t* indices() const { return indices_; }
 
     friend class nd_cubic_segmentation<T, Dimensions>;
 
   private:
     const sclx::array<const T, 2>* points_;
-    const size_t* indices_;
+    const std::uint32_t* indices_;
     uint partition_size_;
 
     __host__ __device__ partition_t(
         const sclx::array<const T, 2>* points,
-        const size_t* indices,
+        const std::uint32_t* indices,
         const uint& partition_size
     )
         : points_(points),
@@ -451,9 +451,9 @@ class nd_cubic_segmentation {
 
   private:
     sclx::array<uint, Dimensions> partition_sizes_;
-    sclx::array<size_t, Dimensions> partition_index_offsets_;
+    sclx::array<std::uint32_t, Dimensions> partition_index_offsets_;
     sclx::array<const T, 2> points_;
-    sclx::array<size_t, 1> indices_;
+    sclx::array<std::uint32_t, 1> indices_;
 
     T lower_bounds_[Dimensions];
     T upper_bounds_[Dimensions];

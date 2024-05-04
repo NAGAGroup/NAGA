@@ -59,15 +59,15 @@ __host__ void compute_partition_sizes(
 
 template<uint Dimensions>
 __host__ void compute_index_offsets(
-    sclx::array<size_t, Dimensions>& partition_index_offsets,
+    sclx::array<std::uint32_t, Dimensions>& partition_index_offsets,
     const sclx::array<const uint, Dimensions>& partition_sizes
 );
 
 template<class T, uint Dimensions>
 __host__ void assign_indices(
-    sclx::array<size_t, 1>& partition_index,
+    sclx::array<std::uint32_t, 1>& partition_index,
     const sclx::array<const uint, Dimensions>& partition_sizes_,
-    const sclx::array<const size_t, Dimensions>& partition_index_offsets_,
+    const sclx::array<const std::uint32_t, Dimensions>& partition_index_offsets_,
     const sclx::array<const T, 2>& points_,
     const nd_cubic_segmentation<T, Dimensions>& segmentation
 );

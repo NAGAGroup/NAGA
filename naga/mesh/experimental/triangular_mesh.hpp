@@ -43,15 +43,15 @@ namespace naga::experimental::mesh {
 template<class T>
 class triangular_mesh_t {
   public:
-    using index_t = size_t;
+    using index_t = std::uint32_t;
 
     triangular_mesh_t() = default;
 
     triangular_mesh_t(
         std::vector<T> vertices,
         std::vector<T> normals,
-        std::vector<index_t> faces,
-        std::vector<index_t> face_normals
+        std::vector<std::uint32_t> faces,
+        std::vector<std::uint32_t> face_normals
     )
         : vertices_(std::move(vertices)),
           normals_(std::move(normals)),
@@ -68,8 +68,8 @@ class triangular_mesh_t {
 
         std::vector<T> vertices;
         std::vector<T> normals;
-        std::vector<index_t> faces;
-        std::vector<index_t> face_normals;
+        std::vector<std::uint32_t> faces;
+        std::vector<std::uint32_t> face_normals;
 
         std::string line;
         while (std::getline(file, line)) {
@@ -115,9 +115,9 @@ class triangular_mesh_t {
 
     const std::vector<T>& normals() const { return normals_; }
 
-    const std::vector<index_t>& faces() const { return faces_; }
+    const std::vector<std::uint32_t>& faces() const { return faces_; }
 
-    const std::vector<index_t>& face_normals() const { return face_normals_; }
+    const std::vector<std::uint32_t>& face_normals() const { return face_normals_; }
 
     void flip_normals() {
         std::transform(
@@ -131,8 +131,8 @@ class triangular_mesh_t {
   private:
     std::vector<T> vertices_;
     std::vector<T> normals_;
-    std::vector<index_t> faces_;
-    std::vector<index_t>
+    std::vector<std::uint32_t> faces_;
+    std::vector<std::uint32_t>
         face_normals_;  // (3 x faces) array of indices into normals
 };
 

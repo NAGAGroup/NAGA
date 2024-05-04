@@ -72,7 +72,7 @@ struct hash<naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge> {
         = naga::experimental::fluids::nonlocal_lbm::detail::hashable_edge;
 
     size_t operator()(const hashable_edge& e) const {
-        return std::hash<size_t>()(e.i) ^ std::hash<size_t>()(e.j) << 1;
+        return std::hash<std::uint32_t>()(e.i) ^ std::hash<std::uint32_t>()(e.j) << 1;
     }
 };
 }  // namespace std
@@ -103,7 +103,7 @@ edge_info_t<T> get_edge_info(
     size_t edge_index,
     const std::vector<T>& vertices,
     const std::vector<T>& vertex_normals,
-    const std::vector<size_t>& edges
+    const std::vector<std::uint32_t>& edges
 ) {
     using value_type = T;
     edge_info_t<T> edge_info{};
@@ -152,7 +152,7 @@ void subdivide_edges_and_cache_edge_info(
     T target_length,
     std::vector<T>& vertices,
     std::vector<T>& vertex_normals,
-    std::vector<size_t>& edges,
+    std::vector<std::uint32_t>& edges,
     std::vector<edge_info_t<T>>& input_edge_info
 ) {
     input_edge_info.clear();
@@ -171,7 +171,7 @@ void subdivide_edges_and_cache_edge_info(
             continue;
         }
         size_t num_nodes_to_add
-            = static_cast<size_t>(std::ceil(edge_len2target_len)) - 1;
+            = static_cast<std::uint32_t>(std::ceil(edge_len2target_len)) - 1;
         T actual_length
             = edge_info.length / static_cast<T>(num_nodes_to_add + 1);
 
@@ -301,7 +301,7 @@ std::tuple<T, T> distance_to_edge(
 }
 
 template<class T>
-std::pair<size_t, double> distance_to_boundary(
+std::pair<std::uint32_t, double> distance_to_boundary(
     const naga::point_t<T, 2>& xi,
     const std::vector<edge_info_t<T>>& edge_info
 ) {
@@ -342,10 +342,10 @@ std::vector<point_t<T, 2>> generate_2d_hexagonal_grid(
     }
 
     size_t approx_grid_size[2]{
-        static_cast<size_t>(std::ceil(
+        static_cast<std::uint32_t>(std::ceil(
             (upper_bound[0] - lower_bound[0]) / approx_point_spacing + 1
         )),
-        static_cast<size_t>(std::ceil(
+        static_cast<std::uint32_t>(std::ceil(
             (upper_bound[1] - lower_bound[1]) / approx_point_spacing + 1
         ))
     };
@@ -398,13 +398,13 @@ std::vector<point_t<T, 2>> generate_2d_hexagonal_grid(
 }
 
 template<class T>
-std::vector<std::pair<size_t, T>> remove_points_outside_2d_contours(
+std::vector<std::pair<std::uint32_t, T>> remove_points_outside_2d_contours(
     std::vector<point_t<T, 2>>& potential_bulk_points,
     const T& approx_point_spacing,
     const std::vector<edge_info_t<T>>& boundary_edge_info,
     T min_bound_dist_scale = min_bound_dist_scale_2d
 ) {
-    std::vector<std::pair<size_t, T>> distances_to_edges(
+    std::vector<std::pair<std::uint32_t, T>> distances_to_edges(
         potential_bulk_points.size()
     );
     std::transform(
@@ -437,7 +437,7 @@ std::vector<std::pair<size_t, T>> remove_points_outside_2d_contours(
         potential_bulk_points.end(),
         [&](const auto& p) {
             const auto get_index = [&]() {
-                return static_cast<size_t>(&p - &potential_bulk_points[0]);
+                return static_cast<std::uint32_t>(&p - &potential_bulk_points[0]);
             };
             return valid_bulk_points[get_index()];
         }
@@ -449,7 +449,7 @@ std::vector<std::pair<size_t, T>> remove_points_outside_2d_contours(
         distances_to_edges.end(),
         [&](const auto& d) {
             const auto get_index = [&]() {
-                return static_cast<size_t>(&d - &distances_to_edges[0]);
+                return static_cast<std::uint32_t>(&d - &distances_to_edges[0]);
             };
             return valid_bulk_points[get_index()];
         }
@@ -464,7 +464,7 @@ class conforming_point_cloud_impl_t<T, 2> {
   public:
     using point_t  = naga::point_t<T, 2>;
     using normal_t = point_t;
-    using index_t  = size_t;
+    using index_t  = std::uint32_t;
 
     using closed_contour_t =
         typename conforming_point_cloud_t<T, 2>::input_domain_data_t;
@@ -477,7 +477,7 @@ class conforming_point_cloud_impl_t<T, 2> {
         std::vector<closed_contour_t> immersed_boundary_contours;
         std::vector<T> boundary_vertices;
         std::vector<T> boundary_normals;
-        std::vector<size_t> boundary_edges;
+        std::vector<std::uint32_t> boundary_edges;
         for (auto& im_obj_file : immersed_boundaries) {
             immersed_boundary_contours.emplace_back(
                 closed_contour_t::import(im_obj_file)
@@ -560,7 +560,7 @@ class conforming_point_cloud_impl_t<T, 2> {
             points.begin() + num_bulk,
             [&](const auto& p) {
                 const auto get_index = [&]() {
-                    return static_cast<size_t>(&p - &points[num_bulk]);
+                    return static_cast<std::uint32_t>(&p - &points[num_bulk]);
                 };
                 return naga::point_t<T, 2>{
                     {boundary_vertices[get_index() * 2 + 0],
@@ -574,7 +574,7 @@ class conforming_point_cloud_impl_t<T, 2> {
             normals.begin(),
             [&](const auto& n) {
                 const auto get_index
-                    = [&]() { return static_cast<size_t>(&n - &normals[0]); };
+                    = [&]() { return static_cast<std::uint32_t>(&n - &normals[0]); };
                 return naga::point_t<T, 2>{
                     {boundary_normals[get_index() * 2 + 0],
                      boundary_normals[get_index() * 2 + 1]}
@@ -816,7 +816,7 @@ struct std::hash<naga::experimental::fluids::nonlocal_lbm::detail::edge_t> {
         = naga::experimental::fluids::nonlocal_lbm::detail::edge_t;
 
     auto operator()(const argument_type& edge) const noexcept -> size_t {
-        return std::hash<size_t>()(edge.i) ^ std::hash<size_t>()(edge.j);
+        return std::hash<std::uint32_t>()(edge.i) ^ std::hash<std::uint32_t>()(edge.j);
     }
 };
 
@@ -826,9 +826,9 @@ template<class T>
 struct manifold_mesh_t {
     using value_type = T;
 
-    static constexpr auto no_face   = std::numeric_limits<size_t>::max();
-    static constexpr auto no_edge   = std::numeric_limits<size_t>::max();
-    static constexpr auto no_vertex = std::numeric_limits<size_t>::max();
+    static constexpr auto no_face   = std::numeric_limits<std::uint32_t>::max();
+    static constexpr auto no_edge   = std::numeric_limits<std::uint32_t>::max();
+    static constexpr auto no_vertex = std::numeric_limits<std::uint32_t>::max();
 
     using edge_t       = detail::edge_t;
     using edge_count_t = int;
@@ -865,13 +865,13 @@ struct manifold_mesh_t {
         }
 
         spinlock lock;
-        std::vector<size_t> face_vertex_indices;
-        std::vector<size_t> face_normal_indices;
-        std::unordered_map<edge_t, std::vector<size_t>> edge_opposite_vertices;
-        std::unordered_map<edge_t, std::vector<size_t>> edge_face_neighbors;
-        std::unordered_map<size_t, std::vector<size_t>> vertex_face_neighbors;
-        std::unordered_map<size_t, std::vector<size_t>> vertex_opposite_edges;
-        std::unordered_map<size_t, std::vector<size_t>> vertex_edge_neighbors;
+        std::vector<std::uint32_t> face_vertex_indices;
+        std::vector<std::uint32_t> face_normal_indices;
+        std::unordered_map<edge_t, std::vector<std::uint32_t>> edge_opposite_vertices;
+        std::unordered_map<edge_t, std::vector<std::uint32_t>> edge_face_neighbors;
+        std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> vertex_face_neighbors;
+        std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> vertex_opposite_edges;
+        std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> vertex_edge_neighbors;
         std::unordered_map<edge_t, edge_count_t> edge_counts;
         size_t total_face_count = 0;
         size_t total_vertex_count;
@@ -924,11 +924,11 @@ struct manifold_mesh_t {
                     for (size_t i = 0; i < 3; ++i) {
                         // face data
                         face_vertex_indices[global_f * 3 + i]
-                            = static_cast<size_t>(
+                            = static_cast<std::uint32_t>(
                                 shape.mesh.indices[f * 3 + i].vertex_index
                             );
                         if (i == 0) {
-                            face_normal_indices[global_f] = static_cast<size_t>(
+                            face_normal_indices[global_f] = static_cast<std::uint32_t>(
                                 shape.mesh.indices[f * 3 + i].normal_index
                             );
                         }
@@ -939,10 +939,10 @@ struct manifold_mesh_t {
                         {
                             std::lock_guard<spinlock> guard(lock);
                             edge_t edge{
-                                static_cast<size_t>(
+                                static_cast<std::uint32_t>(
                                     shape.mesh.indices[f * 3 + i].vertex_index
                                 ),
-                                static_cast<size_t>(
+                                static_cast<std::uint32_t>(
                                     shape.mesh.indices[f * 3 + (i + 1) % 3]
                                         .vertex_index
                                 )
@@ -964,7 +964,7 @@ struct manifold_mesh_t {
                             edge_face_neighbors[edge].push_back(global_f);
 
                             auto edge_it = edge_counts.find({edge.i, edge.j});
-                            edge_idx     = static_cast<size_t>(
+                            edge_idx     = static_cast<std::uint32_t>(
                                 std::distance(edge_counts.begin(), edge_it)
                             );
                         }
@@ -999,7 +999,7 @@ struct manifold_mesh_t {
         auto num_unique_edges = edge_counts.size();
 
         mesh.triangle_vert_indices
-            = sclx::array<size_t, 2>{3, total_face_count};
+            = sclx::array<std::uint32_t, 2>{3, total_face_count};
         std::copy(
             face_vertex_indices.begin(),
             face_vertex_indices.end(),
@@ -1007,24 +1007,24 @@ struct manifold_mesh_t {
         );
         face_vertex_indices.clear();
         face_vertex_indices.shrink_to_fit();
-        mesh.triangle_normal_indices = sclx::array<size_t, 1>{total_face_count};
+        mesh.triangle_normal_indices = sclx::array<std::uint32_t, 1>{total_face_count};
         std::copy(
             face_normal_indices.begin(),
             face_normal_indices.end(),
             &mesh.triangle_normal_indices(0)
         );
 
-        mesh.unique_edges = sclx::array<size_t, 2>{2, num_unique_edges};
+        mesh.unique_edges = sclx::array<std::uint32_t, 2>{2, num_unique_edges};
         mesh.double_edges = sclx::array<bool, 1>{num_unique_edges};
         sclx::fill(mesh.double_edges, false);
         mesh.edge_opposite_vertices
-            = sclx::array<size_t, 2>{2, num_unique_edges};
+            = sclx::array<std::uint32_t, 2>{2, num_unique_edges};
         sclx::fill(mesh.edge_opposite_vertices, no_vertex);
-        mesh.edge_face_neighbors = sclx::array<size_t, 2>{2, num_unique_edges};
+        mesh.edge_face_neighbors = sclx::array<std::uint32_t, 2>{2, num_unique_edges};
         sclx::fill(mesh.edge_face_neighbors, no_face);
         for (const auto& [edge, count] : edge_counts) {
             auto edge_it  = edge_counts.find(edge);
-            auto edge_idx = static_cast<size_t>(
+            auto edge_idx = static_cast<std::uint32_t>(
                 std::distance(edge_counts.begin(), edge_it)
             );
             if (count == 2) {
@@ -1058,17 +1058,17 @@ struct manifold_mesh_t {
         edge_face_neighbors.clear();
         edge_face_neighbors.rehash(0);
 
-        mesh.vertex_face_neighbors = sclx::array<size_t, 2>{
+        mesh.vertex_face_neighbors = sclx::array<std::uint32_t, 2>{
             max_vertex_face_neighbors,
             total_vertex_count
         };
         sclx::fill(mesh.vertex_face_neighbors, no_face);
-        mesh.vertex_edge_neighbors = sclx::array<size_t, 2>{
+        mesh.vertex_edge_neighbors = sclx::array<std::uint32_t, 2>{
             max_vertex_edge_neighbors,
             total_vertex_count
         };
         sclx::fill(mesh.vertex_edge_neighbors, no_edge);
-        mesh.vertex_opposite_edges = sclx::array<size_t, 2>{
+        mesh.vertex_opposite_edges = sclx::array<std::uint32_t, 2>{
             max_vertex_face_neighbors,
             total_vertex_count
         };
@@ -1121,15 +1121,15 @@ struct manifold_mesh_t {
 
     sclx::array<value_type, 2> vertices;
     sclx::array<value_type, 2> normals;
-    sclx::array<size_t, 2> triangle_vert_indices;
-    sclx::array<size_t, 1> triangle_normal_indices;
-    sclx::array<size_t, 2> unique_edges;
+    sclx::array<std::uint32_t, 2> triangle_vert_indices;
+    sclx::array<std::uint32_t, 1> triangle_normal_indices;
+    sclx::array<std::uint32_t, 2> unique_edges;
     sclx::array<bool, 1> double_edges;
-    sclx::array<size_t, 2> vertex_face_neighbors;
-    sclx::array<size_t, 2> vertex_opposite_edges;
-    sclx::array<size_t, 2> vertex_edge_neighbors;
-    sclx::array<size_t, 2> edge_opposite_vertices;
-    sclx::array<size_t, 2> edge_face_neighbors;
+    sclx::array<std::uint32_t, 2> vertex_face_neighbors;
+    sclx::array<std::uint32_t, 2> vertex_opposite_edges;
+    sclx::array<std::uint32_t, 2> vertex_edge_neighbors;
+    sclx::array<std::uint32_t, 2> edge_opposite_vertices;
+    sclx::array<std::uint32_t, 2> edge_face_neighbors;
 
     naga::point_t<value_type, 3> lower_bound;
     naga::point_t<value_type, 3> upper_bound;
@@ -1184,7 +1184,7 @@ get_sdf_to_points(sclx::array<T, 2> points, const sdf_metadata& surface) {
         );
         results[i]
             = {static_cast<T>(-result.distance),
-               static_cast<size_t>(result.triangle_id)};
+               static_cast<std::uint32_t>(result.triangle_id)};
     }
     return results;
 }
@@ -1316,7 +1316,7 @@ fill_face_with_nodes(
     point2_t v2_normal2d{{edge_vert_normals2d[2], edge_vert_normals2d[3]}};
     point2_t v3_normal2d{{edge_vert_normals2d[4], edge_vert_normals2d[5]}};
 
-    using index_t = size_t;
+    using index_t = std::uint32_t;
     std::vector<index_t> edge1{0, 1};
     std::vector<index_t> edge2{1, 2};
     std::vector<index_t> edge3{2, 0};
@@ -1643,12 +1643,12 @@ void fill_surface_with_nodes(
     std::atomic<uint> processed_edges_size{0};
 
     unsigned int processed_edge_cleanup_interval = max_threads * 10;
-    std::vector<std::vector<size_t>> indices_to_erase(max_threads);
+    std::vector<std::vector<std::uint32_t>> indices_to_erase(max_threads);
 
     std::vector<std::vector<point_t>> points_to_insert(max_threads);
     std::vector<std::vector<point_t>> normals_to_insert(max_threads);
 
-    std::vector<std::future<size_t>> futures;
+    std::vector<std::future<std::uint32_t>> futures;
 
     for (size_t f = 0; f < boundary_mesh.faces().size() / 3; f++) {
         if (futures.size() == max_threads) {
@@ -1674,7 +1674,7 @@ void fill_surface_with_nodes(
             }
         }
 
-        std::promise<size_t> fill_promise;
+        std::promise<std::uint32_t> fill_promise;
         auto fill_fut = fill_promise.get_future();
 
         std::thread([&, f, fill_promise = std::move(fill_promise)]() mutable {
@@ -1867,7 +1867,7 @@ class conforming_point_cloud_impl_t<T, 3> {
   public:
     using point_t  = naga::point_t<T, 3>;
     using normal_t = point_t;
-    using index_t  = size_t;
+    using index_t  = std::uint32_t;
 
     using triangular_mesh_t =
         typename conforming_point_cloud_t<T, 3>::input_domain_data_t;
@@ -2005,20 +2005,20 @@ class conforming_point_cloud_impl_t<T, 3> {
                 -= min_bound_dist_scaled_ghost_node_3d * nodal_spacing;
         }
         size_t approx_grid_size[3]{
-            static_cast<size_t>(
+            static_cast<std::uint32_t>(
                 std::ceil((upper_bound[0] - lower_bound[0]) / nodal_spacing)
             ),
-            static_cast<size_t>(
+            static_cast<std::uint32_t>(
                 std::ceil((upper_bound[1] - lower_bound[1]) / nodal_spacing)
             ),
-            static_cast<size_t>(
+            static_cast<std::uint32_t>(
                 std::ceil((upper_bound[2] - lower_bound[2]) / nodal_spacing)
             )
         };
 
         sclx::array<T, 2> domain_points;
         sclx::array<T, 1> bulk_to_boundary_distances_arr;
-        sclx::array<size_t, 1> closest_boundary_to_bulk_arr;
+        sclx::array<std::uint32_t, 1> closest_boundary_to_bulk_arr;
         sclx::array<bool, 1> boundary_points_mask;
         sclx::array<T, 2> closest_face_normals_arr;
         {
@@ -2053,7 +2053,7 @@ class conforming_point_cloud_impl_t<T, 3> {
 
             std::vector<sdf_result<T>> sdf_results;
             std::vector<naga::point_t<T, 3>> closest_face_normals;
-            std::vector<size_t> closest_boundary_to_bulk;
+            std::vector<std::uint32_t> closest_boundary_to_bulk;
             {
                 sdf_results
                     = get_sdf_to_points<T>(potential_domain_points, domain_sdf);
@@ -2112,10 +2112,10 @@ class conforming_point_cloud_impl_t<T, 3> {
                             );
 
                             if (sdf_new.distance >= sdf_old.distance) {
-                                return closest_boundary_to_bulk[idx];
+                                return static_cast<std::uint32_t>(closest_boundary_to_bulk[idx]);
                             }
 
-                            return boundary_idx;
+                            return static_cast<std::uint32_t>(boundary_idx);
                         }
                     );
                     std::transform(
@@ -2173,7 +2173,7 @@ class conforming_point_cloud_impl_t<T, 3> {
             bulk_to_boundary_distances_arr
                 = sclx::array<T, 1>{num_valid_points};
             closest_boundary_to_bulk_arr
-                = sclx::array<size_t, 1>{num_valid_points};
+                = sclx::array<std::uint32_t, 1>{num_valid_points};
             boundary_points_mask     = sclx::array<bool, 1>{num_valid_points};
             closest_face_normals_arr = sclx::array<T, 2>{3, num_valid_points};
             size_t n_added           = 0;

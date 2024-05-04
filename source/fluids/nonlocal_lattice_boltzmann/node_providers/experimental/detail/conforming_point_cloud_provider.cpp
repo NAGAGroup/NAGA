@@ -442,7 +442,7 @@ class conforming_point_cloud_impl_t<T, 2> {
   public:
     using point_t  = naga::point_t<T, 2>;
     using normal_t = point_t;
-    using index_t  = size_t;
+    using index_t  = std::uint32_t;
 
     using closed_contour_t = typename conforming_point_cloud_t<T, 2>::input_domain_data_t;
 
@@ -889,7 +889,7 @@ fill_face_with_nodes(
     point2_t v2_normal2d{{edge_vert_normals2d[2], edge_vert_normals2d[3]}};
     point2_t v3_normal2d{{edge_vert_normals2d[4], edge_vert_normals2d[5]}};
 
-    using index_t = size_t;
+    using index_t = std::uint32_t;
     std::vector<index_t> edge1{0, 1};
     std::vector<index_t> edge2{1, 2};
     std::vector<index_t> edge3{2, 0};
@@ -1365,7 +1365,7 @@ class conforming_point_cloud_impl_t<T, 3> {
   public:
     using point_t  = naga::point_t<T, 3>;
     using normal_t = point_t;
-    using index_t  = size_t;
+    using index_t  = std::uint32_t;
 
     using triangular_mesh_t = typename conforming_point_cloud_t<T, 3>::input_domain_data_t;
 

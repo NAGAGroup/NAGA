@@ -167,7 +167,7 @@ class uniform_grid_provider : public node_provider<Lattice> {
     value_type peak_absorption_rate_;
 
     __host__ size_t count_boundary_points() const {
-        sclx::array<size_t, 1> iota_range{grid_range_.size()};
+        sclx::array<std::uint32_t, 1> iota_range{grid_range_.size()};
         sclx::iota(iota_range, 0);
         return sclx::algorithm::count_if(
             iota_range,

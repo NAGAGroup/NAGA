@@ -92,7 +92,7 @@ size_t get_scratchpad_size_per_group(
 template<class T, class PointMapType, class ShapeFunctionType>
 static sclx::array<T, 2> compute_weights(
     const sclx::array<const T, 2>& source_points,
-    const sclx::array<const size_t, 2>& interpolating_indices,
+    const sclx::array<const std::uint32_t, 2>& interpolating_indices,
     const PointMapType& query_points,
     const T& approx_particle_spacing,
     uint group_size                         = 1,

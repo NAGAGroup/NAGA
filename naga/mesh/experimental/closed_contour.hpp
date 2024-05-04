@@ -115,9 +115,9 @@ std::vector<T> calc_edge_normal_of_face(
 
 template<class T>
 void populate_contour_data(
-    const std::vector<size_t>& mesh_edges,
+    const std::vector<std::uint32_t>& mesh_edges,
     const std::vector<T>& mesh_edge_normals,
-    std::vector<size_t>& contour_edges,
+    std::vector<std::uint32_t>& contour_edges,
     std::vector<T>& contour_vertices,
     std::vector<T>& contour_vertex_normals,
     const triangular_mesh_t<T>& mesh,
@@ -131,7 +131,7 @@ void populate_contour_data(
     contour_vertex_normals.reserve(mesh.vertices().size() / 3 * 2);
 
     // get unique vertex ids from mesh edges
-    std::vector<size_t> unique_vertex_ids(mesh_edges.begin(), mesh_edges.end());
+    std::vector<std::uint32_t> unique_vertex_ids(mesh_edges.begin(), mesh_edges.end());
     std::sort(unique_vertex_ids.begin(), unique_vertex_ids.end());
     auto last = std::unique(unique_vertex_ids.begin(), unique_vertex_ids.end());
     unique_vertex_ids.erase(last, unique_vertex_ids.end());
@@ -219,12 +219,12 @@ void populate_contour_data(
 template<class T>
 class closed_contour_t {
   public:
-    using index_t = size_t;
+    using index_t = std::uint32_t;
 
     closed_contour_t(
         std::vector<T> vertices,
         std::vector<T> vertex_normals,
-        std::vector<index_t> edges,
+        std::vector<std::uint32_t> edges,
         point_t<T, 2> lower_bound,
         point_t<T, 2> upper_bound
     )
@@ -241,7 +241,7 @@ class closed_contour_t {
     ) {
         auto mesh = triangular_mesh_t<T>::import(path);
 
-        std::vector<index_t> mesh_edges;
+        std::vector<std::uint32_t> mesh_edges;
         std::vector<T> mesh_edge_normals;
 
         for (index_t face = 0; face < mesh.faces().size(); face += 3) {
@@ -258,7 +258,7 @@ class closed_contour_t {
             }
         }
 
-        std::vector<index_t> contour_edges;
+        std::vector<std::uint32_t> contour_edges;
         std::vector<T> contour_vertices;
         std::vector<T> contour_vertex_normals;
 
@@ -299,7 +299,7 @@ class closed_contour_t {
 
     const std::vector<T>& vertex_normals() const { return vertex_normals_; }
 
-    const std::vector<index_t>& edges() const { return edges_; }
+    const std::vector<std::uint32_t>& edges() const { return edges_; }
 
     const point_t<T, 2>& lower_bound() const { return lower_bound_; }
 
@@ -308,7 +308,7 @@ class closed_contour_t {
   private:
     std::vector<T> vertices_;
     std::vector<T> vertex_normals_;
-    std::vector<index_t> edges_;
+    std::vector<std::uint32_t> edges_;
     point_t<T, 2> lower_bound_;
     point_t<T, 2> upper_bound_;
 };

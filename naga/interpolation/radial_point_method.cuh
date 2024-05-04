@@ -120,7 +120,7 @@ class radial_point_method {
         class ShapeFunctionType = default_shape_function<PointMapType>>
     static sclx::array<T, 2> compute_weights(
         sclx::array<const T, 2> source_points,
-        sclx::array<const size_t, 2> interpolating_indices,
+        sclx::array<const std::uint32_t, 2> interpolating_indices,
         const PointMapType& query_points,
         const T& approx_particle_spacing,
         uint group_size                         = 1,
@@ -143,7 +143,7 @@ class radial_point_method {
         class ShapeFunctionType = default_shape_function<PointMapType>>
     static radial_point_method<T> create_interpolator(
         sclx::array<const T, 2> source_points,
-        sclx::array<size_t, 2> interpolating_indices,
+        sclx::array<std::uint32_t, 2> interpolating_indices,
         const PointMapType& query_points,
         const T& approx_particle_spacing,
         uint group_size                         = 1,
@@ -324,7 +324,7 @@ class radial_point_method {
     void load(Archive& ar) {
         ar(group_size_, source_points_size_);
         sclx::deserialize_array(ar, weights_);
-        sclx::array<size_t, 2> indices;
+        sclx::array<std::uint32_t, 2> indices;
         sclx::deserialize_array(ar, indices);
         indices_ = indices;
     }
@@ -338,7 +338,7 @@ class radial_point_method {
     uint group_size_{};
     size_t source_points_size_{};
     sclx::array<T, 2> weights_{};
-    sclx::array<size_t, 2> indices_{};
+    sclx::array<std::uint32_t, 2> indices_{};
 
     using matrix_type
         = naga::linalg::matrix<T, naga::linalg::storage_type::sparse_csr>;

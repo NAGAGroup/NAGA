@@ -101,7 +101,7 @@ __host__ void batched_nearest_neighbors(
         std::decay_t<
             typename point_map_traits<PointMapType>::point_traits::value_type>,
         2>& distances_squared,
-    sclx::array<sclx::index_t, 2>& indices,
+    sclx::array<std::uint32_t, 2>& indices,
     const PointMapType& query_points,
     const knn::nd_cubic_segmentation<PointMapType>& segmented_ref_points,
     DistanceSquaredOp&& distance_squared_op = DistanceSquaredOp()
@@ -134,7 +134,7 @@ __host__ void batched_nearest_neighbors(
     sclx::cuda::set_device(current_device);
 
     uint shared_mem_per_thread
-        = sizeof(value_type) * (k + dimensions) + sizeof(sclx::index_t) * k;
+        = sizeof(value_type) * (k + dimensions) + sizeof(std::uint32_t) * k;
     uint max_threads_per_block
         = max_shared_mem_per_block / shared_mem_per_thread;
     for (int d = 0; d < device_count; ++d) {
@@ -184,7 +184,7 @@ __host__ void batched_nearest_neighbors(
             handler,
             {k, max_threads_per_block}
         );
-        sclx::local_array<sclx::index_t, 2> indices_shared(
+        sclx::local_array<std::uint32_t, 2> indices_shared(
             handler,
             {k, max_threads_per_block}
         );
@@ -202,7 +202,7 @@ __host__ void batched_nearest_neighbors(
             ) mutable {
                 value_type* distances_squared_tmp
                     = &distances_squared_shared(0, info.local_thread_id()[0]);
-                sclx::index_t* indices_tmp
+                std::uint32_t* indices_tmp
                     = &indices_shared(0, info.local_thread_id()[0]);
                 value_type* query_point
                     = &query_point_shared(0, info.local_thread_id()[0]);
@@ -232,11 +232,11 @@ __host__ void batched_nearest_neighbors(
                 bool new_points_found = true;
                 int search_index_list[dimensions]{};
 
-                constexpr size_t small_prime_numbers[]
+                constexpr std::uint32_t small_prime_numbers[]
                     = {5, 7, 11, 13, 17, 19, 23, 29};
-                constexpr size_t medium_prime_numbers[]
+                constexpr std::uint32_t medium_prime_numbers[]
                     = {103, 409, 953, 1201, 1297, 1373, 1423, 4603};
-                constexpr size_t large_prime_numbers[]
+                constexpr std::uint32_t large_prime_numbers[]
                     = {5011969,
                        10003001,
                        10024939,
@@ -245,16 +245,6 @@ __host__ void batched_nearest_neighbors(
                        98044279,
                        100010203,
                        150009593};
-
-                constexpr size_t very_large_prime_numbers[]
-                    = {100000012901,
-                       500000013497,
-                       500000015443,
-                       589000027487,
-                       589000031327,
-                       789000023843,
-                       789000030839,
-                       789000032603};
                 //                constexpr size_t prime_numbers[]
                 //                    = {5,
                 //                       7,
@@ -289,7 +279,7 @@ __host__ void batched_nearest_neighbors(
                 //                       789000030839,
                 //                       789000032603};
                 int num_primes
-                    = sizeof(small_prime_numbers) / sizeof(size_t) - 1;
+                    = sizeof(small_prime_numbers) / sizeof(std::uint32_t) - 1;
                 thrust::default_random_engine rng(idx[0]);
                 thrust::uniform_int_distribution<int> dist(0, num_primes);
                 while ((new_points_found || n_found < k)
@@ -305,15 +295,13 @@ __host__ void batched_nearest_neighbors(
                     max_linear_search_idx
                         = search_length == 1 ? 1 : max_linear_search_idx;
 
-                    const size_t* prime_numbers;
+                    const std::uint32_t* prime_numbers;
                     if (max_linear_search_idx < small_prime_numbers[0]) {
                         prime_numbers = small_prime_numbers;
                     } else if (max_linear_search_idx < medium_prime_numbers[0]) {
                         prime_numbers = medium_prime_numbers;
-                    } else if (max_linear_search_idx < large_prime_numbers[0]) {
-                        prime_numbers = large_prime_numbers;
                     } else {
-                        prime_numbers = very_large_prime_numbers;
+                        prime_numbers = large_prime_numbers;
                     }
 
                     size_t prime_number = prime_numbers[dist(rng)];
@@ -445,7 +433,7 @@ __host__ void batched_nearest_neighbors(
                 memcpy(
                     &indices(0, idx[0]),
                     indices_tmp,
-                    k * sizeof(sclx::index_t)
+                    k * sizeof(std::uint32_t)
                 );
             },
             sclx::md_range_t<1>{max_threads_per_block}
@@ -462,7 +450,7 @@ std::tuple<
         std::remove_const_t<
             typename point_map_traits<PointMapType>::point_traits::value_type>,
         2>,
-    sclx::array<sclx::index_t, 2>>
+    sclx::array<std::uint32_t, 2>>
 batched_nearest_neighbors(
     uint k,
     const PointMapType& query_points,
@@ -474,7 +462,7 @@ batched_nearest_neighbors(
         typename point_map_traits<PointMapType>::point_traits::value_type>;
 
     sclx::array<value_type, 2> distances_squared{k, query_points.size()};
-    sclx::array<sclx::index_t, 2> indices{k, query_points.size()};
+    sclx::array<std::uint32_t, 2> indices{k, query_points.size()};
 
     batched_nearest_neighbors(
         k,

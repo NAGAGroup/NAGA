@@ -120,12 +120,12 @@ __host__ void compute_partition_sizes(
 
 template<uint Dimensions>
 __host__ void compute_index_offsets(
-    sclx::array<size_t, Dimensions>& partition_index_offsets,
+    sclx::array<std::uint32_t, Dimensions>& partition_index_offsets,
     const sclx::array<const uint, Dimensions>& partition_sizes
 ) {
     partition_index_offsets
-        = sclx::array<size_t, Dimensions>(partition_sizes.shape());
-    sclx::array<size_t, Dimensions> part_sizes_scan_result(
+        = sclx::array<std::uint32_t, Dimensions>(partition_sizes.shape());
+    sclx::array<std::uint32_t, Dimensions> part_sizes_scan_result(
         partition_sizes.shape()
     );
     sclx::algorithm::inclusive_scan(
@@ -156,13 +156,13 @@ __host__ void compute_index_offsets(
 
 template<class T, uint Dimensions>
 __host__ void assign_indices(
-    sclx::array<size_t, 1>& indices_,
+    sclx::array<std::uint32_t, 1>& indices_,
     const sclx::array<const uint, Dimensions>& partition_sizes_,
-    const sclx::array<const size_t, Dimensions>& partition_index_offsets_,
+    const sclx::array<const std::uint32_t, Dimensions>& partition_index_offsets_,
     const sclx::array<const T, 2>& points_,
     const nd_cubic_segmentation<T, Dimensions>& segmentation
 ) {
-    indices_ = sclx::array<size_t, 1>{points_.shape()[1]};
+    indices_ = sclx::array<std::uint32_t, 1>{points_.shape()[1]};
 
     std::vector<std::tuple<int, size_t, size_t>> indices_device_split;
     auto offset_device_split
@@ -206,7 +206,7 @@ __host__ void assign_indices(
     sclx::array<uint, Dimensions> indices_assigned(segmentation.shape());
     sclx::fill(indices_assigned, uint{0});
 
-    sclx::array<size_t*, Dimensions> indices_container(segmentation.shape());
+    sclx::array<std::uint32_t*, Dimensions> indices_container(segmentation.shape());
     sclx::execute_kernel([&](sclx::kernel_handler& handler) {
         auto index_start_ptr = &indices_[0];
         handler.launch(

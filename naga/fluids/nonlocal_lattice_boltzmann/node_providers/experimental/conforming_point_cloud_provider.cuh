@@ -98,9 +98,9 @@ T get_distance_to_contour(
     const T* p_new,
     const std::vector<U>& vertices,
     const std::vector<U>& vertex_normals,
-    const std::vector<size_t>& edges
+    const std::vector<std::uint32_t>& edges
 ) {
-    std::vector<size_t> edge = {edges[0], edges[1]};
+    std::vector<std::uint32_t> edge = {edges[0], edges[1]};
     auto min_distance        = distance_to_edge<T>(
         p_new,
         {vertices[2 * edge[0]], vertices[2 * edge[0] + 1]},

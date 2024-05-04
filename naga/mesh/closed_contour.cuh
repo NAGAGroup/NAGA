@@ -108,9 +108,9 @@ std::vector<FPType> calc_edge_normal_of_face(
 
 template<class FPType>
 void populate_contour_data(
-    const std::vector<size_t>& mesh_edges,
+    const std::vector<std::uint32_t>& mesh_edges,
     const std::vector<FPType>& mesh_edge_normals,
-    std::vector<size_t>& contour_edges,
+    std::vector<std::uint32_t>& contour_edges,
     std::vector<FPType>& contour_vertices,
     std::vector<FPType>& contour_vertex_normals,
     const triangular_mesh_t<FPType>& mesh,
@@ -124,7 +124,7 @@ void populate_contour_data(
     contour_vertex_normals.reserve(mesh.vertices.shape()[1] * 2);
 
     // get unique vertex ids from mesh edges
-    std::vector<size_t> unique_vertex_ids(mesh_edges.begin(), mesh_edges.end());
+    std::vector<std::uint32_t> unique_vertex_ids(mesh_edges.begin(), mesh_edges.end());
     std::sort(unique_vertex_ids.begin(), unique_vertex_ids.end());
     auto last = std::unique(unique_vertex_ids.begin(), unique_vertex_ids.end());
     unique_vertex_ids.erase(last, unique_vertex_ids.end());
@@ -213,7 +213,7 @@ template<class FPType>
 struct closed_contour_t {
     sclx::array<FPType, 2> vertices;
     sclx::array<FPType, 2> vertex_normals;
-    sclx::array<size_t, 2> edges;
+    sclx::array<std::uint32_t, 2> edges;
 
     static closed_contour_t import(
         const sclx::filesystem::path& path,
@@ -222,7 +222,7 @@ struct closed_contour_t {
     ) {
         auto mesh = triangular_mesh_t<FPType>::import(path);
 
-        std::vector<size_t> mesh_edges;
+        std::vector<std::uint32_t> mesh_edges;
         std::vector<FPType> mesh_edge_normals;
 
         for (size_t face = 0; face < mesh.faces.shape()[1]; face++) {
@@ -263,7 +263,7 @@ struct closed_contour_t {
                 sclx::shape_t<2>{2, contour_vertex_normals.size() / 2},
                 contour_vertex_normals.data()
             ),
-            sclx::array<size_t, 2>(
+            sclx::array<std::uint32_t, 2>(
                 sclx::shape_t<2>{2, contour_edges.size() / 2},
                 contour_edges.data()
             )};

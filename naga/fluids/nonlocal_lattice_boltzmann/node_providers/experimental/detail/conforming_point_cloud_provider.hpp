@@ -77,7 +77,7 @@ class conforming_point_cloud_t<T, 2> {
     using value_type = T;
     using point_t  = ::naga::point_t<value_type, 2>;
     using normal_t = point_t;
-    using index_t  = size_t;
+    using index_t  = std::uint32_t;
 
     conforming_point_cloud_t() = default;
 
@@ -137,7 +137,7 @@ class conforming_point_cloud_t<T, 3> {
     using value_type                 = T;
     using point_t                    = ::naga::point_t<value_type, dimensions>;
     using normal_t                   = point_t;
-    using index_t                    = size_t;
+    using index_t                    = std::uint32_t;
 
     conforming_point_cloud_t() = default;
 
@@ -158,7 +158,7 @@ class conforming_point_cloud_t<T, 3> {
 
     const std::vector<normal_t>& boundary_normals() const;
 
-    const std::vector<index_t>& closest_boundary_to_bulk() const;
+    const std::vector<std::uint32_t>& closest_boundary_to_bulk() const;
 
     const std::vector<point_t>& ghost_points() const;
 

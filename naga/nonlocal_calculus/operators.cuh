@@ -64,7 +64,7 @@ class operator_builder {
                                        * detail::num_interp_support * sizeof(T);
         size_t interaction_radii_size = domain_size * sizeof(T);
         size_t indices_size
-            = domain_size * detail::num_interp_support * sizeof(size_t);
+            = domain_size * detail::num_interp_support * sizeof(std::uint32_t);
 
         return interpolating_weights_scratchpad_size + quadrature_weights_size
              + interaction_radii_size + indices_size;
@@ -139,7 +139,7 @@ class operator_builder {
         quadrature_interpolating_weights_ = sclx::array<T, 2>{};
         domain_                           = sclx::array<T, 2>{};
         query_points_                     = sclx::array<T, 2>{};
-        support_indices_                  = sclx::array<sclx::index_t, 2>{};
+        support_indices_                  = sclx::array<std::uint32_t, 2>{};
         interaction_radii_                = sclx::array<T, 2>{};
     }
 
@@ -160,7 +160,7 @@ class operator_builder {
   private:
     sclx::array<T, 2> domain_;
     sclx::array<T, 2> query_points_;
-    sclx::array<sclx::index_t, 2> support_indices_;
+    sclx::array<std::uint32_t, 2> support_indices_;
     sclx::array<T, 2> quadrature_interpolating_weights_;
     sclx::array<T, 1> interaction_radii_;
 };

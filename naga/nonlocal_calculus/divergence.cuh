@@ -59,7 +59,8 @@ class divergence_operator {
         // devices have the same amount of memory
         //
         // it could work with different amounts of memory, but it's untested
-        override_query_size = override_query_size == 0 ? query_points.shape()[1] : override_query_size;
+        override_query_size = override_query_size == 0 ? query_points.shape()[1]
+                                                       : override_query_size;
         if (override_query_size < query_points.shape()[1]) {
             sclx::throw_exception<std::invalid_argument>(
                 "override_query_size must be at least as large as the number "
@@ -70,16 +71,16 @@ class divergence_operator {
 
         divergence_operator result;
 
-        auto total_weights = sclx::zeros<T, 3>({
-            Dimensions,
-            detail::num_interp_support,
-            override_query_size});
-        result.weights_ = total_weights.get_range({0}, {query_points.shape()[1]});
-        auto total_support_indices = sclx::zeros<size_t, 2>({
-            detail::num_interp_support,
-            override_query_size
-        });
-        result.support_indices_ = total_support_indices.get_range({0}, {query_points.shape()[1]});
+        auto total_weights = sclx::zeros<T, 3>(
+            {Dimensions, detail::num_interp_support, override_query_size}
+        );
+        result.weights_
+            = total_weights.get_range({0}, {query_points.shape()[1]});
+        auto total_support_indices = sclx::zeros<std::uint32_t, 2>(
+            {detail::num_interp_support, override_query_size}
+        );
+        result.support_indices_
+            = total_support_indices.get_range({0}, {query_points.shape()[1]});
 
         size_t total_available_mem = 0;
         int device_count           = sclx::cuda::traits::device_count();
@@ -158,7 +159,7 @@ class divergence_operator {
             );
         }
 
-        result.weights_ = total_weights;
+        result.weights_         = total_weights;
         result.support_indices_ = total_support_indices;
 
         return result;
@@ -311,11 +312,11 @@ class divergence_operator {
 
     [[nodiscard]] sclx::array<const T, 3> weights() const { return weights_; }
 
-    [[nodiscard]] sclx::array<const sclx::index_t, 2> support_indices() const {
+    [[nodiscard]] sclx::array<const std::uint32_t, 2> support_indices() const {
         return support_indices_;
     }
 
-    [[nodiscard]] sclx::array<sclx::index_t, 2> support_indices() {
+    [[nodiscard]] sclx::array<std::uint32_t, 2> support_indices() {
         return support_indices_;
     }
 
@@ -571,7 +572,7 @@ class divergence_operator {
   private:
     static divergence_operator create(
         const sclx::array<T, 2>& domain,
-        const sclx::array<sclx::index_t, 2>& support_indices,
+        const sclx::array<std::uint32_t, 2>& support_indices,
         const sclx::array<T, 2>& quad_interp_weights,
         const sclx::array<T, 1>& interaction_radii
     ) {
@@ -595,7 +596,7 @@ class divergence_operator {
     }
 
     sclx::array<T, 3> weights_;
-    sclx::array<sclx::index_t, 2> support_indices_;
+    sclx::array<std::uint32_t, 2> support_indices_;
     using matrix_type
         = naga::linalg::matrix<T, naga::linalg::storage_type::sparse_csr>;
     using vector_type

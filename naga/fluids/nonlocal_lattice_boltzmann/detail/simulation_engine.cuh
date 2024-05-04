@@ -119,7 +119,7 @@ class simulation_engine {
 
         value_type signal_travel_per_frame = speed_of_sound * time_step;
         frames_for_node2node_travel_
-            = static_cast<size_t>(std::round(1.f / signal_travel_per_frame));
+            = static_cast<std::uint32_t>(std::round(1.f / signal_travel_per_frame));
     }
 
     void init_domain(const simulation_nodes<value_type>& domain) {
