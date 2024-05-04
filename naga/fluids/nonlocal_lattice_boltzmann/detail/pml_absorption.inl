@@ -424,12 +424,14 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
         const sclx::array<const value_type, 1>& absorption_coeff,
         const sclx::array<const value_type, 1>& Q1,
         size_t pml_start_index,
-        size_t pml_end_index
+        size_t pml_end_index,
+        const value_type zero_offset = 0.f
     )
         : absorption_coeff(absorption_coeff),
           Q1(Q1),
           pml_start_index(pml_start_index),
-          pml_end_index(pml_end_index) {
+          pml_end_index(pml_end_index),
+          zero_offset(zero_offset) {
 
         for (uint d = 0; d < dimensions; d++) {
             this->c0[d] = c0[d];
@@ -444,7 +446,7 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
             size_t pml_index        = i - pml_start_index;
             const value_type& sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
-                c[d] = -2.f * c0[d] * sigma * Q1[pml_index];
+                c[d] = -2.f * c0[d] * sigma * (Q1[pml_index] - zero_offset);
             }
         }
 
@@ -464,6 +466,7 @@ class pml_div_Q1_field_map<d3q27_lattice<T>> {
     sclx::array<const value_type, 1> Q1;
     size_t pml_start_index;
     size_t pml_end_index;
+    value_type zero_offset;
 };
 
 template<class T>
@@ -481,12 +484,14 @@ class pml_div_Q2_field_map {
         const sclx::array<const value_type, 1>& absorption_coeff,
         const sclx::array<const value_type, 1>& Q2,
         size_t pml_start_index,
-        size_t pml_end_index
+        size_t pml_end_index,
+        const value_type zero_offset = 0.f
     )
         : absorption_coeff(absorption_coeff),
           Q2(Q2),
           pml_start_index(pml_start_index),
-          pml_end_index(pml_end_index) {
+          pml_end_index(pml_end_index),
+          zero_offset(zero_offset) {
 
         for (uint d = 0; d < dimensions; d++) {
             this->c0[d] = c0[d];
@@ -501,7 +506,7 @@ class pml_div_Q2_field_map {
             size_t pml_index        = i - pml_start_index;
             const value_type& sigma = absorption_coeff[pml_index];
             for (uint d = 0; d < dimensions; d++) {
-                c[d] = c0[d] * sigma * sigma * Q2[pml_index];
+                c[d] = c0[d] * sigma * sigma * (Q2[pml_index] - zero_offset);
             }
         }
 
@@ -521,6 +526,7 @@ class pml_div_Q2_field_map {
     sclx::array<const value_type, 1> Q2;
     size_t pml_start_index;
     size_t pml_end_index;
+    value_type zero_offset;
 };
 
 template<class T>
@@ -619,9 +625,9 @@ class partial_pml_subtask<d3q27_lattice<T>> {
             using namespace math::loopless;
 
             params.f[alpha][idx[0]]
-                -= sigma
-                      * (3.f * f_tilde_eq + 3.f * sigma * Q1_value
-                         + pow<2>(sigma) * Q2_value);
+                -= sigma * params.lattice_time_step
+                 * (3.f * f_tilde_eq + 3.f * sigma * Q1_value
+                    + pow<2>(sigma) * Q2_value);
         }
     }
 
@@ -767,6 +773,17 @@ class pml_absorption_operator<d3q27_lattice<T>> {
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             const auto& Q1 = lattice_Q1_values_[alpha];
+            auto Q1_sum    = sclx::algorithm::reduce(
+                Q1.get_range(
+                    {engine_->domain_.num_bulk_points},
+                    {engine_->domain_.num_bulk_points
+                        + engine_->domain_.num_layer_points}
+                ),
+                value_type{0},
+                sclx::algorithm::plus<value_type>{}
+
+            );
+            auto Q1_mean = Q1_sum / engine_->domain_.num_layer_points;
 
             pml_div_Q1_field_map<lattice> field_map_Q1{
                 lattice_interface<lattice>::lattice_velocities().vals[alpha],
@@ -774,7 +791,8 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                 Q1,
                 engine_->domain_.num_bulk_points,
                 engine_->domain_.num_bulk_points
-                    + engine_->domain_.num_layer_points
+                    + engine_->domain_.num_layer_points,
+                Q1_mean
             };
 
             engine_->divergence_op_.apply(
@@ -786,16 +804,28 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             auto layer_end   = engine_->domain_.num_bulk_points
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
-                nonlocal_calculus::forward_euler<T>(1.f),
+            nonlocal_calculus::forward_euler<T>(engine_->parameters_
+                                                     .lattice_time_step),
                 engine_->scratchpad1[alpha],  // .get_range({layer_begin},
                                               // {layer_end}),
-                engine_->scratchpad1[alpha],     // .get_range({layer_begin},
-                                             // {layer_end}),
-                engine_->scratchpad2[alpha]  // .get_range({layer_begin},
-                                             // {layer_end})
+                engine_->scratchpad1[alpha],  // .get_range({layer_begin},
+                                              // {layer_end}),
+                engine_->scratchpad2[alpha]   // .get_range({layer_begin},
+                                              // {layer_end})
             );
 
             const auto& Q2 = lattice_Q2_values_[alpha];
+            auto Q2_sum    = sclx::algorithm::reduce(
+                Q2.get_range(
+                    {engine_->domain_.num_bulk_points},
+                    {engine_->domain_.num_bulk_points
+                        + engine_->domain_.num_layer_points}
+                ),
+                value_type{0},
+                sclx::algorithm::plus<value_type>{}
+
+            );
+            auto Q2_mean = Q2_sum / engine_->domain_.num_layer_points;
 
             pml_div_Q2_field_map<value_type> field_map_Q2{
                 lattice_interface<lattice>::lattice_velocities().vals[alpha],
@@ -803,7 +833,8 @@ class pml_absorption_operator<d3q27_lattice<T>> {
                 Q2,
                 engine_->domain_.num_bulk_points,
                 engine_->domain_.num_bulk_points
-                    + engine_->domain_.num_layer_points
+                    + engine_->domain_.num_layer_points,
+                Q2_mean
             };
 
             engine_->divergence_op_.apply(
@@ -812,7 +843,8 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             );
 
             sclx::algorithm::elementwise_reduce(
-                nonlocal_calculus::forward_euler<T>(1.f),
+                nonlocal_calculus::forward_euler<T>(engine_->parameters_
+                                                         .lattice_time_step),
                 engine_->scratchpad1[alpha],  // .get_range({layer_begin},
                                               // {layer_end}),
                 engine_->scratchpad1[alpha],  // .get_range({layer_begin},
