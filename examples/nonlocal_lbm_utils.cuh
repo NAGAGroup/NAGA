@@ -793,7 +793,6 @@ struct problem_traits {
             auto upper_weight
                 = 1.0 - (upper_frame_number - fractional_frame_number);
 
-
             auto frame_number
                 = static_cast<size_t>(lower_frame_number) + frame_offset_;
             const auto& amplitude     = amplitude_;
@@ -807,7 +806,7 @@ struct problem_traits {
             auto audio_sample_lower = amplitude * audio_samples(frame_number);
             auto audio_sample       = upper_weight * audio_sample_upper
                               + lower_weight * audio_sample_lower;
-            auto source_region          = source_region_;
+            auto source_region = source_region_;
             source_region.shift_region((*path_)(time));
 
             if (loop_audio_) {
@@ -905,13 +904,17 @@ struct problem_traits {
         value_type frequency() const { return frequency_; }
 
         auto get_amplitude_at_time(const value_type& time) const {
-            auto ramp_up_time = 5.0 / frequency_;
+            // auto ramp_up_time = 5.0 / frequency_;
+            // return amplitude_
+            //      * naga::math::sin(
+            //            2 * naga::math::pi<value_type> * frequency_ * time
+            //      ) * (time < ramp_up_time ? naga::math::loopless::pow<2>(
+            //                                     time / ramp_up_time)
+            //                                     : 1.0);
             return amplitude_
                  * naga::math::sin(
                        2 * naga::math::pi<value_type> * frequency_ * time
-                 ) * (time < ramp_up_time ? naga::math::loopless::pow<2>(
-                                                time / ramp_up_time)
-                                          : 1.0);
+                 );
         }
 
         std::future<void> add_density_source(
