@@ -1237,7 +1237,7 @@ class simulation_engine {
         auto domain_points   = domain_.points;
         auto& delta_x        = domain_.nodal_spacing;
         auto gaussian_sigma  = delta_x / 3.f;
-        auto sigma           = .3f;
+        auto sigma           = .95f;
 
         bool compute_weights = false;
         if (filter_weights_.elements() == 0) {
@@ -1305,13 +1305,13 @@ class simulation_engine {
                         auto f_alpha_s = f_old[alpha][support_indices(s, pidx)];
                         sum += weight * (f_alpha_s - f_alpha_i);
                     }
-                    // for (int s = 0; compute_weights && s < support_size; ++s)
-                    // {
-                    //     filter_weights(s, pidx) /= sum_weights;
-                    //     if (s == 0) {
-                    //         sum /= sum_weights;
-                    //     }
-                    // }
+                    for (int s = 0; compute_weights && s < support_size; ++s)
+                    {
+                        filter_weights(s, pidx) /= sum_weights;
+                        if (s == 0) {
+                            sum /= sum_weights;
+                        }
+                    }
                     f_new[alpha][pidx] = f_alpha_i + sigma * sum;
                 }
             );
@@ -1322,15 +1322,21 @@ class simulation_engine {
     }
 
     void step_forward() {
+        compute_macroscopic_values(solution_.lattice_distributions, solution_, parameters_);
+
+        update_observers(time());
+
+        compute_density_source_terms(time());
+        // compute_velocity_terms(time());
+        apply_density_source_termsv5();
+        //         apply_velocity_terms();
+
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             sclx::assign_array(
                 solution_.lattice_distributions[alpha],
                 scratchpad1[alpha]
             );
         }
-        compute_macroscopic_values(scratchpad1, solution_, parameters_);
-
-        update_observers(time());
 
         pml_absorption_operator_.apply();
         interpolate_boundaries(scratchpad1);
@@ -1342,16 +1348,10 @@ class simulation_engine {
         collision_step(solution_.lattice_distributions, scratchpad1);
         selective_filter_step(scratchpad1, scratchpad2);
 
-
         auto f_old                      = solution_.lattice_distributions;
         auto f_new                      = scratchpad2;
         solution_.lattice_distributions = f_new;
         scratchpad2                     = f_old;
-
-        compute_density_source_terms(time());
-        // compute_velocity_terms(time());
-        apply_density_source_termsv5();
-        //         apply_velocity_terms();
 
         bounce_back_step(solution_.lattice_distributions);
 
