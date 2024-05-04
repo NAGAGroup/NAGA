@@ -185,7 +185,7 @@ static sclx::array<T, 2> compute_weights(
         dimensions,
         group_size
     );
-    size_t minimum_required_mem = 4 * static_cast<size_t>(1 << 30) / mem_per_group * mem_per_group;
+    size_t minimum_required_mem = 16384 * mem_per_group;
 
     // algorithm outline
     // for each device split

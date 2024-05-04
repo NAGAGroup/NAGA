@@ -116,9 +116,8 @@ class divergence_operator {
             = builder_scratchpad_size + self_scratchpad_size;
         size_t batch_scratch_pad_size
             = total_scratchpad_size / query_points.shape()[1];
-        auto minimum_required_mem = 4 * static_cast<size_t>(1 << 30)
-                                  / batch_scratch_pad_size
-                                  * batch_scratch_pad_size;
+        auto minimum_required_mem = 16384 * batch_scratch_pad_size;
+
         size_t batch_size;
         if (total_available_mem > minimum_required_mem) {
             batch_size = std::min(
