@@ -603,7 +603,11 @@ struct problem_traits {
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
                             )) {
-                            source_terms(idx[0]) = audio_sample;
+
+                            auto current_density = density(idx[0]);
+                            auto density_diff
+                                = nominal_density - current_density;
+                            source_terms(idx[0]) = audio_sample + density_diff;
                         }
                     }
                 );
@@ -697,8 +701,11 @@ struct problem_traits {
                         }
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
-                            )) {
-                            source_terms(idx[0]) = frame_amplitude;
+                                )) {
+                                auto current_density = density(idx[0]);
+                                auto density_diff
+                                    = nominal_density - current_density;
+                                source_terms(idx[0]) = frame_amplitude + density_diff;
                         }
                     }
                 );
@@ -848,8 +855,11 @@ struct problem_traits {
                         }
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
-                            )) {
-                            source_terms(idx[0]) = audio_sample;
+                                )) {
+                                    auto current_density = density(idx[0]);
+                                    auto density_diff
+                                        = nominal_density - current_density;
+                                    source_terms(idx[0]) = audio_sample + density_diff;
                         }
                     }
                 );
@@ -968,7 +978,10 @@ struct problem_traits {
                         if (source_region.contains(
                                 &local_points(0, info.local_thread_linear_id())
                             )) {
-                            source_terms(idx[0]) = perturbation;
+                            auto current_density = density(idx[0]);
+                            auto density_diff
+                                = nominal_density - current_density;
+                            source_terms(idx[0]) = perturbation + density_diff;
                         }
                     }
                 );

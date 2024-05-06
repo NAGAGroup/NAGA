@@ -118,8 +118,9 @@ class simulation_engine {
             = lattice_characteristic_frequency;
 
         value_type signal_travel_per_frame = speed_of_sound * time_step;
-        frames_for_node2node_travel_
-            = static_cast<std::uint32_t>(std::round(1.f / signal_travel_per_frame));
+        frames_for_node2node_travel_       = static_cast<std::uint32_t>(
+            std::round(1.f / signal_travel_per_frame)
+        );
     }
 
     void init_domain(const simulation_nodes<value_type>& domain) {
@@ -259,7 +260,10 @@ class simulation_engine {
         density_source_term_
             = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
 
-        velocity_term_ = sclx::zeros<value_type, 2>(domain_.points.shape());
+        for (auto& rho_grad_d : density_source_gradient_) {
+            rho_grad_d
+                = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
+        }
 
         auto absorption_coeffs    = domain_.layer_absorption;
         auto new_num_layer_points = domain_.num_layer_points
@@ -332,7 +336,7 @@ class simulation_engine {
             }
         );
         rk4_solver_ = std::make_shared<
-            rk4_solver<pde_right_hand_side<lattice_type>, lattice_size>>(rhs);
+            rk4_solver<pde_right_hand_side<lattice_type>, 1 + dimensions>>(rhs);
 
         reset();
     }
@@ -344,10 +348,7 @@ class simulation_engine {
     value_type speed_of_sound() const { return parameters_.speed_of_sound; }
 
     void compute_density_source_terms(value_type t) {
-        sclx::fill(
-            density_source_term_,
-            std::numeric_limits<value_type>::max()
-        );
+        sclx::fill(density_source_term_, 0.f);
 
         for (density_source<Lattice>* source : density_sources_) {
             source
@@ -359,6 +360,29 @@ class simulation_engine {
                     density_source_term_
                 )
                 .get();
+        }
+
+        sclx::algorithm::elementwise_reduce(
+            sclx::algorithm::plus<>{},
+            solution_.macroscopic_values.fluid_density,
+            solution_.macroscopic_values.fluid_density,
+            density_source_term_
+        )
+            .get();
+
+        for (int d = 0; d < dimensions; ++d) {
+            value_type c[3]{};
+            c[d]                   = 1;
+            auto& rho_grad_d       = density_source_gradient_[d];
+            using velocity_field_t = naga::nonlocal_calculus::
+                constant_velocity_field<value_type, dimensions>;
+            auto velocity_field  = velocity_field_t::create(c);
+            using field_map_type = typename naga::nonlocal_calculus::
+                advection_operator<value_type, dimensions>::
+                    template divergence_field_map<velocity_field_t>;
+            auto vector_field
+                = field_map_type{velocity_field, density_source_term_};
+            divergence_op_.apply(vector_field, rho_grad_d);
         }
     }
 
@@ -529,129 +553,131 @@ class simulation_engine {
         }).get();
     }
 
-    void apply_velocity_terms() {
+    // void apply_velocity_terms() {
+    //
+    //     sclx::array_list<value_type, 1, lattice_size> result_f_boundary(
+    //         solution_.lattice_distributions
+    //     );
+    //
+    //     auto bounce_back_lambda =
+    //         [&](sclx::array_list<value_type, 1, lattice_size>& result_arrays)
+    //         {
+    //             return sclx::execute_kernel([&, result_arrays](
+    //                                             sclx::kernel_handler& handler
+    //                                         ) {
+    //                 auto rho0 = parameters_.nominal_density;
+    //                 auto velocity_scale
+    //                     = parameters_.speed_of_sound
+    //                     / lattice_traits<Lattice>::lattice_speed_of_sound;
+    //
+    //                 auto boundary_velocities
+    //                     = solution_.macroscopic_values.fluid_velocity;
+    //                 auto boundary_densities
+    //                     = solution_.macroscopic_values.fluid_density;
+    //
+    //                 auto velocity_terms = velocity_term_;
+    //                 sclx::local_array<value_type, 2> lattice_velocities(
+    //                     handler,
+    //                     {dimensions, lattice_size}
+    //                 );
+    //                 sclx::local_array<value_type, 1> lattice_weights(
+    //                     handler,
+    //                     {lattice_size}
+    //                 );
+    //
+    //                 auto lattice_time_step = parameters_.lattice_time_step;
+    //                 auto lattice_viscosity = parameters_.lattice_viscosity;
+    //
+    //                 auto lattice_speed_of_sound
+    //                     = lattice_traits<Lattice>::lattice_speed_of_sound;
+    //
+    //                 handler.launch(
+    //                     sclx::md_range_t<1>{domain_.num_bulk_points},
+    //                     result_arrays,
+    //                     [=] __device__(
+    //                         const sclx::md_index_t<1>& idx,
+    //                         const sclx::kernel_info<>& info
+    //                     ) mutable {
+    //                         if (info.local_thread_linear_id() == 0) {
+    //                             for (int i = 0; i < dimensions *
+    //                             lattice_size;
+    //                                  ++i) {
+    //                                 lattice_velocities(
+    //                                     i % dimensions,
+    //                                     i / dimensions
+    //                                 )
+    //                                     = lattice_interface<
+    //                                           Lattice>::lattice_velocities()
+    //                                           .vals[i / dimensions]
+    //                                                [i % dimensions];
+    //                                 if (i % dimensions == 0) {
+    //                                     continue;
+    //                                 }
+    //                                 lattice_weights(i / dimensions)
+    //                                     = lattice_interface<
+    //                                           Lattice>::lattice_weights()
+    //                                           .vals[i / dimensions];
+    //                             }
+    //                         }
+    //                         handler.syncthreads();
+    //
+    //                         const auto* velocity = &velocity_terms(0,
+    //                         idx[0]); if (velocity[0]
+    //                             == std::numeric_limits<value_type>::max()) {
+    //                             return;
+    //                         }
+    //                         auto mag_velocity
+    //                             = naga::math::loopless::norm<dimensions>(
+    //                                 velocity
+    //                             );
+    //
+    //                         naga::point_t<value_type, dimensions> u_wall;
+    //                         for (uint d = 0; d < dimensions; ++d) {
+    //                             u_wall[d] = (boundary_velocities(d, idx[0])
+    //                                          - velocity[d])
+    //                                       / velocity_scale;
+    //                         }
+    //                         auto rho = boundary_densities[idx[0]] / rho0;
+    //
+    //                         for (uint alpha = 0; alpha < lattice_size;
+    //                              ++alpha) {
+    //                             const auto c_alpha
+    //                                 = &lattice_velocities(0, alpha);
+    //                             result_arrays[alpha][idx[0]]
+    //                                 -= 2.f * rho
+    //                                  * naga::math::loopless::dot<dimensions>(
+    //                                        u_wall,
+    //                                        c_alpha
+    //                                  )
+    //                                  / naga::math::loopless::pow<2>(
+    //                                        lattice_speed_of_sound
+    //                                  )
+    //                                  * lattice_weights[alpha];
+    //                         }
+    //                     }
+    //                 );
+    //             });
+    //         };
+    //
+    //     auto f_fut = bounce_back_lambda(result_f_boundary);
+    //
+    //     f_fut.get();
+    // }
 
-        sclx::array_list<value_type, 1, lattice_size> result_f_boundary(
-            solution_.lattice_distributions
-        );
-
-        auto bounce_back_lambda =
-            [&](sclx::array_list<value_type, 1, lattice_size>& result_arrays) {
-                return sclx::execute_kernel([&, result_arrays](
-                                                sclx::kernel_handler& handler
-                                            ) {
-                    auto rho0 = parameters_.nominal_density;
-                    auto velocity_scale
-                        = parameters_.speed_of_sound
-                        / lattice_traits<Lattice>::lattice_speed_of_sound;
-
-                    auto boundary_velocities
-                        = solution_.macroscopic_values.fluid_velocity;
-                    auto boundary_densities
-                        = solution_.macroscopic_values.fluid_density;
-
-                    auto velocity_terms = velocity_term_;
-                    sclx::local_array<value_type, 2> lattice_velocities(
-                        handler,
-                        {dimensions, lattice_size}
-                    );
-                    sclx::local_array<value_type, 1> lattice_weights(
-                        handler,
-                        {lattice_size}
-                    );
-
-                    auto lattice_time_step = parameters_.lattice_time_step;
-                    auto lattice_viscosity = parameters_.lattice_viscosity;
-
-                    auto lattice_speed_of_sound
-                        = lattice_traits<Lattice>::lattice_speed_of_sound;
-
-                    handler.launch(
-                        sclx::md_range_t<1>{domain_.num_bulk_points},
-                        result_arrays,
-                        [=] __device__(
-                            const sclx::md_index_t<1>& idx,
-                            const sclx::kernel_info<>& info
-                        ) mutable {
-                            if (info.local_thread_linear_id() == 0) {
-                                for (int i = 0; i < dimensions * lattice_size;
-                                     ++i) {
-                                    lattice_velocities(
-                                        i % dimensions,
-                                        i / dimensions
-                                    )
-                                        = lattice_interface<
-                                              Lattice>::lattice_velocities()
-                                              .vals[i / dimensions]
-                                                   [i % dimensions];
-                                    if (i % dimensions == 0) {
-                                        continue;
-                                    }
-                                    lattice_weights(i / dimensions)
-                                        = lattice_interface<
-                                              Lattice>::lattice_weights()
-                                              .vals[i / dimensions];
-                                }
-                            }
-                            handler.syncthreads();
-
-                            const auto* velocity = &velocity_terms(0, idx[0]);
-                            if (velocity[0]
-                                == std::numeric_limits<value_type>::max()) {
-                                return;
-                            }
-                            auto mag_velocity
-                                = naga::math::loopless::norm<dimensions>(
-                                    velocity
-                                );
-
-                            naga::point_t<value_type, dimensions> u_wall;
-                            for (uint d = 0; d < dimensions; ++d) {
-                                u_wall[d] = (boundary_velocities(d, idx[0])
-                                             - velocity[d])
-                                          / velocity_scale;
-                            }
-                            auto rho = boundary_densities[idx[0]] / rho0;
-
-                            for (uint alpha = 0; alpha < lattice_size;
-                                 ++alpha) {
-                                const auto c_alpha
-                                    = &lattice_velocities(0, alpha);
-                                result_arrays[alpha][idx[0]]
-                                    -= 2.f * rho
-                                     * naga::math::loopless::dot<dimensions>(
-                                           u_wall,
-                                           c_alpha
-                                     )
-                                     / naga::math::loopless::pow<2>(
-                                           lattice_speed_of_sound
-                                     )
-                                     * lattice_weights[alpha];
-                            }
-                        }
-                    );
-                });
-            };
-
-        auto f_fut = bounce_back_lambda(result_f_boundary);
-
-        f_fut.get();
-    }
-
-    void compute_velocity_terms(value_type t) {
-        sclx::fill(velocity_term_, std::numeric_limits<value_type>::max());
-        for (auto& velocity_source : velocity_sources_) {
-            velocity_source
-                ->add_velocity_source(
-                    domain_,
-                    parameters_,
-                    solution_,
-                    t,
-                    velocity_term_
-                )
-                .get();
-        }
-    }
+    // void compute_velocity_terms(value_type t) {
+    //     sclx::fill(velocity_term_, std::numeric_limits<value_type>::max());
+    //     for (auto& velocity_source : velocity_sources_) {
+    //         velocity_source
+    //             ->add_velocity_source(
+    //                 domain_,
+    //                 parameters_,
+    //                 solution_,
+    //                 t,
+    //                 velocity_term_
+    //             )
+    //             .get();
+    //     }
+    // }
 
     enum class bounce_back_config { half_step, full_step };
 
@@ -1071,6 +1097,17 @@ class simulation_engine {
             auto velocities = solution_.macroscopic_values.fluid_velocity;
             auto lattice_time_step = parameters_.lattice_time_step;
 
+            auto& grad_rho = density_source_gradient_;
+            auto lattice_speed_of_sound
+                = lattice_traits<lattice_type>::lattice_speed_of_sound;
+
+            auto boundary_begin = domain_.points.shape()[1]
+                                - domain_.num_boundary_points
+                                - domain_.num_ghost_nodes;
+
+            auto current_frame = frame_number_;
+            auto nodal_spacing = domain_.nodal_spacing;
+
             handler.launch(
                 sclx::md_range_t<2>{lattice_size, domain_.points.shape()[1]},
                 result_arrays,
@@ -1078,6 +1115,9 @@ class simulation_engine {
                     const sclx::md_index_t<2>& idx,
                     const sclx::kernel_info<2>& info
                 ) mutable {
+                    if (idx[1] >= boundary_begin) {
+                        return;
+                    }
                     if (info.local_thread_linear_id() == 0) {
                         for (int alpha = 0; alpha < lattice_size; ++alpha) {
                             lattice_weights[alpha]
@@ -1089,16 +1129,34 @@ class simulation_engine {
                     handler.syncthreads();
 
                     auto source_term = density_source_term[idx[1]];
-                    if (source_term == std::numeric_limits<value_type>::max()) {
+                    result_arrays[idx[0]][idx[1]]
+                        += source_term * lattice_weights[idx[0]] / 2.f;
+
+                    // if (current_frame != 0) {
+                    //     return;
+                    // }
+
+                    value_type delta_momentum[dimensions];
+                    value_type lattice_dir[dimensions];
+                    auto rho = densities[idx[1]];
+                    for (int d = 0; d < dimensions; ++d) {
+                        delta_momentum[d] = grad_rho[d][idx[1]] / density_scale;
+                        lattice_dir[d]    = lattice_interface<
+                                                lattice_type>::lattice_velocities()
+                                             .vals[idx[0]][d];
+                    }
+
+                    if (idx[0] == 0) {
                         return;
                     }
-                    auto imposed_density = 1.f + source_term / density_scale;
-                    auto delta_rho
-                        = imposed_density - densities[idx[1]] / density_scale;
-                    result_arrays[idx[0]][idx[1]]
-                        += delta_rho * lattice_weights[idx[0]];
 
-                    densities[idx[1]] = imposed_density * density_scale;
+                    // naga::math::loopless::normalize<dimensions>(lattice_dir);
+                    auto grad_dot_dir = naga::math::loopless::dot<dimensions>(
+                        delta_momentum,
+                        lattice_dir
+                    );
+                    result_arrays[idx[0]][idx[1]]
+                        += grad_dot_dir * lattice_weights[idx[0]] / 2.f * lattice_time_step;
                 }
             );
         });
@@ -1305,8 +1363,7 @@ class simulation_engine {
                         auto f_alpha_s = f_old[alpha][support_indices(s, pidx)];
                         sum += weight * (f_alpha_s - f_alpha_i);
                     }
-                    for (int s = 0; compute_weights && s < support_size; ++s)
-                    {
+                    for (int s = 0; compute_weights && s < support_size; ++s) {
                         filter_weights(s, pidx) /= sum_weights;
                         if (s == 0) {
                             sum /= sum_weights;
@@ -1322,7 +1379,11 @@ class simulation_engine {
     }
 
     void step_forward() {
-        compute_macroscopic_values(solution_.lattice_distributions, solution_, parameters_);
+        compute_macroscopic_values(
+            solution_.lattice_distributions,
+            solution_,
+            parameters_
+        );
 
         update_observers(time());
 
@@ -1330,6 +1391,12 @@ class simulation_engine {
         // compute_velocity_terms(time());
         apply_density_source_termsv5();
         //         apply_velocity_terms();
+
+        compute_macroscopic_values(
+            solution_.lattice_distributions,
+            solution_,
+            parameters_
+        );
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             sclx::assign_array(
@@ -1355,11 +1422,135 @@ class simulation_engine {
 
         bounce_back_step(solution_.lattice_distributions);
 
-        rk4_solver_->step_forward(
+        compute_macroscopic_values(
             solution_.lattice_distributions,
+            solution_,
+            parameters_
+        );
+
+        if (advection_source_[0].elements() == 0) {
+            for (int i = 0; i < dimensions + 1; ++i) {
+                advection_source_[i]
+                    = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
+                advection_result_[i]
+                    = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
+            }
+        }
+
+        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
+            sclx::array_list<value_type, 1, 1 + dimensions> rho_velocity(
+                advection_source_
+            );
+
+            auto& rho = solution_.macroscopic_values.fluid_density;
+            auto& u   = solution_.macroscopic_values.fluid_velocity;
+
+            handler.launch(
+                sclx::md_range_t<1>{rho_velocity[0].elements()},
+                rho_velocity,
+                [=] __device__(
+                    const sclx::md_index_t<1>& idx,
+                    const sclx::kernel_info<>& info
+                ) {
+                    rho_velocity[0][idx[0]] = rho[idx[0]];
+                    for (int d = 0; d < dimensions; ++d) {
+                        rho_velocity[d + 1][idx[0]] = u(d, idx[0]);
+                    }
+                }
+            );
+        }).get();
+
+        rk4_solver_->step_forward(
+            advection_source_,
+            advection_result_,
             time_ * parameters_.lattice_time_step / parameters_.time_step,
             parameters_.lattice_time_step
         );
+
+        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
+            sclx::array_list<value_type, 1, lattice_size> dist_result(
+                solution_.lattice_distributions
+            );
+
+            auto& rho_velocity0 = advection_source_;
+            auto& rho_velocity  = advection_result_;
+
+            auto density_scale = parameters_.nominal_density;
+            auto velocity_scale
+                = parameters_.speed_of_sound
+                / lattice_traits<lattice_type>::lattice_speed_of_sound;
+            auto lattice_speed_of_sound
+                = lattice_traits<lattice_type>::lattice_speed_of_sound;
+
+            handler.launch(
+                sclx::md_range_t<1>{dist_result[0].elements()},
+                dist_result,
+                [=] __device__(
+                    const sclx::md_index_t<1>& idx,
+                    const sclx::kernel_info<>& info
+                ) mutable {
+                    auto rho0      = rho_velocity0[0][idx[0]];
+                    auto rho       = rho_velocity[0][idx[0]];
+                    auto delta_rho = rho - rho0;
+                    delta_rho /= density_scale;
+
+                    for (int alpha = 0; alpha < lattice_size; ++alpha) {
+                        dist_result[alpha][idx[0]]
+                            += delta_rho
+                             * lattice_interface<lattice_t>::lattice_weights()
+                                   .vals[alpha];
+                    }
+
+                    value_type delta_momentum[dimensions];
+                    for (int d = 0; d < dimensions; ++d) {
+                        delta_momentum[d]
+                            = (rho / density_scale * rho_velocity[d + 1][idx[0]]
+                               - rho / density_scale
+                                     * rho_velocity0[d + 1][idx[0]])
+                            / velocity_scale;
+                    }
+
+                    for (int alpha = 1; alpha < lattice_size; ++alpha) {
+                        value_type c_alpha[dimensions];
+                        for (int d = 0; d < dimensions; ++d) {
+                            c_alpha[d] = lattice_interface<
+                                             lattice_t>::lattice_velocities()
+                                             .vals[alpha][d];
+                        }
+                        naga::math::loopless::normalize<dimensions>(c_alpha);
+                        auto c_alpha_dot_delta_u
+                            = naga::math::loopless::dot<dimensions>(
+                                c_alpha,
+                                delta_momentum
+                            );
+                        dist_result[alpha][idx[0]]
+                            += c_alpha_dot_delta_u
+                             * lattice_interface<lattice_t>::lattice_weights()
+                                   .vals[alpha]
+                             / 2.f;
+                    }
+
+                    // value_type u[dimensions]{};
+                    // for (int alpha = 1; alpha < lattice_size; ++alpha) {
+                    //     for (int d = 0; d < dimensions; ++d) {
+                    //         u[d] += lattice_interface<
+                    //                      lattice_t>::lattice_velocities()
+                    //                      .vals[alpha][d]
+                    //               * dist_result[alpha][idx[0]] / (rho /
+                    //               density_scale) * velocity_scale;
+                    //     }
+                    // }
+                    // for (int d = 0; d < dimensions; ++d) {
+                    //     if (naga::math::abs(u[d] - rho_velocity[d +
+                    //     1][idx[0]]) > 1e-6) {
+                    //         printf("u[%d] = %f, rho_velocity[%d] = %f\n", d,
+                    //         u[d], d + 1, rho_velocity[d + 1][idx[0]]);
+                    //     }
+                    // }
+                }
+            );
+        }).get();
+
         interpolate_boundaries(solution_.lattice_distributions);
 
         time_ += parameters_.time_step;
@@ -1454,7 +1645,8 @@ class simulation_engine {
     std::shared_ptr<interpolater_t> boundary_interpolator_ptr_{};
 
     sclx::array<value_type, 1> density_source_term_{};
-    sclx::array<value_type, 2> velocity_term_{};
+    std::array<sclx::array<value_type, 1>, dimensions> density_source_gradient_{
+    };
     size_t frame_number_ = 0;
     value_type time_{0};
     size_t frames_for_node2node_travel_;
@@ -1472,7 +1664,10 @@ class simulation_engine {
     nonlocal_calculus::divergence_operator<value_type, dimensions>
         divergence_op_{};
 
-    std::shared_ptr<rk4_solver<pde_right_hand_side<lattice_type>, lattice_size>>
+    std::array<sclx::array<value_type, 1>, 1 + dimensions> advection_source_{};
+    std::array<sclx::array<value_type, 1>, 1 + dimensions> advection_result_{};
+    std::shared_ptr<
+        rk4_solver<pde_right_hand_side<lattice_type>, 1 + dimensions>>
         rk4_solver_;
 
     uint max_concurrency_ = lattice_size;

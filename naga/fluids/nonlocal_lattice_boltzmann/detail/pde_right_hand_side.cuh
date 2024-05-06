@@ -40,6 +40,48 @@ namespace naga::fluids::nonlocal_lbm::detail {
 template<class>
 struct pde_right_hand_side;
 
+template<class T, uint Dimensions>
+class pde_field_map {
+  public:
+    using point_type = point_t<T, Dimensions>;
+    friend class advection_operator;
+
+    pde_field_map(
+        std::array<sclx::array<T, 1>, Dimensions + 1> rho_velocity,
+        int quantity_index,
+        T centering_offset = T(0)
+    )
+        : rho_velocity_(rho_velocity),
+          quantity_index_(quantity_index),
+          centering_offset_(centering_offset) {}
+
+    __host__ __device__ point_type operator[](const sclx::index_t& index
+    ) const {
+        point_type field_value;
+        T scalar = rho_velocity_[quantity_index_][index];
+        for (uint i = 0; i < Dimensions; ++i) {
+            field_value[i]
+                = -rho_velocity_[i + 1][index] * (scalar - centering_offset_);
+        }
+
+        return field_value;
+    }
+
+    __host__ __device__ point_type operator[](const sclx::md_index_t<1>& index
+    ) const {
+        return (*this)[index[0]];
+    }
+
+    __host__ __device__ size_t size() const {
+        return rho_velocity_[0].elements();
+    }
+
+  private:
+    std::array<sclx::array<T, 1>, Dimensions + 1> rho_velocity_;
+    int quantity_index_;
+    T centering_offset_;
+};
+
 template<class T>
 struct pde_right_hand_side<d3q27_lattice<T>> {
     static constexpr auto dimensions
@@ -63,12 +105,9 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
           state_(&state),
           divergence_op_(&divergence_op),
           boundary_interpolater_(&boundary_interpolater),
-          collision_(
-              std::make_shared<collision_term<lattice>>(parameters, state)
-          ),
           engine_(&engine) {
         auto domain_size = state.lattice_distributions[0].elements();
-        for (int i = 0; i < lattice_size; ++i) {
+        for (int i = 0; i < 1 + dimensions; ++i) {
             rates_[i] = sclx::array<T, 1>{domain_size};
         }
     }
@@ -79,8 +118,8 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
     pde_right_hand_side& operator=(const pde_right_hand_side&) = default;
     pde_right_hand_side& operator=(pde_right_hand_side&&)      = default;
 
-    std::array<sclx::array<T, 1>, lattice_size>& operator()(
-        std::array<sclx::array<T, 1>, lattice_size> f,
+    std::array<sclx::array<T, 1>, 1 + dimensions>& operator()(
+        std::array<sclx::array<T, 1>, 1 + dimensions> rho_velocity,
         value_type t0,
         value_type dt
     ) {
@@ -91,7 +130,7 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
         // );
 
         auto& divergence_op = divergence_op_;
-        auto& rates         = rates_;
+        auto& rho_velocity_rates = rates_;
 
         auto boundary_start
             = domain_->num_bulk_points + domain_->num_layer_points;
@@ -102,8 +141,8 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
         auto engine = engine_;
 
         auto homogeneous_future = std::async([engine,
-                                              rates,
-                                              f,
+                                              rho_velocity_rates,
+                                              rho_velocity,
                                               t0,
                                               dt,
                                               divergence_op,
@@ -113,34 +152,26 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
             std::vector<std::future<void>> futures;
             // engine->interpolate_boundaries(f);
             // engine->bounce_back_step(f);
-            for (int i = 0; i < lattice_size; ++i) {
+            for (int i = 0; i < 1 + dimensions; ++i) {
                 futures.emplace_back(std::async(std::launch::async, [&, i] {
-                    sclx::fill(rates[i], T{0});
-                    using velocity_field_t = naga::nonlocal_calculus::
-                        constant_velocity_field<T, dimensions>;
-                    auto velocity_field = velocity_field_t::create(
-                        lattice_interface<d3q27_lattice<T>>::lattice_velocities(
-                        )
-                            .vals[i]
-                    );
-                    using field_map_type = typename naga::nonlocal_calculus::
-                        advection_operator<value_type, dimensions>::
-                            template divergence_field_map<velocity_field_t>;
+                    sclx::fill(rho_velocity_rates[i], T{0});
+                    using field_map_type
+                        = pde_field_map<value_type, dimensions>;
                     auto vector_field = field_map_type{
-                        velocity_field,
-                        f[i],
-                        lattice_interface<d3q27_lattice<T>>::lattice_weights()
-                            .vals[i]
+                        rho_velocity,
+                        i,
+                        i != 0 ? T{0} : T{1.0}
                     };
-                    divergence_op->apply(vector_field, rates[i]);
+                    divergence_op->apply(vector_field, rho_velocity_rates[i]);
                 }));
             }
 
             for (auto& future : futures) {
                 future.get();
-                auto alpha = std::distance(&futures[0], &future);
+                auto i = std::distance(&futures[0], &future);
                 sclx::fill(
-                    rates[alpha].get_range({boundary_start}, {boundary_end}),
+                    rho_velocity_rates[i]
+                        .get_range({boundary_start}, {boundary_end}),
                     T{0}
                 );
             }
@@ -165,19 +196,12 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
         // ));
         // }
 
-        for (int i = 0; i < lattice_size; ++i) {
-            // futures[i].get();
-            auto ghost_rates
-                = rates_[i].get_range({ghost_start}, {boundary_end});
-            sclx::fill(ghost_rates, T{0});
-        }
-
         return rates_;
     }
 
     void finalize(
-        std::array<sclx::array<T, 1>, lattice_size> /*unused*/,
-        std::array<sclx::array<T, 1>, lattice_size> f,
+        std::array<sclx::array<T, 1>, 1 + dimensions> /*unused*/,
+        std::array<sclx::array<T, 1>, 1 + dimensions> f,
         value_type /*unused*/,
         value_type dt
     ) {
@@ -196,11 +220,7 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
     naga::nonlocal_calculus::divergence_operator<T, dimensions>* divergence_op_;
     interpolater_t* boundary_interpolater_;
 
-    // provided by this class
-    std::shared_ptr<collision_term<lattice>> collision_;
-    std::shared_ptr<pml_term<lattice>> pml_;
-
-    std::array<sclx::array<T, 1>, lattice_size> rates_{};
+    std::array<sclx::array<T, 1>, 1 + dimensions> rates_{};
 
     simulation_engine<lattice>* engine_;
 };

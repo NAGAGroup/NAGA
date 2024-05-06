@@ -45,12 +45,9 @@ struct rk4_solver {
 
     rk4_solver(std::shared_ptr<RHS> rhs) : rhs(rhs) {}
 
-    void step_forward(std::array<sclx::array<T, 1>, StateCount> f, T t0, T dt) {
+    void step_forward(std::array<sclx::array<T, 1>, StateCount> f0, std::array<sclx::array<T, 1>, StateCount> f, T t0, T dt) {
         for (size_t i = 0; i < StateCount; ++i) {
-            if (f[i].elements() != f0[i].elements()) {
-                f0[i] = sclx::array<T, 1>{f[i].elements()};
-            }
-            sclx::assign_array(f[i], f0[i]).get();
+            sclx::assign_array(f0[i], f[i]).get();
         }
 
         auto t = t0;
@@ -171,7 +168,6 @@ struct rk4_solver {
     }
 
     std::shared_ptr<RHS> rhs;
-    std::array<sclx::array<T, 1>, StateCount> f0{};
     std::array<sclx::array<T, 1>, StateCount> df_dt{};
 
     struct runge_kutta_4 {
