@@ -39,8 +39,11 @@ namespace naga::regions {
 template<class T, uint Dimensions>
 class hypersphere {
   public:
-    template<class VectorT>
-    __host__ __device__ hypersphere(const T& radius, const VectorT& center)
+    template<class VectorT = naga::point_t<T, Dimensions>>
+    __host__ __device__ hypersphere(
+        const T& radius,
+        const VectorT& center = naga::point_t<value_type, Dimensions>{}
+    )
         : radius_(radius) {
         for (uint i = 0; i < Dimensions; ++i) {
             this->center_[i] = center[i];

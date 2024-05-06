@@ -105,10 +105,11 @@ class vtk_observer : public simulation_observer<Lattice> {
         const auto& results_path = output_directory_;
         auto save_frame
             = static_cast<std::uint32_t>(time_multiplier_ * time * frame_rate_);
-        save_frame
-            = frame_rate_ != 0.
-                ? save_frame
-                : static_cast<std::uint32_t>(std::ceil(time / parameters.time_step));
+        save_frame = frame_rate_ != 0.
+                       ? save_frame
+                       : static_cast<std::uint32_t>(
+                             std::ceil(time / parameters.time_step)
+                         );
         if (frame_rate_ != 0 && save_frame < current_frame_) {
             return;
         }
@@ -187,7 +188,8 @@ class vtk_observer : public simulation_observer<Lattice> {
 
             value_type fluid_velocity[3];
             for (int d = 0; d < Lattice::dimensions; ++d) {
-                fluid_velocity[d] = solution.macroscopic_values.fluid_velocity(d, i);
+                fluid_velocity[d]
+                    = solution.macroscopic_values.fluid_velocity(d, i);
             }
             velocity->SetTuple3(
                 i,
@@ -258,8 +260,7 @@ class vtk_observer : public simulation_observer<Lattice> {
         const solution_t& solution
     ) {
         if (save_points_.empty()) {
-            auto number_of_points
-                = domain.points.shape()[1];
+            auto number_of_points = domain.points.shape()[1];
             if (!include_ghost_nodes_) {
                 number_of_points -= domain.num_ghost_nodes;
             }
@@ -267,7 +268,10 @@ class vtk_observer : public simulation_observer<Lattice> {
             // randomly choose save points given the approximate number of save
             // points
             save_points_.reserve(approx_save_points_);
-            std::uniform_int_distribution<std::uint32_t> dist(0, number_of_points - 1);
+            std::uniform_int_distribution<std::uint32_t> dist(
+                0,
+                number_of_points - 1
+            );
             std::mt19937 gen;
             for (size_t i = 0; i < approx_save_points_; ++i) {
                 save_points_.push_back(dist(gen));
@@ -279,10 +283,11 @@ class vtk_observer : public simulation_observer<Lattice> {
         const auto& results_path = output_directory_;
         auto save_frame
             = static_cast<std::uint32_t>(time_multiplier_ * time * frame_rate_);
-        save_frame
-            = frame_rate_ != 0.
-                ? save_frame
-                : static_cast<std::uint32_t>(std::ceil(time / parameters.time_step));
+        save_frame = frame_rate_ != 0.
+                       ? save_frame
+                       : static_cast<std::uint32_t>(
+                             std::ceil(time / parameters.time_step)
+                         );
         if (frame_rate_ != 0 && save_frame < current_frame_) {
             return;
         }
@@ -360,7 +365,8 @@ class vtk_observer : public simulation_observer<Lattice> {
 
             value_type fluid_velocity[3];
             for (int d = 0; d < Lattice::dimensions; ++d) {
-                fluid_velocity[d] = solution.macroscopic_values.fluid_velocity(d, p);
+                fluid_velocity[d]
+                    = solution.macroscopic_values.fluid_velocity(d, p);
             }
             velocity->SetTuple3(
                 i,
@@ -453,6 +459,200 @@ class vtk_observer : public simulation_observer<Lattice> {
     size_t approx_save_points_;
     std::vector<std::uint32_t> save_points_;
     bool include_ghost_nodes_;
+};
+
+template<class Lattice>
+class vtk_observerv2 : public simulation_observer<Lattice> {
+  public:
+    using base                       = simulation_observer<Lattice>;
+    using value_type                 = typename base::value_type;
+    using simulation_domain_t        = typename base::simulation_domain_t;
+    using problem_parameters_t       = typename base::problem_parameters_t;
+    using solution_t                 = typename base::solution_t;
+    static constexpr auto dimensions = Lattice::dimensions;
+
+    vtk_observerv2(
+        const simulation_domain_t& domain,
+        const node_provider<Lattice>& nodes,
+        sclx::filesystem::path output_directory,
+        const value_type& frame_rate      = 60,
+        const value_type& time_multiplier = 1
+    )
+        : output_directory_(std::move(output_directory)),
+          frame_rate_(frame_rate),
+          time_multiplier_(time_multiplier) {
+        auto visualization_nodes  = nodes.get();
+        auto visualization_points = visualization_nodes.points.get_range(
+            {0},
+            {visualization_nodes.num_bulk_points
+             + visualization_nodes.num_layer_points
+             + visualization_nodes.num_boundary_points}
+        );
+        {
+            // We use the nearest neighbors algorithm to provide the
+            // interpolation indices to the radial point method.
+            auto points = domain.points.get_range(
+                {0},
+                {domain.num_bulk_points + domain.num_layer_points
+                 + domain.num_boundary_points}
+            );
+
+            uint num_interp_points = 32;
+            segmentation::nd_cubic_segmentation<value_type, dimensions>
+                source_segmentation(points, num_interp_points);
+            naga::default_point_map<value_type, dimensions> boundary_point_map{
+                visualization_points
+            };
+            auto [distances_squared, indices]
+                = naga::segmentation::batched_nearest_neighbors(
+                    num_interp_points,
+                    boundary_point_map,
+                    source_segmentation
+                );
+
+            visualization_interpolater_ptr_ = std::make_shared<interpolater_t>(
+                interpolater_t::create_interpolator(
+                    points,
+                    indices,
+                    boundary_point_map,
+                    domain.nodal_spacing
+                )
+            );
+        }
+
+        points_ = sclx::array<value_type, 2>{
+            dimensions,
+            visualization_points.shape()[1]
+        };
+        sclx::assign_array(visualization_points, points_);
+        fluid_density_  = sclx::array<value_type, 1>{points_.shape()[1]};
+        fluid_velocity_ = sclx::array<value_type, 2>{points_.shape()};
+    }
+
+    void update(
+        const value_type& time,
+        const simulation_domain_t& domain,
+        const problem_parameters_t& parameters,
+        const solution_t& simulation_solution
+    ) {
+        const auto& results_path = output_directory_;
+        auto save_frame
+            = static_cast<std::uint32_t>(time_multiplier_ * time * frame_rate_);
+        save_frame = frame_rate_ != 0.
+                       ? save_frame
+                       : static_cast<std::uint32_t>(
+                             std::ceil(time / parameters.time_step)
+                         );
+        if (frame_rate_ != 0 && save_frame < current_frame_) {
+            return;
+        }
+        current_frame_ = save_frame + 1;
+
+        if (previous_frame_future_.valid()) {
+            previous_frame_future_.get();
+        }
+
+        visualization_interpolater_ptr_->interpolate(
+            simulation_solution.macroscopic_values.fluid_density.get_range(
+                {0},
+                {domain.num_bulk_points + domain.num_layer_points
+                 + domain.num_boundary_points}
+            ),
+            fluid_density_
+        );
+
+        visualization_interpolater_ptr_->interpolate(
+            simulation_solution.macroscopic_values.fluid_velocity.get_range(
+                {0},
+                {domain.num_bulk_points + domain.num_layer_points
+                 + domain.num_boundary_points}
+            ),
+            fluid_velocity_
+        );
+
+        auto number_of_points = points_.shape()[1];
+
+        vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
+        points->SetNumberOfPoints(static_cast<vtkIdType>(number_of_points));
+
+        using vtk_array_type = typename get_vtk_array_type<value_type>::type;
+
+        vtkSmartPointer<vtk_array_type> density
+            = vtkSmartPointer<vtk_array_type>::New();
+        density->SetNumberOfComponents(1);
+        density->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points));
+        density->SetName("density");
+
+        vtkSmartPointer<vtk_array_type> velocity
+            = vtkSmartPointer<vtk_array_type>::New();
+        velocity->SetNumberOfComponents(3);
+        velocity->SetNumberOfTuples(static_cast<vtkIdType>(number_of_points));
+        velocity->SetName("velocity");
+
+        vtkSmartPointer<vtkCellArray> cells
+            = vtkSmartPointer<vtkCellArray>::New();
+        cells->Allocate(number_of_points);
+
+        for (vtkIdType i = 0; i < number_of_points; ++i) {
+            value_type point[3]{0, 0, 0};
+            for (int d = 0; d < Lattice::dimensions; ++d) {
+                point[d] = points_(d, i);
+            }
+            points->SetPoint(i, point[0], point[1], point[2]);
+
+            density->SetTuple1(i, fluid_density_(i));
+
+            value_type fluid_velocity[3];
+            for (int d = 0; d < Lattice::dimensions; ++d) {
+                fluid_velocity[d] = fluid_velocity_(d, i);
+            }
+            velocity->SetTuple3(
+                i,
+                fluid_velocity[0],
+                fluid_velocity[1],
+                fluid_velocity[2]
+            );
+
+            cells->InsertNextCell(1, &i);
+        }
+
+        auto fut               = std::async(std::launch::async, [=]() {
+            std::string filename = results_path
+                                 / (std::string("result.")
+                                    + std::to_string(save_frame) + ".vtp");
+            vtkSmartPointer<vtkPolyData> polydata
+                = vtkSmartPointer<vtkPolyData>::New();
+            polydata->SetPoints(points);
+            polydata->GetPointData()->AddArray(density);
+            polydata->GetPointData()->AddArray(velocity);
+            polydata->SetVerts(cells);
+
+            vtkSmartPointer<vtkXMLPolyDataWriter> writer
+                = vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+            writer->SetFileName(filename.c_str());
+            writer->SetInputData(polydata);
+            writer->Write();
+        });
+        previous_frame_future_ = std::move(fut);
+    }
+
+    template<class Archive>
+    void save_state(Archive& ar) const {}
+
+    template<class Archive>
+    void load_state(Archive& ar) {}
+
+  private:
+    size_t current_frame_ = 0;
+    sclx::filesystem::path output_directory_;
+    value_type frame_rate_;
+    value_type time_multiplier_;
+    sclx::array<value_type, 2> points_;
+    sclx::array<value_type, 1> fluid_density_;
+    sclx::array<value_type, 2> fluid_velocity_;
+    using interpolater_t = interpolation::radial_point_method<value_type>;
+    std::shared_ptr<interpolater_t> visualization_interpolater_ptr_;
+    std::future<void> previous_frame_future_;
 };
 
 }  // namespace naga::fluids::nonlocal_lbm
