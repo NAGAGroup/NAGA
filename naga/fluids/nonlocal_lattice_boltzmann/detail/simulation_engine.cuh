@@ -118,8 +118,9 @@ class simulation_engine {
             = lattice_characteristic_frequency;
 
         value_type signal_travel_per_frame = speed_of_sound * time_step;
-        frames_for_node2node_travel_
-            = static_cast<std::uint32_t>(std::round(1.f / signal_travel_per_frame));
+        frames_for_node2node_travel_       = static_cast<std::uint32_t>(
+            std::round(1.f / signal_travel_per_frame)
+        );
     }
 
     void init_domain(const simulation_nodes<value_type>& domain) {
@@ -1305,8 +1306,7 @@ class simulation_engine {
                         auto f_alpha_s = f_old[alpha][support_indices(s, pidx)];
                         sum += weight * (f_alpha_s - f_alpha_i);
                     }
-                    for (int s = 0; compute_weights && s < support_size; ++s)
-                    {
+                    for (int s = 0; compute_weights && s < support_size; ++s) {
                         filter_weights(s, pidx) /= sum_weights;
                         if (s == 0) {
                             sum /= sum_weights;
@@ -1322,7 +1322,11 @@ class simulation_engine {
     }
 
     void step_forward() {
-        compute_macroscopic_values(solution_.lattice_distributions, solution_, parameters_);
+        compute_macroscopic_values(
+            solution_.lattice_distributions,
+            solution_,
+            parameters_
+        );
 
         update_observers(time());
 
