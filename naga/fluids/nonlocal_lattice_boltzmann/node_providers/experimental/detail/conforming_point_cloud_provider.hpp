@@ -43,7 +43,7 @@ namespace naga::experimental::fluids::nonlocal_lbm::detail {
 
 
 constexpr float min_bound_dist_scale_2d             = 1.f;
-constexpr float max_bound_dist_scale_3d             = 1.1f;
+constexpr float max_bound_dist_scale_3d             = .5f;
 constexpr float min_bound_dist_scale_3d             = max_bound_dist_scale_3d - 1.1f;
 constexpr float min_bound_dist_scaled_ghost_node_3d = min_bound_dist_scale_3d - .5f;
 
