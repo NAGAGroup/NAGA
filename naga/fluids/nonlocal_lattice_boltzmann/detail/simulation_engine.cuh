@@ -1097,9 +1097,9 @@ class simulation_engine {
                     auto delta_rho
                         = imposed_density - densities[idx[1]] / density_scale;
                     result_arrays[idx[0]][idx[1]]
-                        += delta_rho * lattice_weights[idx[0]];
+                        += delta_rho * lattice_weights[idx[0]] / 2.f;
 
-                    densities[idx[1]] = imposed_density * density_scale;
+                    densities[idx[1]] += delta_rho * density_scale / 2.f;
                 }
             );
         });
@@ -1326,14 +1326,9 @@ class simulation_engine {
             solution_.lattice_distributions,
             solution_,
             parameters_
-        );
+            );
 
         update_observers(time());
-
-        compute_density_source_terms(time());
-        // compute_velocity_terms(time());
-        apply_density_source_termsv5();
-        //         apply_velocity_terms();
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             sclx::assign_array(
@@ -1357,7 +1352,14 @@ class simulation_engine {
         solution_.lattice_distributions = f_new;
         scratchpad2                     = f_old;
 
+        // apply_density_source_termsv5();
+
         bounce_back_step(solution_.lattice_distributions);
+
+        compute_density_source_terms(time());
+        // compute_velocity_terms(time());
+        apply_density_source_termsv3();
+        //         apply_velocity_terms();
 
         rk4_solver_->step_forward(
             solution_.lattice_distributions,

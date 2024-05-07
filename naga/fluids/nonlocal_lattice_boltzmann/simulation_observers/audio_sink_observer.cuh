@@ -64,12 +64,16 @@ struct audio_sink_traits<T, Dimensions, channel_configuration::stereo> {
 };
 
 template<class Lattice, channel_configuration ChannelConfig>
-class audio_sink_observer : public simulation_observer<Lattice> {
+class audio_sink_observer;
+
+template<class Lattice>
+class audio_sink_observer<Lattice, channel_configuration::mono>
+    : public simulation_observer<Lattice> {
 
   public:
     using lattice_type               = Lattice;
     static constexpr uint dimensions = lattice_traits<lattice_type>::dimensions;
-    static constexpr auto channel_config = ChannelConfig;
+    static constexpr auto channel_config = channel_configuration::mono;
     using base                           = simulation_observer<Lattice>;
     using value_type                     = typename base::value_type;
     using simulation_domain_t            = typename base::simulation_domain_t;
@@ -111,22 +115,12 @@ class audio_sink_observer : public simulation_observer<Lattice> {
 
         std::vector<const naga::point_t<value_type, dimensions>*>
             sink_locations(channel_count);
-        if constexpr (channel_config == channel_configuration::mono) {
-            const typename audio_sink_traits<
-                value_type,
-                dimensions,
-                channel_configuration::mono>::location_type& location_ref
-                = location;
-            sink_locations[0] = &location_ref;
-        } else {
-            const typename audio_sink_traits<
-                value_type,
-                dimensions,
-                channel_configuration::stereo>::location_type& location_ref
-                = location;
-            sink_locations[0] = &location_ref.first;
-            sink_locations[1] = &location_ref.second;
-        }
+        const typename audio_sink_traits<
+            value_type,
+            dimensions,
+            channel_configuration::mono>::location_type& location_ref
+            = location;
+        sink_locations[0] = &location_ref;
         sink_locations_ = sclx::array<value_type, 2>{dimensions, channel_count};
         for (int i = 0; i < channel_count; ++i) {
             std::copy(
@@ -188,22 +182,12 @@ class audio_sink_observer : public simulation_observer<Lattice> {
 
         std::vector<const naga::point_t<value_type, dimensions>*>
             sink_locations(channel_count);
-        if constexpr (channel_config == channel_configuration::mono) {
-            const typename audio_sink_traits<
-                value_type,
-                dimensions,
-                channel_configuration::mono>::location_type& location_ref
-                = location;
-            sink_locations[0] = &location_ref;
-        } else {
-            const typename audio_sink_traits<
-                value_type,
-                dimensions,
-                channel_configuration::stereo>::location_type& location_ref
-                = location;
-            sink_locations[0] = &location_ref.first;
-            sink_locations[1] = &location_ref.second;
-        }
+        const typename audio_sink_traits<
+            value_type,
+            dimensions,
+            channel_configuration::mono>::location_type& location_ref
+            = location;
+        sink_locations[0] = &location_ref;
         sink_locations_ = sclx::array<value_type, 2>{dimensions, channel_count};
         for (int i = 0; i < channel_count; ++i) {
             std::copy(
@@ -270,31 +254,24 @@ class audio_sink_observer : public simulation_observer<Lattice> {
             sink_signal_,
             params.nominal_density
         );
-        if constexpr (ChannelConfig == channel_configuration::mono) {
-            sink_signal_[0] -= params.nominal_density;
+        sink_signal_[0] -= params.nominal_density;
 
-            audio_buffer_[0].push_back(sink_signal_[0]);
-        } else {
-            sink_signal_[0] -= params.nominal_density;
-            sink_signal_[1] -= params.nominal_density;
+        audio_buffer_[0].push_back(sink_signal_[0]);
 
-            audio_buffer_[0].push_back(sink_signal_[0]);
-            audio_buffer_[1].push_back(sink_signal_[1]);
-        }
-
-//        for (const auto& signal : sink_signal_) {
-//            if (std::abs(signal) > params.nominal_density * 2) {
-//                save();
-//                sclx::throw_exception<std::runtime_error>(
-//                    "Sink signal is too large. Simulation likely unstable."
-//                );
-//            } else if (std::isnan(signal)) {
-//                save();
-//                sclx::throw_exception<std::runtime_error>(
-//                    "Sink signal is NaN. Simulation likely unstable."
-//                );
-//            }
-//        }
+        //        for (const auto& signal : sink_signal_) {
+        //            if (std::abs(signal) > params.nominal_density * 2) {
+        //                save();
+        //                sclx::throw_exception<std::runtime_error>(
+        //                    "Sink signal is too large. Simulation likely
+        //                    unstable."
+        //                );
+        //            } else if (std::isnan(signal)) {
+        //                save();
+        //                sclx::throw_exception<std::runtime_error>(
+        //                    "Sink signal is NaN. Simulation likely unstable."
+        //                );
+        //            }
+        //        }
         for (const auto& signal : sink_signal_) {
             if (std::abs(signal) > max_signal_) {
                 max_signal_ = std::abs(signal);
@@ -436,22 +413,13 @@ class audio_sink_observer<Lattice, channel_configuration::stereo>
 
         std::vector<const naga::point_t<value_type, dimensions>*>
             sink_locations(channel_count);
-        if constexpr (channel_config == channel_configuration::mono) {
-            const typename audio_sink_traits<
-                value_type,
-                dimensions,
-                channel_configuration::mono>::location_type& location_ref
-                = location;
-            sink_locations[0] = &location_ref;
-        } else {
-            const typename audio_sink_traits<
-                value_type,
-                dimensions,
-                channel_configuration::stereo>::location_type& location_ref
-                = location;
-            sink_locations[0] = &location_ref.first;
-            sink_locations[1] = &location_ref.second;
-        }
+        const typename audio_sink_traits<
+            value_type,
+            dimensions,
+            channel_configuration::stereo>::location_type& location_ref
+            = location;
+        sink_locations[0] = &location_ref.first;
+        sink_locations[1] = &location_ref.second;
         sink_locations_ = sclx::array<value_type, 2>{dimensions, channel_count};
         for (int i = 0; i < channel_count; ++i) {
             std::copy(
@@ -463,7 +431,10 @@ class audio_sink_observer<Lattice, channel_configuration::stereo>
 
         using namespace naga::segmentation;
         nd_cubic_segmentation<value_type, dimensions> domain_segmentation(
-            domain.points,
+            domain.points.get_range(
+                {0},
+                {domain.num_bulk_points + domain.num_layer_points}
+            ),
             uint{32}
         );
         naga::default_point_map<value_type, dimensions> location_map{
@@ -512,19 +483,20 @@ class audio_sink_observer<Lattice, channel_configuration::stereo>
             audio_buffer_[1].push_back(sink_signal_[1]);
         }
 
-//        for (const auto& signal : sink_signal_) {
-//            if (std::abs(signal) > params.nominal_density * 2) {
-//                save();
-//                sclx::throw_exception<std::runtime_error>(
-//                    "Sink signal is too large. Simulation likely unstable."
-//                );
-//            } else if (std::isnan(signal)) {
-//                save();
-//                sclx::throw_exception<std::runtime_error>(
-//                    "Sink signal is NaN. Simulation likely unstable."
-//                );
-//            }
-//        }
+        //        for (const auto& signal : sink_signal_) {
+        //            if (std::abs(signal) > params.nominal_density * 2) {
+        //                save();
+        //                sclx::throw_exception<std::runtime_error>(
+        //                    "Sink signal is too large. Simulation likely
+        //                    unstable."
+        //                );
+        //            } else if (std::isnan(signal)) {
+        //                save();
+        //                sclx::throw_exception<std::runtime_error>(
+        //                    "Sink signal is NaN. Simulation likely unstable."
+        //                );
+        //            }
+        //        }
         for (const auto& signal : sink_signal_) {
             if (std::abs(signal) > max_signal_) {
                 max_signal_ = std::abs(signal);
