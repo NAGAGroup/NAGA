@@ -1097,7 +1097,7 @@ class simulation_engine {
                     auto delta_rho
                         = imposed_density - densities[idx[1]] / density_scale;
                     result_arrays[idx[0]][idx[1]]
-                        += delta_rho * lattice_weights[idx[0]] / 2.f;
+                        += delta_rho * lattice_weights[idx[0]];
 
                     densities[idx[1]] += delta_rho * density_scale / 2.f;
                 }
@@ -1237,8 +1237,8 @@ class simulation_engine {
         auto support_size    = support_indices.shape()[0];
         auto domain_points   = domain_.points;
         auto& delta_x        = domain_.nodal_spacing;
-        auto gaussian_sigma  = delta_x / 3.f;
-        auto sigma           = .95f;
+        auto gaussian_sigma  = delta_x / 2.f;
+        auto sigma           = .5f;
 
         bool compute_weights = false;
         if (filter_weights_.elements() == 0) {
@@ -1358,7 +1358,7 @@ class simulation_engine {
 
         compute_density_source_terms(time());
         // compute_velocity_terms(time());
-        apply_density_source_termsv3();
+        apply_density_source_termsv5();
         //         apply_velocity_terms();
 
         rk4_solver_->step_forward(
