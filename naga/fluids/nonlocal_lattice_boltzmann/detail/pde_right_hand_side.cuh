@@ -129,7 +129,7 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
         //     *parameters_
         // );
 
-        auto& divergence_op = divergence_op_;
+        auto& divergence_op      = divergence_op_;
         auto& rho_velocity_rates = rates_;
 
         auto boundary_start
@@ -138,7 +138,16 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
             = domain_->points.shape()[1] - domain_->num_ghost_nodes;
         auto boundary_end = domain_->points.shape()[1];
 
-        auto engine = engine_;
+        auto engine   = engine_;
+        auto rk4_step = rk4_step_;
+        if (rk4_step == 4) {
+            rk4_step  = 0;
+            rk4_step_ = 0;
+        }
+        rk4_step_++;
+
+        auto sum_weight   = runge_kutta_4::summation_weights[rk4_step];
+        auto df_dt_weight = runge_kutta_4::df_dt_weights[rk4_step];
 
         auto homogeneous_future = std::async([engine,
                                               rho_velocity_rates,
@@ -148,33 +157,122 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
                                               divergence_op,
                                               boundary_start,
                                               ghost_start,
-                                              boundary_end]() {
+                                              boundary_end,
+                                              sum_weight,
+                                              df_dt_weight]() {
             std::vector<std::future<void>> futures;
             // engine->interpolate_boundaries(f);
             // engine->bounce_back_step(f);
-            for (int i = 0; i < 1 + dimensions; ++i) {
-                futures.emplace_back(std::async(std::launch::async, [&, i] {
-                    sclx::fill(rho_velocity_rates[i], T{0});
-                    using field_map_type
-                        = pde_field_map<value_type, dimensions>;
-                    auto vector_field = field_map_type{
-                        rho_velocity,
-                        i,
-                        i != 0 ? T{0} : T{1.0}
-                    };
-                    divergence_op->apply(vector_field, rho_velocity_rates[i]);
-                }));
+
+            for (int d = 0; d < dimensions; ++d) {
+                value_type c[3]{};
+                c[d]             = 1;
+                auto& rho_grad_d = engine->density_source_gradient_[d];
+                if (rho_grad_d.elements() == 0) {
+                    rho_grad_d
+                        = sclx::array<T, 1>{engine->solution_.macroscopic_values
+                                                .fluid_density.elements()};
+                }
+                using velocity_field_t = naga::nonlocal_calculus::
+                    constant_velocity_field<value_type, dimensions>;
+                auto velocity_field  = velocity_field_t::create(c);
+                using field_map_type = typename naga::nonlocal_calculus::
+                    advection_operator<value_type, dimensions>::
+                        template divergence_field_map<velocity_field_t>;
+                auto vector_field = field_map_type{
+                    velocity_field,
+                    engine->solution_.macroscopic_values.fluid_density,
+                    engine->parameters_.nominal_density
+                };
+                // auto vector_field
+                //     = field_map_type{velocity_field, density_source_term_};
+                engine->divergence_op_.apply(vector_field, rho_grad_d);
             }
 
-            for (auto& future : futures) {
-                future.get();
-                auto i = std::distance(&futures[0], &future);
-                sclx::fill(
-                    rho_velocity_rates[i]
-                        .get_range({boundary_start}, {boundary_end}),
-                    T{0}
+            sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
+                sclx::array_list<value_type, 1, lattice_size> dist_result(
+                    engine->solution_.lattice_distributions
                 );
-            }
+
+                auto f0 = engine->scratchpad1;
+                auto f  = engine->scratchpad2;
+
+                auto velocities
+                    = engine->solution_.macroscopic_values.fluid_velocity;
+                auto densities
+                    = engine->solution_.macroscopic_values.fluid_density;
+
+                auto density_scale = engine->parameters_.nominal_density;
+                auto velocity_scale
+                    = engine->parameters_.speed_of_sound
+                    / lattice_traits<lattice_t>::lattice_speed_of_sound;
+                auto lattice_speed_of_sound
+                    = lattice_traits<lattice_t>::lattice_speed_of_sound;
+
+                auto rho_grad          = engine->density_source_gradient_;
+                auto lattice_time_step = engine->parameters_.lattice_time_step;
+
+                handler.launch(
+                    sclx::md_range_t<1>{dist_result[0].elements()},
+                    dist_result,
+                    [=] __device__(
+                        const sclx::md_index_t<1>& idx,
+                        const sclx::kernel_info<>& info
+                    ) mutable {
+                        if (idx[0] >= boundary_start) {
+                            return;
+                        }
+                        value_type rho_grad_i[3]{
+                            rho_grad[0][idx[0]] / density_scale,
+                            rho_grad[1][idx[0]] / density_scale,
+                            rho_grad[2][idx[0]] / density_scale
+                        };
+                        auto rho0 = densities[idx[0]] / density_scale;
+
+                        auto rho = 0;
+                        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+                            value_type c_alpha[3]{
+                                lattice_interface<
+                                    lattice_t>::lattice_velocities()
+                                    .vals[alpha][0],
+                                lattice_interface<
+                                    lattice_t>::lattice_velocities()
+                                    .vals[alpha][1],
+                                lattice_interface<
+                                    lattice_t>::lattice_velocities()
+                                    .vals[alpha][2]
+                            };
+                            auto f0_alpha = f0[alpha][idx[0]];
+                            auto f_alpha  = f[alpha][idx[0]];
+                            auto dfalpha_dt
+                                = naga::math::loopless::dot<3>(
+                                      c_alpha,
+                                      rho_grad_i
+                                  )
+                                * lattice_interface<lattice_t>::lattice_weights()
+                                      .vals[alpha];
+//                            if (idx[0] == 500) {
+//                                printf(
+//                                    "f0_alpha: %f, f_alpha: %f, dfalpha_dt: %f\n",
+//                                    f0_alpha,
+//                                    f_alpha,
+//                                    dfalpha_dt
+//                                );
+//                            }
+                            dist_result[alpha][idx[0]]
+                                += dfalpha_dt * lattice_time_step * sum_weight;
+                            f_alpha
+                                = f0_alpha
+                                + dfalpha_dt * lattice_time_step * df_dt_weight;
+                            f[alpha][idx[0]] = f_alpha;
+                            rho += f_alpha;
+                        }
+
+                        densities[idx[0]] = rho * density_scale;
+                    }
+                );
+            }).get();
+
             // engine->interpolate_boundaries(rates);
         });
 
@@ -223,6 +321,14 @@ struct pde_right_hand_side<d3q27_lattice<T>> {
     std::array<sclx::array<T, 1>, 1 + dimensions> rates_{};
 
     simulation_engine<lattice>* engine_;
+
+    int rk4_step_ = 0;
+
+    struct runge_kutta_4 {
+        static constexpr T df_dt_weights[4] = {1. / 2., 1. / 2., 1., 0.f};
+        static constexpr T summation_weights[4]
+            = {1. / 6., 2. / 6., 2. / 6., 1. / 6.};
+    };
 };
 
 }  // namespace naga::fluids::nonlocal_lbm::detail

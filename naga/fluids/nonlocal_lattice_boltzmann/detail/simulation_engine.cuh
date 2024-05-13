@@ -260,11 +260,6 @@ class simulation_engine {
         density_source_term_
             = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
 
-        for (auto& rho_grad_d : density_source_gradient_) {
-            rho_grad_d
-                = sclx::zeros<value_type, 1>({domain_.points.shape()[1]});
-        }
-
         auto absorption_coeffs    = domain_.layer_absorption;
         auto new_num_layer_points = domain_.num_layer_points
                                   + domain_.num_boundary_points
@@ -360,34 +355,6 @@ class simulation_engine {
                     density_source_term_
                 )
                 .get();
-        }
-
-        sclx::algorithm::elementwise_reduce(
-            sclx::algorithm::plus<>{},
-            solution_.macroscopic_values.fluid_density,
-            solution_.macroscopic_values.fluid_density,
-            density_source_term_
-        )
-            .get();
-
-        for (int d = 0; d < dimensions; ++d) {
-            value_type c[3]{};
-            c[d]                   = 1;
-            auto& rho_grad_d       = density_source_gradient_[d];
-            using velocity_field_t = naga::nonlocal_calculus::
-                constant_velocity_field<value_type, dimensions>;
-            auto velocity_field  = velocity_field_t::create(c);
-            using field_map_type = typename naga::nonlocal_calculus::
-                advection_operator<value_type, dimensions>::
-                    template divergence_field_map<velocity_field_t>;
-            auto vector_field = field_map_type{
-                velocity_field,
-                solution_.macroscopic_values.fluid_density,
-                parameters_.nominal_density
-            };
-            // auto vector_field
-            //     = field_map_type{velocity_field, density_source_term_};
-            divergence_op_.apply(vector_field, rho_grad_d);
         }
     }
 
@@ -1136,71 +1103,9 @@ class simulation_engine {
                     }
                     handler.syncthreads();
 
-                    // if (current_frame != 0) {
-                    //     return;
-                    // }
-
-                    value_type grad_rho_i[dimensions];
-                    for (int d = 0; d < dimensions; ++d) {
-                        grad_rho_i[d] = grad_rho[d][idx[1]];
-                    }
-                    auto norm_grad_rho_i
-                        = naga::math::loopless::norm<dimensions>(grad_rho_i);
-                    if (norm_grad_rho_i != 0) {
-                        naga::math::loopless::normalize<dimensions>(grad_rho_i);
-                    }
-
-                    auto rho0 = (densities[idx[1]] - density_source_term[idx[1]])
-                             / density_scale;
-                    auto rho = densities[idx[1]] / density_scale;
-
-                    for (int d = 0; d < dimensions; ++d) {
-                        velocities(d, idx[1])
-                            += (rho - rho0) * grad_rho_i[d] * params_speed_of_sound / rho;
-                    }
-
-                    value_type c_alpha[dimensions];
-                    value_type u[dimensions];
-                    for (int d = 0; d < dimensions; ++d) {
-                        c_alpha[d] = lattice_interface<
-                                         lattice_type>::lattice_velocities()
-                                         .vals[idx[0]][d];
-                        u[d] = velocities(d, idx[1]) / velocity_scale;
-                    }
-                    auto feq_alpha = compute_equilibrium_distribution<
-                        lattice_type>(
-                        rho,
-                        u,
-                        &lattice_interface<lattice_type>::lattice_velocities()
-                             .vals[idx[0]][0],
-                        lattice_weights[idx[0]]
-                    );
-                    // if (idx[0] != 0) {
-                    //     naga::math::loopless::normalize<dimensions>(c_alpha);
-                    // }
-                    result_arrays[idx[0]][idx[1]]
-                        = feq_alpha;
-
-                    // value_type u[dimensions];
-                    // for (int d = 0; d < dimensions; ++d) {
-                    //     u[d] = velocities(d, idx[1]) / velocity_scale
-                    //          + grad_rho[d][idx[1]] / (rho / density_scale)
-                    //                * lattice_speed_of_sound *
-                    //                lattice_time_step
-                    //                * lattice_speed_of_sound;
-                    // }
-                    // auto feq_alpha = compute_equilibrium_distribution<
-                    //     lattice_type>(
-                    //     rho,
-                    //     u,
-                    //     &lattice_interface<lattice_type>::lattice_velocities()
-                    //          .vals[idx[0]][0],
-                    //     lattice_weights[idx[0]]
-                    // );
-                    //
-                    // auto source_term = density_source_term[idx[1]];
-                    // result_arrays[idx[0]][idx[1]]
-                    //     = feq_alpha + source_term * lattice_weights[idx[0]];
+                    auto source_term = density_source_term[idx[1]] / density_scale;
+                    result_arrays[idx[0]][idx[1]] += source_term * lattice_weights[idx[0]];
+                    densities[idx[1]] += source_term;
                 }
             );
         });
@@ -1421,12 +1326,19 @@ class simulation_engine {
     }
 
     void step_forward() {
+        compute_macroscopic_values(
+            solution_.lattice_distributions,
+            solution_,
+            parameters_
+        );
+
         compute_density_source_terms(time());
         // compute_velocity_terms(time());
         apply_density_source_termsv5();
         //         apply_velocity_terms();
 
         update_observers(time());
+
 
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             sclx::assign_array(
@@ -1445,12 +1357,21 @@ class simulation_engine {
         collision_step(solution_.lattice_distributions, scratchpad1);
         selective_filter_step(scratchpad1, scratchpad2);
 
-        auto f_old                      = solution_.lattice_distributions;
-        auto f_new                      = scratchpad2;
-        solution_.lattice_distributions = f_new;
-        scratchpad2                     = f_old;
+        bounce_back_step(scratchpad2);
 
-        bounce_back_step(solution_.lattice_distributions);
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            sclx::assign_array(
+                scratchpad2[alpha],
+                solution_.lattice_distributions[alpha]
+            );
+        }
+
+        for (int alpha = 0; alpha < lattice_size; ++alpha) {
+            sclx::assign_array(
+                scratchpad2[alpha],
+                scratchpad1[alpha]
+            );
+        }
 
         compute_macroscopic_values(
             solution_.lattice_distributions,
@@ -1467,115 +1388,12 @@ class simulation_engine {
             }
         }
 
-        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
-            sclx::array_list<value_type, 1, 1 + dimensions> rho_velocity(
-                advection_source_
-            );
-
-            auto& rho          = solution_.macroscopic_values.fluid_density;
-            auto& u            = solution_.macroscopic_values.fluid_velocity;
-            auto density_scale = parameters_.nominal_density;
-            auto velocity_scale
-                = parameters_.speed_of_sound
-                / lattice_traits<lattice_type>::lattice_speed_of_sound;
-
-            handler.launch(
-                sclx::md_range_t<1>{rho_velocity[0].elements()},
-                rho_velocity,
-                [=] __device__(
-                    const sclx::md_index_t<1>& idx,
-                    const sclx::kernel_info<>& info
-                ) {
-                    rho_velocity[0][idx[0]] = rho[idx[0]] / density_scale;
-                    for (int d = 0; d < dimensions; ++d) {
-                        rho_velocity[d + 1][idx[0]]
-                            = u(d, idx[0]) / velocity_scale;
-                    }
-                }
-            );
-        }).get();
-
         rk4_solver_->step_forward(
             advection_source_,
             advection_result_,
             time_ * parameters_.lattice_time_step / parameters_.time_step,
             parameters_.lattice_time_step
         );
-
-        sclx::execute_kernel([&](const sclx::kernel_handler& handler) {
-            sclx::array_list<value_type, 1, lattice_size> dist_result(
-                solution_.lattice_distributions
-            );
-
-            auto velocities = solution_.macroscopic_values.fluid_velocity;
-            auto densities  = solution_.macroscopic_values.fluid_density;
-
-            auto& rho_velocity0 = advection_source_;
-            auto& rho_velocity  = advection_result_;
-
-            auto density_scale = parameters_.nominal_density;
-            auto velocity_scale
-                = parameters_.speed_of_sound
-                / lattice_traits<lattice_type>::lattice_speed_of_sound;
-            auto lattice_speed_of_sound
-                = lattice_traits<lattice_type>::lattice_speed_of_sound;
-
-            auto lattice_time_step = parameters_.lattice_time_step;
-            auto dx                = domain_.nodal_spacing;
-
-            handler.launch(
-                sclx::md_range_t<1>{dist_result[0].elements()},
-                dist_result,
-                [=] __device__(
-                    const sclx::md_index_t<1>& idx,
-                    const sclx::kernel_info<>& info
-                ) mutable {
-                    auto rho0      = rho_velocity0[0][idx[0]];
-                    auto rho       = rho_velocity[0][idx[0]];
-                    auto delta_rho = rho - rho0;
-
-                    value_type force[dimensions];
-                    value_type u[dimensions];
-                    densities[idx[0]] = rho * density_scale;
-                    for (int d = 0; d < dimensions; ++d) {
-                        u[d]                  = rho_velocity[d + 1][idx[0]];
-                        velocities(d, idx[0]) = u[d] * velocity_scale;
-                    }
-
-                    for (int alpha = 0; alpha < lattice_size; ++alpha) {
-                        value_type c_alpha[dimensions];
-                        for (int d = 0; d < dimensions; ++d) {
-                            c_alpha[d] = lattice_interface<
-                                             lattice_type>::lattice_velocities()
-                                             .vals[0][d];
-                        }
-                        auto feq_alpha = compute_equilibrium_distribution<
-                            lattice_type>(
-                            rho0,
-                            &u[0],
-                            &c_alpha[0],
-                            lattice_interface<lattice_type>::lattice_weights()
-                                .vals[alpha]
-                        );
-                        dist_result[alpha][idx[0]]
-                            = feq_alpha
-                            + delta_rho
-                                  * lattice_interface<
-                                        lattice_type>::lattice_weights()
-                                        .vals[alpha];
-                        // auto feq_alpha = compute_equilibrium_distribution<
-                        //     lattice_type>(
-                        //     rho,
-                        //     &u[0],
-                        //     &c_alpha[0],
-                        //     lattice_interface<lattice_type>::lattice_weights()
-                        //         .vals[alpha]
-                        // );
-                        // dist_result[alpha][idx[0]] = feq_alpha;
-                    }
-                }
-            );
-        }).get();
 
         interpolate_boundaries(solution_.lattice_distributions);
 
