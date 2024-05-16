@@ -1238,7 +1238,7 @@ class simulation_engine {
         auto domain_points   = domain_.points;
         auto& delta_x        = domain_.nodal_spacing;
         auto gaussian_sigma  = delta_x / 2.f;
-        auto sigma           = .5f;
+        auto sigma           = .8f;
 
         bool compute_weights = false;
         if (filter_weights_.elements() == 0) {

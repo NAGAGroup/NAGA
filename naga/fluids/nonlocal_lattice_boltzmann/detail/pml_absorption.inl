@@ -198,8 +198,7 @@ class partial_pml_subtask<d2q9_lattice<T>> {
                       [idx[0] - params.absorption_layer_start];
 
             params.lattice_distributions[alpha][idx[0]]
-                -= params.lattice_time_step * sigma
-                 * (2.f * f_tilde_eq + sigma * Q_value);
+                -= sigma * (2.f * f_tilde_eq + sigma * Q_value);
         }
     }
 
@@ -804,8 +803,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             auto layer_end   = engine_->domain_.num_bulk_points
                            + engine_->domain_.num_layer_points;
             sclx::algorithm::elementwise_reduce(
-            nonlocal_calculus::forward_euler<T>(engine_->parameters_
-                                                     .lattice_time_step),
+                nonlocal_calculus::forward_euler<T>(1.f),
                 engine_->scratchpad1[alpha],  // .get_range({layer_begin},
                                               // {layer_end}),
                 engine_->scratchpad1[alpha],  // .get_range({layer_begin},
@@ -843,8 +841,7 @@ class pml_absorption_operator<d3q27_lattice<T>> {
             );
 
             sclx::algorithm::elementwise_reduce(
-                nonlocal_calculus::forward_euler<T>(engine_->parameters_
-                                                         .lattice_time_step),
+                nonlocal_calculus::forward_euler<T>(1.f),
                 engine_->scratchpad1[alpha],  // .get_range({layer_begin},
                                               // {layer_end}),
                 engine_->scratchpad1[alpha],  // .get_range({layer_begin},
