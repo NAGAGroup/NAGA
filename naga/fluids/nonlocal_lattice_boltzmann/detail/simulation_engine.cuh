@@ -1330,6 +1330,11 @@ class simulation_engine {
 
         update_observers(time());
 
+        compute_density_source_terms(time());
+        // compute_velocity_terms(time());
+        apply_density_source_termsv5();
+        //         apply_velocity_terms();
+
         for (int alpha = 0; alpha < lattice_size; ++alpha) {
             sclx::assign_array(
                 solution_.lattice_distributions[alpha],
@@ -1355,11 +1360,6 @@ class simulation_engine {
         // apply_density_source_termsv5();
 
         bounce_back_step(solution_.lattice_distributions);
-
-        compute_density_source_terms(time());
-        // compute_velocity_terms(time());
-        apply_density_source_termsv5();
-        //         apply_velocity_terms();
 
         rk4_solver_->step_forward(
             solution_.lattice_distributions,

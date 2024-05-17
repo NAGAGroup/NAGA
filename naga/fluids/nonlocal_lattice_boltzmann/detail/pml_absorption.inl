@@ -624,7 +624,7 @@ class partial_pml_subtask<d3q27_lattice<T>> {
             using namespace math::loopless;
 
             params.f[alpha][idx[0]]
-                -= sigma * params.lattice_time_step
+                -= sigma
                  * (3.f * f_tilde_eq + 3.f * sigma * Q1_value
                     + pow<2>(sigma) * Q2_value);
         }

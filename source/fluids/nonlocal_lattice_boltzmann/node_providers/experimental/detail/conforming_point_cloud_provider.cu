@@ -2111,7 +2111,7 @@ class conforming_point_cloud_impl_t<T, 3> {
                                 &sdf_new
                             );
 
-                            if (sdf_new.distance >= sdf_old.distance) {
+                            if (sdf_new.distance >= sdf_old.distance && sdf_new.distance >= 0) {
                                 return static_cast<std::uint32_t>(closest_boundary_to_bulk[idx]);
                             }
 
@@ -2124,7 +2124,7 @@ class conforming_point_cloud_impl_t<T, 3> {
                         sdf_results.begin(),
                         sdf_results.begin(),
                         [](const auto& sdf_new, const auto& sdf_old) {
-                            return sdf_new.distance >= sdf_old.distance
+                            return (sdf_new.distance >= sdf_old.distance && sdf_new.distance >= 0)
                                      ? sdf_old
                                      : sdf_new;
                         }
