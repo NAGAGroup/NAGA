@@ -1093,13 +1093,13 @@ class simulation_engine {
                     if (source_term == std::numeric_limits<value_type>::max()) {
                         return;
                     }
-                    auto imposed_density = 1.f + source_term / density_scale;
+                    auto imposed_density = density_scale + source_term / density_scale;
                     auto delta_rho
                         = imposed_density - densities[idx[1]] / density_scale;
                     result_arrays[idx[0]][idx[1]]
                         += delta_rho * lattice_weights[idx[0]];
 
-                    densities[idx[1]] += delta_rho * density_scale / 2.f;
+                    densities[idx[1]] = imposed_density * density_scale;
                 }
             );
         });
