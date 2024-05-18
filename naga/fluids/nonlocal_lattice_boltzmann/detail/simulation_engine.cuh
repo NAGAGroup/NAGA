@@ -1238,8 +1238,8 @@ class simulation_engine {
         auto support_size    = support_indices.shape()[0];
         auto domain_points   = domain_.points;
         auto& delta_x        = domain_.nodal_spacing;
-        auto gaussian_sigma  = delta_x / 3.f;
-        auto sigma           = .9f;
+        auto gaussian_sigma  = delta_x / 2.5f;
+        auto sigma           = .75f;
 
         bool compute_weights = false;
         if (filter_weights_.elements() == 0) {
