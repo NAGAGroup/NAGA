@@ -1099,7 +1099,8 @@ class simulation_engine {
                     result_arrays[idx[0]][idx[1]]
                         += delta_rho * lattice_weights[idx[0]];
 
-                    densities[idx[1]] = imposed_density * density_scale;
+                    densities[idx[1]] += imposed_density * density_scale;
+                    densities[idx[1]] /= 2;
                 }
             );
         });
@@ -1237,8 +1238,8 @@ class simulation_engine {
         auto support_size    = support_indices.shape()[0];
         auto domain_points   = domain_.points;
         auto& delta_x        = domain_.nodal_spacing;
-        auto gaussian_sigma  = delta_x / 2.f;
-        auto sigma           = .8f;
+        auto gaussian_sigma  = delta_x / 3.f;
+        auto sigma           = .9f;
 
         bool compute_weights = false;
         if (filter_weights_.elements() == 0) {
